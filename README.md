@@ -85,6 +85,27 @@ ClaudeFu uses `fsnotify` to watch Claude Code's session directories. When change
 3. **Emit events** - Push updates to frontend via Wails runtime
 4. **Recalculate unread** - Update badge counts
 
+### Data Storage
+
+**Claude Code sessions** (read-only, watched by ClaudeFu):
+```
+~/.claude/projects/
+└── {encoded-folder}/              # Folder path with / → -
+    ├── {session-id}.jsonl         # Main conversation
+    └── {session-id}/
+        └── subagents/
+            └── agent-{id}.jsonl   # Task agent conversations
+```
+
+**ClaudeFu config** (managed by ClaudeFu):
+```
+~/.claudefu/
+├── workspaces/
+│   └── {workspace-id}.json        # Workspace with agents list
+├── current_workspace.txt          # Active workspace ID
+└── session_state.json             # Last viewed timestamps (for unread tracking)
+```
+
 ## Installation
 
 ### Prerequisites
