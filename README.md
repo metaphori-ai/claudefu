@@ -16,7 +16,7 @@
 
 ## Features
 
-- **Multi-Agent Dashboard** - Manage multiple Claude Code instances across different project folders
+- **Multi-Agent Dashboard** - Manage multiple Claude Code instances across different project folders - single interface, many Claude Codes
 - **Real-Time Session Viewing** - Watch Claude's conversation as it streams via JSONL file watching
 - **Tool Call Visualization** - Expandable tool use/result blocks with formatted inputs and outputs
 - **Interactive AskUserQuestion** - Answer Claude's questions directly in the UI (even in `--print` mode)
@@ -25,12 +25,65 @@
 - **Context Compaction** - View summary cards when Claude compacts conversation history
 - **Unread Tracking** - Badge indicators for sessions with new activity
 
+## Roadmap
+
+- **Multi-Agent Orchestration** - `@backend create API, @frontend build UI` style coordination
+- **Parallel Agent Execution** - Run multiple agents simultaneously with dependency resolution
+- **Dynamic MCP** - Agent-to-agent communication via dyanmic agent MCP tools, auto-prompting to broadcast and request information from other agents
+
 ## Tech Stack
 
 - **Backend**: Go with [Wails](https://wails.io/) framework
 - **Frontend**: React + TypeScript + Vite
 - **Styling**: Tailwind CSS
 - **Data**: Claude Code JSONL session files (`~/.claude/projects/`)
+
+## Architecture
+
+### Core Principles
+
+- **Single Source of Truth** - All state lives in Go backend, frontend is a view
+- **Event-Driven** - State changes flow through Wails events, not polling
+- **UUID Everywhere** - Workspace, Agent, Session all have stable UUIDs for event routing
+
+### Domain Model Hierarchy
+
+```
+Workspace (container)
+└── Agent (Claude Code instance tied to a folder)
+    └── Session (conversation in ~/.claude/projects/{folder}/)
+        └── Subagent (Task tool spawned agents)
+```
+
+### Communication Flow
+
+```
+┌─────────────────────┐                  ┌─────────────────────┐
+│   Frontend (React)  │                  │   Backend (Go)      │
+│                     │                  │                     │
+│  ───Bound Methods──────────────────▶  │  WorkspaceRuntime   │
+│     SendMessage()   │                  │  AgentState         │
+│     GetSessions()   │                  │  SessionState       │
+│                     │                  │                     │
+│  ◀────Wails Events─────────────────   │  FileWatcher        │
+│     session:messages│                  │  (fsnotify)         │
+│     unread:changed  │                  │                     │
+└─────────────────────┘                  └─────────────────────┘
+                                                   │
+                                                   ▼
+                                         ~/.claude/projects/
+                                         └── {encoded-folder}/
+                                             └── {session}.jsonl
+```
+
+### File Watcher Strategy
+
+ClaudeFu uses `fsnotify` to watch Claude Code's session directories. When changes occur:
+
+1. **Delta reads** - Only read new bytes from JSONL files
+2. **Parse incrementally** - Convert new lines to messages
+3. **Emit events** - Push updates to frontend via Wails runtime
+4. **Recalculate unread** - Update badge counts
 
 ## Installation
 
@@ -97,13 +150,6 @@ claudefu/
         │   └── ...
         └── App.tsx
 ```
-
-## Roadmap
-
-- **Multi-Agent Orchestration** - `@backend create API, @frontend build UI` style coordination
-- **Parallel Agent Execution** - Run multiple agents simultaneously with dependency resolution
-- **Dynamic MCP** - Agent-to-agent communication via auto-prompting to broadcast and request information
-- **Direct Anthropic API** - Use Claude API for orchestration layer
 
 ## License
 
