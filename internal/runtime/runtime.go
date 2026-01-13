@@ -3,14 +3,20 @@
 package runtime
 
 import (
+	"encoding/json"
 	"fmt"
 	"maps"
+	"regexp"
 	"sync"
 	"time"
 
 	"claudefu/internal/types"
 	"claudefu/internal/workspace"
 )
+
+// planPathRegex matches paths like ~/.claude/plans/something.md or /Users/.../.claude/plans/something.md
+// Excludes * to avoid matching wildcard patterns like ~/.claude/plans/*.md from system reminders
+var planPathRegex = regexp.MustCompile(`[/~][^\s"]*\.claude/plans/[^\s"*]+\.md`)
 
 // =============================================================================
 // CONSTANTS
@@ -58,6 +64,7 @@ type SessionState struct {
 	ViewedIndex     int       // Index up to which user has seen messages
 	UnreadCount     int       // Derived: len(Messages) - ViewedIndex
 	Preview         string    // First user message preview
+	PlanFilePath    string    // Path to active plan file (if any)
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }
@@ -331,6 +338,13 @@ func (rt *WorkspaceRuntime) AppendMessages(agentID, sessionID string, messages [
 		}
 	}
 
+	// Extract plan file path from new messages
+	for _, msg := range messages {
+		if planPath := extractPlanFilePath(msg); planPath != "" {
+			session.PlanFilePath = planPath
+		}
+	}
+
 	// Recalculate unread count
 	session.UnreadCount = max(0, len(session.Messages)-session.ViewedIndex)
 
@@ -341,6 +355,7 @@ func (rt *WorkspaceRuntime) AppendMessages(agentID, sessionID string, messages [
 }
 
 // GetMessages returns all messages for a session.
+// Applies pending question detection before returning.
 func (rt *WorkspaceRuntime) GetMessages(agentID, sessionID string) []types.Message {
 	rt.mu.RLock()
 	defer rt.mu.RUnlock()
@@ -365,10 +380,28 @@ func (rt *WorkspaceRuntime) GetMessages(agentID, sessionID string) []types.Messa
 	fmt.Printf("[DEBUG] GetMessages: agent=%s session=%s returning %d messages (types: %v)\n",
 		agentID[:8], sessionID[:8], len(session.Messages), typeCounts)
 
-	// Return a copy
+	// Return a copy with pending question detection applied
 	result := make([]types.Message, len(session.Messages))
 	copy(result, session.Messages)
-	return result
+	return DetectPendingQuestions(result)
+}
+
+// GetPlanFilePath returns the active plan file path for a session.
+func (rt *WorkspaceRuntime) GetPlanFilePath(agentID, sessionID string) string {
+	rt.mu.RLock()
+	defer rt.mu.RUnlock()
+
+	agentState, ok := rt.agentStates[agentID]
+	if !ok {
+		return ""
+	}
+
+	session, ok := agentState.Sessions[sessionID]
+	if !ok {
+		return ""
+	}
+
+	return session.PlanFilePath
 }
 
 // =============================================================================
@@ -607,9 +640,57 @@ func (rt *WorkspaceRuntime) EmitUnreadChanged(agentID, sessionID string) {
 }
 
 // EmitSessionMessages emits a session:messages event.
+// Applies pending question detection on FULL session (not just delta) since
+// the tool_use and tool_result may be in different events.
 func (rt *WorkspaceRuntime) EmitSessionMessages(agentID, sessionID string, messages []types.Message) {
+	// Get the full session messages for proper pending question detection
+	// The tool_use (AskUserQuestion) and tool_result (is_error) may be in different events
+	rt.mu.RLock()
+	agentState, ok := rt.agentStates[agentID]
+	if !ok {
+		rt.mu.RUnlock()
+		// Fall back to just the delta messages
+		detectedMessages := DetectPendingQuestions(messages)
+		rt.Emit("session:messages", agentID, sessionID, map[string]any{
+			"messages": detectedMessages,
+		})
+		return
+	}
+	session, ok := agentState.Sessions[sessionID]
+	if !ok {
+		rt.mu.RUnlock()
+		// Fall back to just the delta messages
+		detectedMessages := DetectPendingQuestions(messages)
+		rt.Emit("session:messages", agentID, sessionID, map[string]any{
+			"messages": detectedMessages,
+		})
+		return
+	}
+
+	// Make a copy of all session messages for detection
+	allMessages := make([]types.Message, len(session.Messages))
+	copy(allMessages, session.Messages)
+	rt.mu.RUnlock()
+
+	// Apply detection on full session to properly match tool_use with tool_result
+	DetectPendingQuestions(allMessages)
+
+	// Now extract just the delta messages with their pendingQuestion populated
+	// We need to find the delta messages in the detected set by matching UUIDs
+	deltaUUIDs := make(map[string]bool)
+	for _, msg := range messages {
+		deltaUUIDs[msg.UUID] = true
+	}
+
+	detectedDelta := make([]types.Message, 0, len(messages))
+	for _, msg := range allMessages {
+		if deltaUUIDs[msg.UUID] {
+			detectedDelta = append(detectedDelta, msg)
+		}
+	}
+
 	rt.Emit("session:messages", agentID, sessionID, map[string]any{
-		"messages": messages,
+		"messages": detectedDelta,
 	})
 }
 
@@ -631,6 +712,98 @@ func (rt *WorkspaceRuntime) Clear() {
 }
 
 // =============================================================================
+// PENDING QUESTION DETECTION
+// =============================================================================
+
+// DetectPendingQuestions scans messages for failed AskUserQuestion tool calls.
+// When Claude Code runs with --print, AskUserQuestion auto-fails with is_error: true.
+// This function detects that pattern and marks the message with PendingQuestion
+// so the frontend can show an interactive UI.
+//
+// Pattern:
+//   1. assistant message with tool_use (name: "AskUserQuestion", id: "toolu_xxx")
+//   2. user message with tool_result (tool_use_id: "toolu_xxx", is_error: true)
+func DetectPendingQuestions(messages []types.Message) []types.Message {
+	// Map of tool_use_id -> questions from AskUserQuestion blocks
+	askUserQuestions := make(map[string][]map[string]interface{})
+
+	// Debug: log message types and block counts - especially for carrier messages
+	carrierCount := 0
+	for _, msg := range messages {
+		if msg.Type == "tool_result_carrier" {
+			carrierCount++
+			blockTypes := make(map[string]int)
+			for _, b := range msg.ContentBlocks {
+				blockTypes[b.Type]++
+			}
+			// Log first 3 carriers
+			if carrierCount <= 3 {
+				fmt.Printf("[DEBUG] CARRIER message: blocks=%d types=%v\n", len(msg.ContentBlocks), blockTypes)
+			}
+		}
+	}
+	if carrierCount > 0 {
+		fmt.Printf("[DEBUG] Total carrier messages: %d\n", carrierCount)
+	}
+
+	// First pass: collect AskUserQuestion tool_use blocks
+	for _, msg := range messages {
+		for _, block := range msg.ContentBlocks {
+			if block.Type == "tool_use" && block.Name == "AskUserQuestion" && block.ID != "" {
+				fmt.Printf("[DEBUG] Found AskUserQuestion tool_use: id=%s\n", block.ID)
+				if input, ok := block.Input.(map[string]interface{}); ok {
+					if questions, ok := input["questions"].([]interface{}); ok {
+						fmt.Printf("[DEBUG] AskUserQuestion has %d questions\n", len(questions))
+						askUserQuestions[block.ID] = convertToMapSlice(questions)
+					} else {
+						fmt.Printf("[DEBUG] AskUserQuestion input has no 'questions' field or wrong type\n")
+					}
+				} else {
+					fmt.Printf("[DEBUG] AskUserQuestion input is not map[string]interface{}: %T\n", block.Input)
+				}
+			}
+		}
+	}
+
+	fmt.Printf("[DEBUG] Found %d AskUserQuestion tool_use blocks\n", len(askUserQuestions))
+
+	// Second pass: mark failed tool_results as pending
+	for i := range messages {
+		// Clear any previous pending state (important for re-detection after answer)
+		messages[i].PendingQuestion = nil
+
+		for _, block := range messages[i].ContentBlocks {
+			if block.Type == "tool_result" {
+				fmt.Printf("[DEBUG] Found tool_result: tool_use_id=%s, is_error=%v\n", block.ToolUseID, block.IsError)
+			}
+			if block.Type == "tool_result" && block.IsError && block.ToolUseID != "" {
+				if questions, ok := askUserQuestions[block.ToolUseID]; ok {
+					fmt.Printf("[DEBUG] Marking message as pending question: tool_use_id=%s\n", block.ToolUseID)
+					messages[i].PendingQuestion = &types.PendingQuestion{
+						ToolUseID: block.ToolUseID,
+						Questions: questions,
+					}
+					break // Only one pending question per message
+				}
+			}
+		}
+	}
+
+	return messages
+}
+
+// convertToMapSlice converts []interface{} to []map[string]interface{}.
+func convertToMapSlice(items []interface{}) []map[string]interface{} {
+	result := make([]map[string]interface{}, 0, len(items))
+	for _, item := range items {
+		if m, ok := item.(map[string]interface{}); ok {
+			result = append(result, m)
+		}
+	}
+	return result
+}
+
+// =============================================================================
 // HELPER FUNCTIONS
 // =============================================================================
 
@@ -640,4 +813,52 @@ func truncatePreview(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen-3] + "..."
+}
+
+// extractPlanFilePath looks for a plan file path in a message's content blocks.
+// Checks tool_use inputs, tool_result content, and text content for paths
+// matching ~/.claude/plans/*.md or similar patterns.
+func extractPlanFilePath(msg types.Message) string {
+	for _, block := range msg.ContentBlocks {
+		// Check tool_use inputs (Read, Edit, Write on plan files)
+		if block.Type == "tool_use" && block.Input != nil {
+			var inputStr string
+			switch v := block.Input.(type) {
+			case string:
+				inputStr = v
+			default:
+				// Marshal to JSON to search
+				if data, err := json.Marshal(v); err == nil {
+					inputStr = string(data)
+				}
+			}
+			if match := planPathRegex.FindString(inputStr); match != "" {
+				return match
+			}
+		}
+
+		// Check tool_result content
+		if block.Type == "tool_result" && block.Content != nil {
+			var contentStr string
+			switch v := block.Content.(type) {
+			case string:
+				contentStr = v
+			default:
+				if data, err := json.Marshal(v); err == nil {
+					contentStr = string(data)
+				}
+			}
+			if match := planPathRegex.FindString(contentStr); match != "" {
+				return match
+			}
+		}
+
+		// Check text content (system reminders often mention plan file)
+		if block.Type == "text" && block.Text != "" {
+			if match := planPathRegex.FindString(block.Text); match != "" {
+				return match
+			}
+		}
+	}
+	return ""
 }

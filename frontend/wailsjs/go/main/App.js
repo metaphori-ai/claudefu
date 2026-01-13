@@ -10,6 +10,10 @@ export function AlertDialog(arg1, arg2) {
   return window['go']['main']['App']['AlertDialog'](arg1, arg2);
 }
 
+export function AnswerQuestion(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['main']['App']['AnswerQuestion'](arg1, arg2, arg3, arg4, arg5);
+}
+
 export function ClearAPIKey() {
   return window['go']['main']['App']['ClearAPIKey']();
 }
@@ -62,6 +66,10 @@ export function GetCurrentWorkspaceID() {
   return window['go']['main']['App']['GetCurrentWorkspaceID']();
 }
 
+export function GetPlanFilePath(arg1, arg2) {
+  return window['go']['main']['App']['GetPlanFilePath'](arg1, arg2);
+}
+
 export function GetSessionName(arg1, arg2) {
   return window['go']['main']['App']['GetSessionName'](arg1, arg2);
 }
@@ -106,6 +114,10 @@ export function ReadImageAsDataURL(arg1) {
   return window['go']['main']['App']['ReadImageAsDataURL'](arg1);
 }
 
+export function ReadPlanFile(arg1) {
+  return window['go']['main']['App']['ReadPlanFile'](arg1);
+}
+
 export function RemoveAgent(arg1) {
   return window['go']['main']['App']['RemoveAgent'](arg1);
 }
@@ -138,8 +150,8 @@ export function SelectWorkspaceFolder() {
   return window['go']['main']['App']['SelectWorkspaceFolder']();
 }
 
-export function SendMessage(arg1, arg2, arg3) {
-  return window['go']['main']['App']['SendMessage'](arg1, arg2, arg3);
+export function SendMessage(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['SendMessage'](arg1, arg2, arg3, arg4);
 }
 
 export function SetAPIKey(arg1) {

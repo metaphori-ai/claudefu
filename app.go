@@ -703,7 +703,8 @@ func (a *App) GetAgentTotalUnread(agentID string) int {
 // =============================================================================
 
 // SendMessage sends a message to Claude Code
-func (a *App) SendMessage(agentID, sessionID, message string) error {
+// If planMode is true, forces Claude into planning mode
+func (a *App) SendMessage(agentID, sessionID, message string, planMode bool) error {
 	if a.claude == nil {
 		return fmt.Errorf("claude service not initialized")
 	}
@@ -716,7 +717,7 @@ func (a *App) SendMessage(agentID, sessionID, message string) error {
 		return fmt.Errorf("agent not found: %s", agentID)
 	}
 
-	return a.claude.SendMessage(agent.Folder, sessionID, message)
+	return a.claude.SendMessage(agent.Folder, sessionID, message, planMode)
 }
 
 // NewSession creates a new Claude Code session
@@ -739,6 +740,50 @@ func (a *App) NewSession(agentID string) (string, error) {
 // IsClaudeInstalled checks if the Claude Code CLI is available
 func (a *App) IsClaudeInstalled() bool {
 	return providers.IsClaudeInstalled()
+}
+
+// ReadPlanFile reads the contents of a plan file
+func (a *App) ReadPlanFile(filePath string) (string, error) {
+	if filePath == "" {
+		return "", fmt.Errorf("filePath is required")
+	}
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read plan file: %w", err)
+	}
+	return string(data), nil
+}
+
+// GetPlanFilePath returns the active plan file path for a session
+func (a *App) GetPlanFilePath(agentID, sessionID string) string {
+	if a.rt == nil {
+		return ""
+	}
+	return a.rt.GetPlanFilePath(agentID, sessionID)
+}
+
+// AnswerQuestion answers a pending AskUserQuestion by patching the JSONL and resuming the session.
+// This enables interactive question handling even when Claude Code runs in --print mode.
+func (a *App) AnswerQuestion(agentID, sessionID, toolUseID string, questions []map[string]any, answers map[string]string) error {
+	if a.claude == nil {
+		return fmt.Errorf("claude service not initialized")
+	}
+	if !providers.IsClaudeInstalled() {
+		return fmt.Errorf("claude CLI not installed - please install Claude Code first")
+	}
+
+	agent := a.getAgentByID(agentID)
+	if agent == nil {
+		return fmt.Errorf("agent not found: %s", agentID)
+	}
+
+	// Step 1: Patch the JSONL file to convert failed tool_result to success
+	if err := workspace.PatchQuestionAnswer(agent.Folder, sessionID, toolUseID, questions, answers); err != nil {
+		return fmt.Errorf("failed to patch JSONL: %w", err)
+	}
+
+	// Step 2: Resume the session with "question answered" to trigger Claude continuation
+	return a.claude.SendMessage(agent.Folder, sessionID, "question answered", false)
 }
 
 // =============================================================================

@@ -9,6 +9,8 @@ export function AddAgent(arg1:string,arg2:string):Promise<workspace.Agent>;
 
 export function AlertDialog(arg1:string,arg2:string):Promise<void>;
 
+export function AnswerQuestion(arg1:string,arg2:string,arg3:string,arg4:Array<Record<string, any>>,arg5:Record<string, string>):Promise<void>;
+
 export function ClearAPIKey():Promise<void>;
 
 export function ClearActiveSession():Promise<void>;
@@ -35,6 +37,8 @@ export function GetConversation(arg1:string,arg2:string):Promise<Array<types.Mes
 
 export function GetCurrentWorkspaceID():Promise<string>;
 
+export function GetPlanFilePath(arg1:string,arg2:string):Promise<string>;
+
 export function GetSessionName(arg1:string,arg2:string):Promise<string>;
 
 export function GetSessions(arg1:string):Promise<Array<types.Session>>;
@@ -57,6 +61,8 @@ export function NewSession(arg1:string):Promise<string>;
 
 export function ReadImageAsDataURL(arg1:string):Promise<string>;
 
+export function ReadPlanFile(arg1:string):Promise<string>;
+
 export function RemoveAgent(arg1:string):Promise<void>;
 
 export function SaveFile(arg1:string):Promise<string>;
@@ -73,7 +79,7 @@ export function SelectFile(arg1:string):Promise<string>;
 
 export function SelectWorkspaceFolder():Promise<string>;
 
-export function SendMessage(arg1:string,arg2:string,arg3:string):Promise<void>;
+export function SendMessage(arg1:string,arg2:string,arg3:string,arg4:boolean):Promise<void>;
 
 export function SetAPIKey(arg1:string):Promise<void>;
 

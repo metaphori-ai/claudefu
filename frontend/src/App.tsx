@@ -65,6 +65,7 @@ function App() {
   const [allWorkspaces, setAllWorkspaces] = useState<workspace.WorkspaceSummary[]>([]);
   const [saveDialogOpen, setSaveDialogOpen] = useState<boolean>(false);
   const [reloadKey, setReloadKey] = useState<number>(0); // Increment to force ChatView remount
+  const [pendingInitialMessage, setPendingInitialMessage] = useState<string | null>(null); // Message to send after new session creation
 
   // Refs to track latest values for saveWorkspace (avoids stale closure issues)
   const workspaceNameRef = useRef(workspaceName);
@@ -81,6 +82,17 @@ function App() {
   useEffect(() => { selectedAgentIdRef.current = selectedAgentId; }, [selectedAgentId]);
   useEffect(() => { selectedSessionIdRef.current = selectedSessionId; }, [selectedSessionId]);
   useEffect(() => { selectedFolderRef.current = selectedFolder; }, [selectedFolder]);
+
+  // Clear pendingInitialMessage after it's been passed to ChatView
+  // The message is consumed on mount, so we clear it shortly after
+  useEffect(() => {
+    if (pendingInitialMessage) {
+      const timer = setTimeout(() => {
+        setPendingInitialMessage(null);
+      }, 500); // Small delay to ensure ChatView has received it
+      return () => clearTimeout(timer);
+    }
+  }, [pendingInitialMessage]);
 
   // Save workspace function (uses refs for latest values)
   const saveWorkspaceState = useCallback(async () => {
@@ -368,6 +380,19 @@ function App() {
         ? { ...agent, selectedSessionId: sessionId }
         : agent
     ));
+  };
+
+  // Handler for when a new session is created from ChatView
+  const handleNewSessionCreated = (newSessionId: string, initialMessage: string) => {
+    console.log('New session created:', newSessionId, 'with message:', initialMessage);
+    // Store the message to send after switching
+    setPendingInitialMessage(initialMessage);
+    // Switch to the new session (using current agent's folder)
+    if (selectedAgentId && selectedFolder) {
+      handleSessionSelect(selectedAgentId, newSessionId, selectedFolder);
+      // Increment reloadKey to force ChatView remount
+      setReloadKey(prev => prev + 1);
+    }
   };
 
   const handleAgentSelect = (agentId: string) => {
@@ -775,6 +800,8 @@ function App() {
               agentId={selectedAgentId}
               folder={selectedFolder}
               sessionId={selectedSessionId}
+              onSessionCreated={handleNewSessionCreated}
+              initialMessage={pendingInitialMessage || undefined}
             />
           ) : (
             // Agents but no session selected

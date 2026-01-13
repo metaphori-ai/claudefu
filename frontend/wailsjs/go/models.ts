@@ -133,6 +133,20 @@ export namespace types {
 		}
 	}
 	
+	export class PendingQuestion {
+	    toolUseId: string;
+	    questions: any[];
+	
+	    static createFrom(source: any = {}) {
+	        return new PendingQuestion(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.toolUseId = source["toolUseId"];
+	        this.questions = source["questions"];
+	    }
+	}
 	export class Message {
 	    uuid: string;
 	    type: string;
@@ -141,6 +155,7 @@ export namespace types {
 	    timestamp: string;
 	    isCompaction?: boolean;
 	    compactionPreview?: string;
+	    pendingQuestion?: PendingQuestion;
 	
 	    static createFrom(source: any = {}) {
 	        return new Message(source);
@@ -155,6 +170,7 @@ export namespace types {
 	        this.timestamp = source["timestamp"];
 	        this.isCompaction = source["isCompaction"];
 	        this.compactionPreview = source["compactionPreview"];
+	        this.pendingQuestion = this.convertValues(source["pendingQuestion"], PendingQuestion);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -175,6 +191,7 @@ export namespace types {
 		    return a;
 		}
 	}
+	
 	export class Session {
 	    id: string;
 	    agentId: string;

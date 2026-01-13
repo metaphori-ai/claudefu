@@ -5,6 +5,24 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2025-01-13
+
+### Added
+- **Interactive AskUserQuestion Support**
+  - Detect failed AskUserQuestion tool calls from Claude Code `--print` mode
+  - Interactive UI with clickable option buttons and "Other" text input
+  - JSONL patching to inject successful tool_result and resume conversation
+  - Full state machine: pending → user answers → conversation continues
+
+### Fixed
+- **Critical JSON parsing bug**: `ToolUseResult` field in `UserEvent` was typed as `map[string]any` but Claude Code outputs it as either a string or map. Changed to `any` to handle both cases, fixing silent unmarshal failures for `is_error:true` events.
+
+### Technical Details
+- `PendingQuestion` type for tracking unanswered questions
+- `DetectPendingQuestions` in runtime.go matches tool_use with failed tool_result
+- `PatchQuestionAnswer` in jsonl_patch.go rewrites JSONL with successful answer
+- `AnswerQuestion` bound method orchestrates patch + resume flow
+
 ## [0.1.0] - 2025-01-12
 
 ### Added

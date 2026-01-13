@@ -13,10 +13,17 @@ interface ContentBlock {
   is_error?: boolean;
 }
 
+interface PendingQuestion {
+  toolUseId: string;
+  questions: any[];
+}
+
 interface ToolCallBlockProps {
   block: ContentBlock;
   result?: ContentBlock;
   onViewDetails: (block: ContentBlock, result?: ContentBlock) => void;
+  pendingQuestion?: PendingQuestion;
+  onAnswer?: (toolUseId: string, questions: any[], answers: Record<string, string>) => void;
 }
 
 // Tool colors
@@ -108,37 +115,93 @@ function contentToString(content: any): string {
   return JSON.stringify(content);
 }
 
-// Render AskUserQuestion with rich formatting
-function AskUserQuestionBlock({ block, result }: { block: ContentBlock; result?: ContentBlock }) {
-  const input = block.input;
-  if (!input || !input.questions) return null;
+// Render AskUserQuestion with rich formatting - supports both interactive and read-only modes
+function AskUserQuestionBlock({ block, result, pendingQuestion, onAnswer }: {
+  block: ContentBlock;
+  result?: ContentBlock;
+  pendingQuestion?: PendingQuestion;
+  onAnswer?: (toolUseId: string, questions: any[], answers: Record<string, string>) => void;
+}) {
+  const [selectedAnswers, setSelectedAnswers] = useState<Record<string, string>>({});
+  const [customText, setCustomText] = useState<Record<string, string>>({});
+  const [showCustomInput, setShowCustomInput] = useState<Record<string, boolean>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Parse answers from result content (can be JSON string or object)
-  let answers: Record<string, string> = {};
-  if (result?.content) {
+  // Use questions from pendingQuestion if available (already parsed by Go backend)
+  const questions = pendingQuestion?.questions || block.input?.questions || [];
+  const isPending = !!pendingQuestion;
+
+  // Parse answers from result content for read-only mode
+  let completedAnswers: Record<string, string> = {};
+  if (!isPending && result?.content) {
     try {
       const content = typeof result.content === 'string'
         ? JSON.parse(result.content)
         : result.content;
-      answers = content.answers || {};
+      completedAnswers = content.answers || {};
     } catch {
-      // If not JSON, try to parse as simple text
+      // If not JSON, it's an error or simple text
     }
   }
+
+  // Check if all questions have been answered
+  const allAnswered = questions.every((q: any) => {
+    const key = q.question;
+    return selectedAnswers[key] || customText[key];
+  });
+
+  // Handle option selection
+  const handleOptionSelect = (question: string, option: string) => {
+    setSelectedAnswers(prev => ({ ...prev, [question]: option }));
+    setShowCustomInput(prev => ({ ...prev, [question]: false }));
+    setCustomText(prev => ({ ...prev, [question]: '' }));
+  };
+
+  // Handle "Other" selection
+  const handleOtherSelect = (question: string) => {
+    setSelectedAnswers(prev => ({ ...prev, [question]: '' }));
+    setShowCustomInput(prev => ({ ...prev, [question]: true }));
+  };
+
+  // Handle custom text change
+  const handleCustomTextChange = (question: string, text: string) => {
+    setCustomText(prev => ({ ...prev, [question]: text }));
+  };
+
+  // Handle submit
+  const handleSubmit = async () => {
+    if (!pendingQuestion || !onAnswer || !allAnswered) return;
+
+    setIsSubmitting(true);
+    try {
+      // Build answers map: question text -> answer
+      const answers: Record<string, string> = {};
+      for (const q of questions) {
+        const key = q.question;
+        answers[key] = customText[key] || selectedAnswers[key] || '';
+      }
+
+      await onAnswer(pendingQuestion.toolUseId, questions, answers);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (!questions || questions.length === 0) return null;
 
   return (
     <div style={{
       margin: '0.5rem 0',
       background: '#1a1a1a',
-      border: '1px solid #333',
+      border: `1px solid ${isPending ? '#f97316' : '#333'}`,
       borderRadius: '8px',
       overflow: 'hidden'
     }}>
       {/* Header */}
       <div style={{
         padding: '0.5rem 0.75rem',
-        background: '#222',
-        borderBottom: '1px solid #333',
+        background: isPending ? '#2a1a0a' : '#222',
+        borderBottom: `1px solid ${isPending ? '#f97316' : '#333'}`,
         display: 'flex',
         alignItems: 'center',
         gap: '0.5rem'
@@ -149,17 +212,20 @@ function AskUserQuestionBlock({ block, result }: { block: ContentBlock; result?:
           fontWeight: 500,
           fontSize: '0.85rem'
         }}>
-          Question
+          {isPending ? 'Question (click to answer)' : 'Question'}
         </span>
       </div>
 
       {/* Questions */}
       <div style={{ padding: '0.75rem' }}>
-        {input.questions.map((q: any, qIdx: number) => {
-          const answer = q.header ? answers[q.header] : undefined;
+        {questions.map((q: any, qIdx: number) => {
+          const questionKey = q.question;
+          const completedAnswer = completedAnswers[questionKey];
+          const selectedAnswer = selectedAnswers[questionKey];
+          const isCustom = showCustomInput[questionKey];
 
           return (
-            <div key={qIdx} style={{ marginBottom: qIdx < input.questions.length - 1 ? '1rem' : 0 }}>
+            <div key={qIdx} style={{ marginBottom: qIdx < questions.length - 1 ? '1rem' : 0 }}>
               {/* Question header */}
               {q.header && (
                 <div style={{
@@ -190,29 +256,78 @@ function AskUserQuestionBlock({ block, result }: { block: ContentBlock; result?:
                 gap: '0.5rem'
               }}>
                 {q.options?.map((opt: any, optIdx: number) => {
-                  const isSelected = answer === opt.label;
+                  const isSelected = isPending
+                    ? selectedAnswer === opt.label
+                    : completedAnswer === opt.label;
+
                   return (
-                    <div
+                    <button
                       key={optIdx}
+                      onClick={isPending ? () => handleOptionSelect(questionKey, opt.label) : undefined}
+                      disabled={!isPending}
                       style={{
                         padding: '0.35rem 0.6rem',
                         borderRadius: '4px',
                         fontSize: '0.8rem',
                         background: isSelected ? '#1a2f1a' : '#252525',
                         border: `1px solid ${isSelected ? '#34d399' : '#333'}`,
-                        color: isSelected ? '#34d399' : '#888'
+                        color: isSelected ? '#34d399' : '#888',
+                        cursor: isPending ? 'pointer' : 'default',
+                        transition: 'all 0.15s ease'
                       }}
                       title={opt.description}
                     >
                       {isSelected && <span style={{ marginRight: '0.25rem' }}>✓</span>}
                       {opt.label}
-                    </div>
+                    </button>
                   );
                 })}
+
+                {/* Other option for pending questions */}
+                {isPending && (
+                  <button
+                    onClick={() => handleOtherSelect(questionKey)}
+                    style={{
+                      padding: '0.35rem 0.6rem',
+                      borderRadius: '4px',
+                      fontSize: '0.8rem',
+                      background: isCustom ? '#1a2f1a' : '#252525',
+                      border: `1px solid ${isCustom ? '#34d399' : '#333'}`,
+                      color: isCustom ? '#34d399' : '#888',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    Other...
+                  </button>
+                )}
               </div>
 
-              {/* Show answer if it's "Other" (custom response) */}
-              {answer && !q.options?.find((o: any) => o.label === answer) && (
+              {/* Custom text input for "Other" */}
+              {isPending && isCustom && (
+                <div style={{ marginTop: '0.5rem' }}>
+                  <input
+                    type="text"
+                    value={customText[questionKey] || ''}
+                    onChange={(e) => handleCustomTextChange(questionKey, e.target.value)}
+                    placeholder="Type your answer..."
+                    style={{
+                      width: '100%',
+                      padding: '0.5rem',
+                      borderRadius: '4px',
+                      background: '#252525',
+                      border: '1px solid #444',
+                      color: '#ccc',
+                      fontSize: '0.85rem',
+                      outline: 'none'
+                    }}
+                    autoFocus
+                  />
+                </div>
+              )}
+
+              {/* Show completed answer if it's "Other" (custom response) - read-only mode */}
+              {!isPending && completedAnswer && !q.options?.find((o: any) => o.label === completedAnswer) && (
                 <div style={{
                   marginTop: '0.5rem',
                   padding: '0.35rem 0.6rem',
@@ -222,18 +337,42 @@ function AskUserQuestionBlock({ block, result }: { block: ContentBlock; result?:
                   border: '1px solid #34d399',
                   color: '#34d399'
                 }}>
-                  ✓ {answer}
+                  ✓ {completedAnswer}
                 </div>
               )}
             </div>
           );
         })}
+
+        {/* Submit button for pending questions */}
+        {isPending && (
+          <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'flex-end' }}>
+            <button
+              onClick={handleSubmit}
+              disabled={!allAnswered || isSubmitting}
+              style={{
+                padding: '0.5rem 1rem',
+                borderRadius: '6px',
+                background: allAnswered ? '#f97316' : '#333',
+                border: 'none',
+                color: allAnswered ? '#fff' : '#666',
+                fontSize: '0.85rem',
+                fontWeight: 500,
+                cursor: allAnswered && !isSubmitting ? 'pointer' : 'not-allowed',
+                opacity: isSubmitting ? 0.7 : 1,
+                transition: 'all 0.15s ease'
+              }}
+            >
+              {isSubmitting ? 'Submitting...' : 'Submit Answer'}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-export function ToolCallBlock({ block, result, onViewDetails }: ToolCallBlockProps) {
+export function ToolCallBlock({ block, result, onViewDetails, pendingQuestion, onAnswer }: ToolCallBlockProps) {
   const config = getToolConfig(block.name || '');
   const summary = getToolSummary(block.name || '', block.input);
   const resultStr = result ? contentToString(result.content) : undefined;
@@ -241,7 +380,7 @@ export function ToolCallBlock({ block, result, onViewDetails }: ToolCallBlockPro
 
   // Special rendering for AskUserQuestion
   if (block.name === 'AskUserQuestion') {
-    return <AskUserQuestionBlock block={block} result={result} />;
+    return <AskUserQuestionBlock block={block} result={result} pendingQuestion={pendingQuestion} onAnswer={onAnswer} />;
   }
 
   return (

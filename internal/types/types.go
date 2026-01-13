@@ -10,13 +10,22 @@ import "time"
 
 // Message represents a parsed chat message from Claude Code JSONL files.
 type Message struct {
-	UUID              string         `json:"uuid"`
-	Type              string         `json:"type"` // user, assistant, summary
-	Content           string         `json:"content"`
-	ContentBlocks     []ContentBlock `json:"contentBlocks,omitempty"`
-	Timestamp         string         `json:"timestamp"`
-	IsCompaction      bool           `json:"isCompaction,omitempty"`
-	CompactionPreview string         `json:"compactionPreview,omitempty"`
+	UUID              string           `json:"uuid"`
+	Type              string           `json:"type"` // user, assistant, summary
+	Content           string           `json:"content"`
+	ContentBlocks     []ContentBlock   `json:"contentBlocks,omitempty"`
+	Timestamp         string           `json:"timestamp"`
+	IsCompaction      bool             `json:"isCompaction,omitempty"`
+	CompactionPreview string           `json:"compactionPreview,omitempty"`
+	PendingQuestion   *PendingQuestion `json:"pendingQuestion,omitempty"` // Non-nil if AskUserQuestion failed (interactive mode)
+}
+
+// PendingQuestion tracks a failed AskUserQuestion tool call that needs user interaction.
+// When Claude Code runs with --print, AskUserQuestion auto-fails. ClaudeFu detects this
+// and presents an interactive UI to the user, then patches the JSONL with the answer.
+type PendingQuestion struct {
+	ToolUseID string                   `json:"toolUseId"` // The tool_use block ID to patch
+	Questions []map[string]interface{} `json:"questions"` // The questions from AskUserQuestion input
 }
 
 // ContentBlock represents a single content block within a message.

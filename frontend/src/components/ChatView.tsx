@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { GetConversation, SetActiveSession, ClearActiveSession, SendMessage, MarkSessionViewed } from '../../wailsjs/go/main/App';
+import { GetConversation, SetActiveSession, ClearActiveSession, SendMessage, MarkSessionViewed, NewSession, ReadPlanFile, GetPlanFilePath, AnswerQuestion } from '../../wailsjs/go/main/App';
 import { EventsOn, EventsOff } from '../../wailsjs/runtime/runtime';
 import { CompactionCard } from './CompactionCard';
 import { CompactionPane } from './CompactionPane';
@@ -9,6 +9,7 @@ import { ToolCallBlock } from './ToolCallBlock';
 import { ToolDetailPane } from './ToolDetailPane';
 import { ImageBlock } from './ImageBlock';
 import { ThinkingBlock } from './ThinkingBlock';
+import { SlideInPane } from './SlideInPane';
 
 // ImageSource for image blocks
 interface ImageSource {
@@ -37,6 +38,12 @@ interface ContentBlock {
   signature?: string;
 }
 
+// PendingQuestion from Go backend - indicates an AskUserQuestion that failed in --print mode
+interface PendingQuestion {
+  toolUseId: string;
+  questions: any[];
+}
+
 // Message type with UI-specific fields
 // We use a plain interface instead of extending types.Message because
 // we create plain objects that don't have the class methods
@@ -50,12 +57,15 @@ interface Message {
   compactionPreview?: string;
   isPending?: boolean;  // True for optimistic messages sent from ClaudeFu
   isFailed?: boolean;   // True if send failed
+  pendingQuestion?: PendingQuestion;  // Non-null if this message contains a failed AskUserQuestion
 }
 
 interface ChatViewProps {
   agentId: string;
   folder: string;
   sessionId: string;
+  onSessionCreated?: (newSessionId: string, initialMessage: string) => void;  // Called when a new session is created with user's message
+  initialMessage?: string;  // Message to auto-send when ChatView mounts (for new session flow)
 }
 
 // CSS keyframes for spinner animation
@@ -66,7 +76,7 @@ const spinnerStyles = `
   }
 `;
 
-export function ChatView({ agentId, folder, sessionId }: ChatViewProps) {
+export function ChatView({ agentId, folder, sessionId, onSessionCreated, initialMessage }: ChatViewProps) {
   // Inject spinner animation styles
   useEffect(() => {
     const styleId = 'chatview-spinner-styles';
@@ -124,6 +134,14 @@ export function ChatView({ agentId, folder, sessionId }: ChatViewProps) {
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [forceScrollActive, setForceScrollActive] = useState(false);  // Force scroll until user scrolls away
   const forceScrollActiveRef = useRef<boolean>(false);  // Ref for use in closures
+
+  // Toggle states for prompt controls
+  const [newSessionMode, setNewSessionMode] = useState(false);
+  const [planningMode, setPlanningMode] = useState(false);
+  const [latestPlanFile, setLatestPlanFile] = useState<string | null>(null);
+  const [planPaneOpen, setPlanPaneOpen] = useState(false);
+  const [planContent, setPlanContent] = useState<string | null>(null);
+
   const pendingMessagesRef = useRef<Set<string>>(new Set());  // Track pending message content for deduplication
   const processedUUIDsRef = useRef<Set<string>>(new Set());   // Track already processed UUIDs to prevent duplicates
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);  // Debounce rapid fsnotify events
@@ -271,6 +289,15 @@ export function ChatView({ agentId, folder, sessionId }: ChatViewProps) {
         console.error('Failed to mark session as viewed:', err);
       });
 
+      // Refresh plan file path (backend extracts from new messages)
+      GetPlanFilePath(agentId, sessionId).then(planPath => {
+        if (planPath) {
+          setLatestPlanFile(planPath);
+        }
+      }).catch(err => {
+        console.error('Failed to get plan file path:', err);
+      });
+
       // Scroll to bottom for NEW streaming messages
       // Force scroll if user sent a message and hasn't scrolled away
       // Otherwise only scroll if user WAS near bottom before update
@@ -300,7 +327,7 @@ export function ChatView({ agentId, folder, sessionId }: ChatViewProps) {
 
     // Cleanup on unmount or session change
     return () => {
-      console.log('ChatView cleanup - clearing session:', sessionId);
+      console.log('ChatView cleanup - session:', sessionId);
       isMounted = false;
       EventsOff('session:messages');
       EventsOff('unread:changed');  // Remove debug listener
@@ -309,10 +336,59 @@ export function ChatView({ agentId, folder, sessionId }: ChatViewProps) {
         clearTimeout(debounceTimerRef.current);
         debounceTimerRef.current = null;
       }
-      // Clear active session so watcher stops sending streaming events
-      ClearActiveSession();
+      // Don't call ClearActiveSession here - it causes a race condition when
+      // switching sessions within the same agent. The new SetActiveSession()
+      // will overwrite the old values anyway.
     };
   }, [agentId, sessionId]);
+
+  // Auto-send initialMessage when provided (for new session flow)
+  const initialMessageSentRef = useRef(false);
+  useEffect(() => {
+    if (initialMessage && !initialMessageSentRef.current && !isLoading) {
+      initialMessageSentRef.current = true;
+      console.log('Auto-sending initial message:', initialMessage);
+      // Directly trigger the send logic
+      const sendInitialMessage = async () => {
+        setIsSending(true);
+        // Create optimistic pending message
+        const pendingMessage: Message = {
+          type: 'user',
+          content: initialMessage,
+          timestamp: new Date().toISOString(),
+          uuid: `pending-${Date.now()}`,
+          isPending: true
+        };
+        pendingMessagesRef.current.add(initialMessage);
+        forceScrollActiveRef.current = true;
+        setForceScrollActive(true);
+        setMessages(prev => [...prev, pendingMessage]);
+
+        requestAnimationFrame(() => {
+          if (scrollContainerRef.current) {
+            scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+          }
+        });
+
+        try {
+          await SendMessage(agentId, sessionId, initialMessage, planningMode);
+        } catch (err) {
+          console.error('Failed to send initial message:', err);
+          pendingMessagesRef.current.delete(initialMessage);
+          setMessages(prev =>
+            prev.map(m =>
+              m.uuid === pendingMessage.uuid
+                ? { ...m, isPending: false, isFailed: true }
+                : m
+            )
+          );
+        } finally {
+          setIsSending(false);
+        }
+      };
+      sendInitialMessage();
+    }
+  }, [initialMessage, isLoading, agentId, sessionId, planningMode]);
 
   // Note: Auto-scroll is handled explicitly:
   // - Initial load: scrolls after loadConversation completes
@@ -343,6 +419,14 @@ export function ChatView({ agentId, folder, sessionId }: ChatViewProps) {
       });
 
       setMessages(msgs || []);
+
+      // Get plan file path from backend (it extracts from messages during processing)
+      const planPath = await GetPlanFilePath(agentId, sessionId);
+      if (planPath) {
+        console.log('Found plan file:', planPath);
+        setLatestPlanFile(planPath);
+      }
+
       // Initialize processedUUIDs with loaded messages to prevent re-processing
       if (msgs) {
         for (const msg of msgs) {
@@ -447,6 +531,21 @@ export function ChatView({ agentId, folder, sessionId }: ChatViewProps) {
     return map;
   }, [messages]);
 
+  // Build a GLOBAL map of pending questions by tool_use_id.
+  // The pendingQuestion is attached to the USER message with the failed tool_result,
+  // but we need it when rendering the ASSISTANT message with the tool_use.
+  const globalPendingQuestionMap = React.useMemo(() => {
+    const map = new Map<string, PendingQuestion>();
+    for (const msg of messages) {
+      if (msg.pendingQuestion) {
+        console.log('[DEBUG] Found pendingQuestion:', msg.pendingQuestion);
+        map.set(msg.pendingQuestion.toolUseId, msg.pendingQuestion);
+      }
+    }
+    console.log('[DEBUG] globalPendingQuestionMap size:', map.size);
+    return map;
+  }, [messages]);
+
   // Helper to convert ImageSource to displayable URL
   const getImageUrl = (source?: ImageSource): string | null => {
     if (!source) return null;
@@ -467,6 +566,22 @@ export function ChatView({ agentId, folder, sessionId }: ChatViewProps) {
     setSelectedToolResult(result || null);
   };
 
+  // Handle answering a pending AskUserQuestion
+  const handleQuestionAnswer = async (
+    toolUseId: string,
+    questions: any[],
+    answers: Record<string, string>
+  ) => {
+    try {
+      await AnswerQuestion(agentId, sessionId, toolUseId, questions, answers);
+      // The file watcher will detect the JSONL change and update the UI
+      // The pending question will be replaced with a completed one
+    } catch (err) {
+      console.error('Failed to answer question:', err);
+      // Could show an error toast here
+    }
+  };
+
   // Handle sending a message to Claude
   const handleSend = async () => {
     if (!inputValue.trim() || isSending) return;
@@ -474,6 +589,31 @@ export function ChatView({ agentId, folder, sessionId }: ChatViewProps) {
     const message = inputValue.trim();
     setInputValue('');
     setIsSending(true);
+
+    // If New Session mode, create session and hand off to parent
+    if (newSessionMode) {
+      try {
+        console.log('Creating new session for agent:', agentId);
+        const newSessionId = await NewSession(agentId);
+        console.log('New session created:', newSessionId);
+        setNewSessionMode(false);  // Reset toggle
+        // Notify parent to switch and send the message
+        if (onSessionCreated) {
+          onSessionCreated(newSessionId, message);
+        }
+        // Parent will switch sessions and pass initialMessage to new ChatView
+        // We're done here - don't send message ourselves
+        setIsSending(false);
+        return;
+      } catch (err) {
+        console.error('Failed to create new session:', err);
+        setIsSending(false);
+        setInputValue(message);  // Restore input
+        return;
+      }
+    }
+
+    let targetSessionId = sessionId;
 
     // Create optimistic pending message
     const pendingMessage: Message = {
@@ -503,7 +643,7 @@ export function ChatView({ agentId, folder, sessionId }: ChatViewProps) {
     });
 
     try {
-      await SendMessage(agentId, sessionId, message);
+      await SendMessage(agentId, targetSessionId, message, planningMode);
       // Response comes via existing session:messages event from watcher
       // The pending message will be deduplicated when watcher emits it
     } catch (err) {
@@ -815,12 +955,18 @@ export function ChatView({ agentId, folder, sessionId }: ChatViewProps) {
 
           if (block.type === 'tool_use') {
             const result = block.id ? toolResultMap.get(block.id) : undefined;
+            // Check if this is a pending AskUserQuestion that needs interactive UI
+            const pendingQ = block.name === 'AskUserQuestion' && block.id
+              ? globalPendingQuestionMap.get(block.id)
+              : undefined;
             return (
               <ToolCallBlock
                 key={idx}
                 block={block}
                 result={result}
                 onViewDetails={handleViewToolDetails}
+                pendingQuestion={pendingQ}
+                onAnswer={pendingQ ? handleQuestionAnswer : undefined}
               />
             );
           }
@@ -1088,10 +1234,122 @@ export function ChatView({ agentId, folder, sessionId }: ChatViewProps) {
 
       {/* Input Area */}
       <div style={{
-        padding: '1rem 2rem',
+        padding: '0.5rem 2rem 1rem 2rem',
         borderTop: '1px solid #222',
         background: '#111'
       }}>
+        {/* Toggle Icons Row */}
+        <div style={{
+          display: 'flex',
+          gap: '4px',
+          marginBottom: '0.5rem',
+          alignItems: 'center'
+        }}>
+          {/* New Session */}
+          <button
+            onClick={() => setNewSessionMode(!newSessionMode)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: newSessionMode ? '#f97316' : '#666',
+              cursor: 'pointer',
+              padding: '4px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'color 0.15s ease'
+            }}
+            title="New Session"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+          </button>
+
+          {/* Streaming Mode (disabled placeholder) */}
+          <button
+            disabled
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: '#444',
+              cursor: 'not-allowed',
+              padding: '4px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              opacity: 0.5
+            }}
+            title="Streaming Mode (coming soon)"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+            </svg>
+          </button>
+
+          {/* Planning Mode */}
+          <button
+            onClick={() => setPlanningMode(!planningMode)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: planningMode ? '#f97316' : '#666',
+              cursor: 'pointer',
+              padding: '4px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'color 0.15s ease'
+            }}
+            title="Planning Mode"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+              <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
+              <line x1="9" y1="12" x2="15" y2="12" />
+              <line x1="9" y1="16" x2="15" y2="16" />
+            </svg>
+          </button>
+
+          {/* Spacer to push View Plan to the right */}
+          <div style={{ flex: 1 }} />
+
+          {/* Planning File (only visible when plan exists) - far right */}
+          {latestPlanFile && (
+            <button
+              onClick={async () => {
+                try {
+                  const content = await ReadPlanFile(latestPlanFile);
+                  setPlanContent(content);
+                  setPlanPaneOpen(true);
+                } catch (err) {
+                  console.error('Failed to read plan file:', err);
+                }
+              }}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: '#f97316',
+                cursor: 'pointer',
+                padding: '4px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+              title="View Plan"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="16" y1="13" x2="8" y2="13" />
+                <line x1="16" y1="17" x2="8" y2="17" />
+                <polyline points="10 9 9 9 8 9" />
+              </svg>
+            </button>
+          )}
+        </div>
+
         <div style={{
           display: 'flex',
           gap: '0.75rem'
@@ -1159,6 +1417,27 @@ export function ChatView({ agentId, folder, sessionId }: ChatViewProps) {
         agentID={agentId}
         sessionID={sessionId}
       />
+
+      {/* Plan File Pane */}
+      <SlideInPane
+        isOpen={planPaneOpen}
+        onClose={() => {
+          setPlanPaneOpen(false);
+          setPlanContent(null);
+        }}
+        title="Plan"
+        storageKey="planPaneWidth"
+      >
+        <div style={{ padding: '1rem', color: '#ccc' }}>
+          {planContent ? (
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {planContent}
+            </ReactMarkdown>
+          ) : (
+            <div style={{ color: '#666' }}>Loading...</div>
+          )}
+        </div>
+      </SlideInPane>
     </div>
   );
 }

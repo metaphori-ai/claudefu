@@ -57,7 +57,7 @@ type UserEvent struct {
 	IsVisibleInTranscriptOnly  bool           `json:"isVisibleInTranscriptOnly,omitempty"`
 	IsMeta                     bool           `json:"isMeta,omitempty"`
 	SourceToolAssistantUUID    string         `json:"sourceToolAssistantUUID,omitempty"`
-	ToolUseResult              map[string]any `json:"toolUseResult,omitempty"` // Parsed separately based on tool
+	ToolUseResult              any            `json:"toolUseResult,omitempty"` // Can be string or map[string]any
 }
 
 // UserMessage represents the message content in a user event.

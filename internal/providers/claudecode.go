@@ -79,8 +79,9 @@ func (s *ClaudeCodeService) SetContext(ctx context.Context) {
 
 // SendMessage sends a message to Claude Code in the specified folder/session
 // It uses --resume to continue an existing session
+// If planMode is true, adds --permission-mode plan to force planning mode
 // Returns when the command completes (Claude writes to session file, watcher picks it up)
-func (s *ClaudeCodeService) SendMessage(folder, sessionId, message string) error {
+func (s *ClaudeCodeService) SendMessage(folder, sessionId, message string, planMode bool) error {
 	if folder == "" {
 		return fmt.Errorf("folder is required")
 	}
@@ -97,12 +98,22 @@ func (s *ClaudeCodeService) SendMessage(folder, sessionId, message string) error
 		return fmt.Errorf("claude CLI not found in PATH or common locations")
 	}
 
-	// Build command: claude --resume {sessionId} -p "{message}"
-	// --print flag ensures output goes to stdout (not interactive)
-	cmd := exec.CommandContext(s.ctx, path,
+	// Build command args
+	// Use acceptEdits by default to auto-approve file edits in non-interactive mode
+	// Plan mode overrides this to restrict Claude to read-only operations
+	permissionMode := "acceptEdits"
+	if planMode {
+		permissionMode = "plan"
+	}
+
+	args := []string{
 		"--print",
+		"--permission-mode", permissionMode,
 		"--resume", sessionId,
-		"-p", message)
+		"-p", message,
+	}
+
+	cmd := exec.CommandContext(s.ctx, path, args...)
 	cmd.Dir = folder
 
 	// Run the command - Claude will write to the session file
@@ -130,8 +141,10 @@ func (s *ClaudeCodeService) NewSession(folder string) (string, error) {
 
 	// Start a new session with a simple prompt
 	// Use --output-format stream-json to parse the session ID from output
+	// Use acceptEdits to auto-approve file edits in non-interactive mode
 	cmd := exec.CommandContext(s.ctx, path,
 		"--print",
+		"--permission-mode", "acceptEdits",
 		"--output-format", "stream-json",
 		"-p", "Hello! Starting a new session.")
 	cmd.Dir = folder
