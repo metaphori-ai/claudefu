@@ -119,3 +119,5 @@ frontend/dist
 .cursor/
 .claude/
 CLAUDE.md
+*.tda.svml
+*.svml
