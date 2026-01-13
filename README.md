@@ -1,7 +1,7 @@
 # ClaudeFu
 
 <p align="center">
-  <img src="assets/claudefu-logo.png" alt="ClaudeFu Logo" width="200">
+  <img src="assets/claudefu-logo.png" alt="ClaudeFu Logo" width="400">
 </p>
 
 <p align="center">
