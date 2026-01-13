@@ -1,0 +1,1 @@
+{"type":"queue-operation","operation":"enqueue","timestamp":"2026-01-11T23:09:55.009Z","sessionId":"5e57ffdb-88c1-405a-87b9-081438fd0f17","content":"Yes and after our refactoring let's clean the main TDA because we don't need it as a history document, it's an Architecture Document!"}
