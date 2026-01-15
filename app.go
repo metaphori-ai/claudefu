@@ -739,19 +739,27 @@ func (a *App) SendMessage(agentID, sessionID, message string, planMode bool) err
 
 // NewSession creates a new Claude Code session
 func (a *App) NewSession(agentID string) (string, error) {
+	fmt.Printf("[DEBUG] NewSession called for agentID: %s\n", agentID)
+
 	if a.claude == nil {
+		fmt.Printf("[DEBUG] NewSession error: claude service not initialized\n")
 		return "", fmt.Errorf("claude service not initialized")
 	}
 	if !providers.IsClaudeInstalled() {
+		fmt.Printf("[DEBUG] NewSession error: claude CLI not installed\n")
 		return "", fmt.Errorf("claude CLI not installed - please install Claude Code first")
 	}
 
 	agent := a.getAgentByID(agentID)
 	if agent == nil {
+		fmt.Printf("[DEBUG] NewSession error: agent not found: %s\n", agentID)
 		return "", fmt.Errorf("agent not found: %s", agentID)
 	}
 
-	return a.claude.NewSession(agent.Folder)
+	fmt.Printf("[DEBUG] NewSession: calling claude.NewSession for folder: %s\n", agent.Folder)
+	sessionId, err := a.claude.NewSession(agent.Folder)
+	fmt.Printf("[DEBUG] NewSession result: sessionId=%s, err=%v\n", sessionId, err)
+	return sessionId, err
 }
 
 // IsClaudeInstalled checks if the Claude Code CLI is available

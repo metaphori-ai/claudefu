@@ -5,6 +5,12 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.5] - 2025-01-15
+
+### Fixed
+- **New Session not working** - Fixed Claude CLI command by adding `--verbose` flag required when using `--print` with `--output-format stream-json`.
+- **New Session UX** - Clear chat and show "Creating new session..." spinner while session is being created.
+
 ## [0.2.4] - 2025-01-15
 
 ### Fixed

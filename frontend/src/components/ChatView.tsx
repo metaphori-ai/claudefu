@@ -132,6 +132,7 @@ export function ChatView({ agentId, folder, sessionId, onSessionCreated, initial
   const [selectedToolResult, setSelectedToolResult] = useState<ContentBlock | null>(null);
   const [inputValue, setInputValue] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [forceScrollActive, setForceScrollActive] = useState(false);  // Force scroll until user scrolls away
   const forceScrollActiveRef = useRef<boolean>(false);  // Ref for use in closures
@@ -715,9 +716,13 @@ export function ChatView({ agentId, folder, sessionId, onSessionCreated, initial
     if (newSessionMode) {
       try {
         console.log('Creating new session for agent:', agentId);
+        // Show "Creating new session..." placeholder
+        setIsCreatingSession(true);
+        setMessages([]);
         const newSessionId = await NewSession(agentId);
         console.log('New session created:', newSessionId);
         setNewSessionMode(false);  // Reset toggle
+        setIsCreatingSession(false);
         // Notify parent to switch and send the message
         if (onSessionCreated) {
           onSessionCreated(newSessionId, message);
@@ -728,8 +733,11 @@ export function ChatView({ agentId, folder, sessionId, onSessionCreated, initial
         return;
       } catch (err) {
         console.error('Failed to create new session:', err);
+        setIsCreatingSession(false);
         setIsSending(false);
         setInputValue(message);  // Restore input
+        // Reload messages since we cleared them
+        loadConversation();
         return;
       }
     }
@@ -1227,6 +1235,29 @@ export function ChatView({ agentId, folder, sessionId, onSessionCreated, initial
             textAlign: 'left'
           }}
         >
+          {/* Creating new session indicator */}
+          {isCreatingSession && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '0.75rem',
+              padding: '2rem',
+              color: '#888'
+            }}>
+              <span style={{
+                display: 'inline-block',
+                width: '16px',
+                height: '16px',
+                border: '2px solid #333',
+                borderTopColor: '#f97316',
+                borderRadius: '50%',
+                animation: 'spin 1s linear infinite'
+              }} />
+              Creating new session...
+            </div>
+          )}
+
           {messagesToRender
             .filter(msg => msg.type !== 'tool_result_carrier') // Don't render carrier messages
             .map((message, index) => (
