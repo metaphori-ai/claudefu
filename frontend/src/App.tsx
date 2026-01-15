@@ -21,6 +21,7 @@ import {
   AddAgent,
   GetVersion
 } from "../wailsjs/go/main/App";
+import { EventsOn, EventsOff } from "../wailsjs/runtime/runtime";
 import { workspace } from "../wailsjs/go/models";
 
 interface AuthStatus {
@@ -54,6 +55,7 @@ function App() {
   const [message, setMessage] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [deviceAuth, setDeviceAuth] = useState<DeviceAuthInfo | null>(null);
+  const [loadingStatus, setLoadingStatus] = useState<string>('Initializing...');
 
   // Workspace state
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -127,6 +129,30 @@ function App() {
 
   useEffect(() => {
     loadData();
+  }, []);
+
+  // Subscribe to loading:status events from backend
+  useEffect(() => {
+    const unsubscribe = EventsOn('loading:status', (data: { status: string }) => {
+      setLoadingStatus(data.status);
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  // Subscribe to workspace:changed to trigger splash on workspace switch
+  useEffect(() => {
+    const unsubscribe = EventsOn('workspace:changed', (data: any) => {
+      // When workspace:changed with null workspaceId, show splash
+      if (data?.workspaceId === null) {
+        setView('startup');
+        setLoadingStatus('Switching workspace...');
+      }
+    });
+    return () => {
+      unsubscribe();
+    };
   }, []);
 
   // Keyboard shortcuts: CMD-1/2/3 for agents, CMD-S to save, CMD-N for new window
@@ -267,13 +293,12 @@ function App() {
         console.log('No workspaces found, starting fresh');
       }
 
-      setTimeout(() => {
-        if (auth.isAuthenticated) {
-          setView('main');
-        } else {
-          setView('auth');
-        }
-      }, 1500);
+      // Transition to main or auth view (no delay - backend loading:status shows progress)
+      if (auth.isAuthenticated) {
+        setView('main');
+      } else {
+        setView('auth');
+      }
     } catch (err) {
       setMessage(`Error loading data: ${err}`);
       setView('auth');
@@ -426,6 +451,10 @@ function App() {
   };
 
   const handleSwitchWorkspace = async (id: string) => {
+    // Show splash immediately before async call
+    setView('startup');
+    setLoadingStatus('Switching workspace...');
+
     try {
       const ws = await SwitchWorkspace(id);
       if (ws) {
@@ -446,8 +475,11 @@ function App() {
       // Refresh workspace list
       const workspaces = await GetAllWorkspaces();
       setAllWorkspaces(workspaces || []);
+      // Transition back to main view
+      setView('main');
     } catch (err) {
       console.error('Failed to switch workspace:', err);
+      setView('main'); // Go back to main even on error
     }
   };
 
@@ -516,7 +548,7 @@ function App() {
         <img
           src="/assets/claudefu-logo.png"
           alt="ClaudeFu"
-          style={{ width: '280px', marginBottom: '2rem' }}
+          style={{ width: '400px', marginBottom: '2rem' }}
         />
         {version && (
           <div style={{ color: '#444', fontSize: '0.8rem', marginBottom: '1rem' }}>
@@ -524,15 +556,7 @@ function App() {
           </div>
         )}
         <div style={{ color: '#666', fontSize: '0.9rem' }}>
-          {authStatus ? (
-            authStatus.isAuthenticated ? (
-              <span style={{ color: '#4ade80' }}>Authenticated</span>
-            ) : (
-              <span>Checking authentication...</span>
-            )
-          ) : (
-            <span>Loading...</span>
-          )}
+          {loadingStatus}
         </div>
       </div>
     );

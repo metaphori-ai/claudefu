@@ -5,6 +5,19 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - 2025-01-14
+
+### Added
+- **Dynamic splash loader** with real-time loading status
+  - Shows each initialization step: "Initializing settings...", "Loading workspace...", "Loading {AgentName}...", etc.
+  - Bigger logo (400px, was 280px)
+  - Reuses splash screen when switching workspaces
+- Backend `loading:status` event emission throughout startup chain
+
+### Changed
+- Removed hardcoded 1.5s splash delay - transitions immediately when ready
+- Workspace switch shows splash with live status updates
+
 ## [0.2.1] - 2025-01-13
 
 ### Added

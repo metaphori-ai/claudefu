@@ -41,27 +41,38 @@ func NewApp() *App {
 // STARTUP - Single Initialization Chain
 // =============================================================================
 
+// emitLoadingStatus emits a loading status message to the frontend splash screen
+func (a *App) emitLoadingStatus(status string) {
+	wailsrt.EventsEmit(a.ctx, "loading:status", map[string]any{
+		"status": status,
+	})
+}
+
 // startup is called when the app starts. The context is saved
 // so we can call the runtime methods
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 
 	// Step 1: Load persisted state (settings, session timestamps)
+	a.emitLoadingStatus("Initializing settings...")
 	a.loadPersistedState()
 
 	// Step 2: Load current workspace
+	a.emitLoadingStatus("Loading workspace...")
 	a.loadCurrentWorkspace()
 
 	// Step 3: Initialize file watcher
+	a.emitLoadingStatus("Setting up file watchers...")
 	a.initializeWatcher()
 
 	// Step 4: Initialize runtime and start watching
 	a.initializeRuntime()
 
-	// Step 5: Start watching all agents
+	// Step 5: Start watching all agents (emits per-agent status internally)
 	a.startWatchingAllAgents()
 
 	// Step 6: Initialize Claude CLI
+	a.emitLoadingStatus("Initializing Claude CLI...")
 	a.initializeClaude()
 
 	// Step 7: Emit initial state to frontend
@@ -159,6 +170,9 @@ func (a *App) startWatchingAllAgents() {
 	}
 
 	for _, agent := range a.currentWorkspace.Agents {
+		// Emit per-agent loading status
+		a.emitLoadingStatus(fmt.Sprintf("Loading %s...", agent.Name))
+
 		// Get last viewed timestamps for this agent's sessions
 		var lastViewedMap map[string]int64
 		if a.sessions != nil {
@@ -382,24 +396,26 @@ func (a *App) SwitchWorkspace(workspaceID string) (*workspace.Workspace, error) 
 		return nil, fmt.Errorf("workspace manager not initialized")
 	}
 
-	// Step 1: Stop all watchers
-	if a.watcher != nil {
-		a.watcher.StopAllWatchers()
-	}
-
-	// Step 2: Clear runtime state
-	if a.rt != nil {
-		a.rt.Clear()
-	}
-
-	// Step 3: Emit workspace:changed (clear frontend state)
+	// Step 1: Emit workspace:changed (triggers frontend splash)
+	a.emitLoadingStatus("Switching workspace...")
 	if a.rt != nil {
 		a.rt.Emit("workspace:changed", "", "", map[string]any{
 			"workspaceId": nil,
 		})
 	}
 
+	// Step 2: Stop all watchers
+	if a.watcher != nil {
+		a.watcher.StopAllWatchers()
+	}
+
+	// Step 3: Clear runtime state
+	if a.rt != nil {
+		a.rt.Clear()
+	}
+
 	// Step 4: Load new workspace
+	a.emitLoadingStatus("Loading workspace...")
 	ws, err := a.workspace.LoadWorkspace(workspaceID)
 	if err != nil {
 		return nil, err
@@ -418,9 +434,10 @@ func (a *App) SwitchWorkspace(workspaceID string) (*workspace.Workspace, error) 
 	a.currentWorkspace = ws
 
 	// Step 7: Re-initialize runtime
+	a.emitLoadingStatus("Setting up file watchers...")
 	a.initializeRuntime()
 
-	// Step 8: Start watching all agents
+	// Step 8: Start watching all agents (emits per-agent status internally)
 	a.startWatchingAllAgents()
 
 	// Step 9: Emit initial state
