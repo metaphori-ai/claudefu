@@ -79,11 +79,13 @@ func PatchQuestionAnswer(folder, sessionID, toolUseID string, questions []map[st
 			}
 
 			// Found the matching tool_result - patch it
-			// 1. Remove is_error field
-			delete(blockMap, "is_error")
+			// 1. Set is_error to false (explicitly, not delete - more reliable)
+			blockMap["is_error"] = false
 
 			// 2. Set content to formatted answer string
 			blockMap["content"] = formatAnswerContent(questions, answers)
+
+			fmt.Printf("[PATCH] Patched tool_result %s: is_error=false, content set\n", toolUseID)
 
 			// Update the block in the content array
 			content[j] = blockMap
@@ -126,31 +128,44 @@ func PatchQuestionAnswer(folder, sessionID, toolUseID string, questions []map[st
 		return fmt.Errorf("failed to write patched session file: %w", err)
 	}
 
+	fmt.Printf("[PATCH] Successfully wrote patched JSONL to %s\n", sessionPath)
 	return nil
 }
 
-// formatAnswerContent creates the formatted answer string for the tool_result content.
-// Format: "User has answered your questions: \"<question>\"=\"<answer>\". You can now continue with the user's answers in mind."
+// formatAnswerContent creates the formatted answer content for the tool_result.
+// Returns a JSON string with both a human-readable message and structured answers
+// that the frontend can parse to highlight selected options.
 func formatAnswerContent(questions []map[string]any, answers map[string]string) string {
+	// Build human-readable parts for Claude
 	var parts []string
-
 	for _, q := range questions {
 		questionText, ok := q["question"].(string)
 		if !ok {
 			continue
 		}
-
 		answer, exists := answers[questionText]
 		if !exists {
 			continue
 		}
-
 		parts = append(parts, fmt.Sprintf("\"%s\"=\"%s\"", questionText, answer))
 	}
 
-	if len(parts) == 0 {
-		return "User has answered your questions. You can now continue."
+	message := "User has answered your questions. You can now continue."
+	if len(parts) > 0 {
+		message = fmt.Sprintf("User has answered your questions: %s. You can now continue with the user's answers in mind.", strings.Join(parts, ", "))
 	}
 
-	return fmt.Sprintf("User has answered your questions: %s. You can now continue with the user's answers in mind.", strings.Join(parts, ", "))
+	// Return JSON with both message and structured answers for frontend parsing
+	result := map[string]any{
+		"message": message,
+		"answers": answers,
+	}
+
+	jsonBytes, err := json.Marshal(result)
+	if err != nil {
+		// Fallback to plain string if JSON fails
+		return message
+	}
+
+	return string(jsonBytes)
 }

@@ -1,4 +1,27 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+
+// CSS keyframes for pulse and spin animations
+const pulseStyles = `
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+`;
+
+// Inject pulse animation styles
+const injectStyles = () => {
+  const styleId = 'toolcallblock-pulse-styles';
+  if (typeof document !== 'undefined' && !document.getElementById(styleId)) {
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = pulseStyles;
+    document.head.appendChild(style);
+  }
+};
 
 interface ContentBlock {
   type: string;
@@ -24,6 +47,7 @@ interface ToolCallBlockProps {
   onViewDetails: (block: ContentBlock, result?: ContentBlock) => void;
   pendingQuestion?: PendingQuestion;
   onAnswer?: (toolUseId: string, questions: any[], answers: Record<string, string>) => void;
+  onSkip?: (toolUseId: string) => void;
 }
 
 // Tool colors
@@ -116,20 +140,31 @@ function contentToString(content: any): string {
 }
 
 // Render AskUserQuestion with rich formatting - supports both interactive and read-only modes
-function AskUserQuestionBlock({ block, result, pendingQuestion, onAnswer }: {
+function AskUserQuestionBlock({ block, result, pendingQuestion, onAnswer, onSkip }: {
   block: ContentBlock;
   result?: ContentBlock;
   pendingQuestion?: PendingQuestion;
   onAnswer?: (toolUseId: string, questions: any[], answers: Record<string, string>) => void;
+  onSkip?: (toolUseId: string) => void;
 }) {
   const [selectedAnswers, setSelectedAnswers] = useState<Record<string, string>>({});
   const [customText, setCustomText] = useState<Record<string, string>>({});
   const [showCustomInput, setShowCustomInput] = useState<Record<string, boolean>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [hasSubmitted, setHasSubmitted] = useState(false);
+
+  // Inject pulse animation styles
+  useEffect(() => {
+    injectStyles();
+  }, []);
 
   // Use questions from pendingQuestion if available (already parsed by Go backend)
   const questions = pendingQuestion?.questions || block.input?.questions || [];
   const isPending = !!pendingQuestion;
+
+  // Determine status: pending (waiting), skipped (is_error but conversation continued), or answered
+  const isSkipped = !isPending && result?.is_error === true;
+  const isAnswered = !isPending && !isSkipped;
 
   // Parse answers from result content for read-only mode
   let completedAnswers: Record<string, string> = {};
@@ -173,6 +208,7 @@ function AskUserQuestionBlock({ block, result, pendingQuestion, onAnswer }: {
     if (!pendingQuestion || !onAnswer || !allAnswered) return;
 
     setIsSubmitting(true);
+    setHasSubmitted(true);  // Hide button immediately
     try {
       // Build answers map: question text -> answer
       const answers: Record<string, string> = {};
@@ -185,6 +221,13 @@ function AskUserQuestionBlock({ block, result, pendingQuestion, onAnswer }: {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  // Handle skip
+  const handleSkip = () => {
+    if (!pendingQuestion || !onSkip) return;
+    setHasSubmitted(true);  // Hide buttons immediately
+    onSkip(pendingQuestion.toolUseId);
   };
 
   if (!questions || questions.length === 0) return null;
@@ -212,8 +255,56 @@ function AskUserQuestionBlock({ block, result, pendingQuestion, onAnswer }: {
           fontWeight: 500,
           fontSize: '0.85rem'
         }}>
-          {isPending ? 'Question (click to answer)' : 'Question'}
+          {isPending ? 'Question' : 'Question'}
         </span>
+        {/* Status indicator */}
+        {isPending && (
+          <span style={{
+            marginLeft: 'auto',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.35rem',
+            fontSize: '0.75rem',
+            color: '#f97316',
+            background: 'rgba(249, 115, 22, 0.15)',
+            padding: '0.2rem 0.5rem',
+            borderRadius: '4px',
+            animation: 'pulse 2s ease-in-out infinite'
+          }}>
+            <span style={{
+              width: '6px',
+              height: '6px',
+              borderRadius: '50%',
+              background: '#f97316',
+              animation: 'pulse 1.5s ease-in-out infinite'
+            }} />
+            Waiting for your answer
+          </span>
+        )}
+        {isSkipped && (
+          <span style={{
+            marginLeft: 'auto',
+            fontSize: '0.75rem',
+            color: '#666',
+            background: 'rgba(100, 100, 100, 0.15)',
+            padding: '0.2rem 0.5rem',
+            borderRadius: '4px'
+          }}>
+            Skipped
+          </span>
+        )}
+        {isAnswered && (
+          <span style={{
+            marginLeft: 'auto',
+            fontSize: '0.75rem',
+            color: '#34d399',
+            background: 'rgba(52, 211, 153, 0.15)',
+            padding: '0.2rem 0.5rem',
+            borderRadius: '4px'
+          }}>
+            ✓ Answered
+          </span>
+        )}
       </div>
 
       {/* Questions */}
@@ -249,10 +340,10 @@ function AskUserQuestionBlock({ block, result, pendingQuestion, onAnswer }: {
                 {q.question}
               </div>
 
-              {/* Options */}
+              {/* Options - vertical layout with descriptions */}
               <div style={{
                 display: 'flex',
-                flexWrap: 'wrap',
+                flexDirection: 'column',
                 gap: '0.5rem'
               }}>
                 {q.options?.map((opt: any, optIdx: number) => {
@@ -260,25 +351,44 @@ function AskUserQuestionBlock({ block, result, pendingQuestion, onAnswer }: {
                     ? selectedAnswer === opt.label
                     : completedAnswer === opt.label;
 
+                  // For skipped questions, dim non-selected options
+                  const isSkippedUnselected = isSkipped && !isSelected;
+
                   return (
                     <button
                       key={optIdx}
                       onClick={isPending ? () => handleOptionSelect(questionKey, opt.label) : undefined}
                       disabled={!isPending}
                       style={{
-                        padding: '0.35rem 0.6rem',
-                        borderRadius: '4px',
-                        fontSize: '0.8rem',
+                        padding: '0.5rem 0.75rem',
+                        borderRadius: '6px',
+                        fontSize: '0.85rem',
                         background: isSelected ? '#1a2f1a' : '#252525',
                         border: `1px solid ${isSelected ? '#34d399' : '#333'}`,
-                        color: isSelected ? '#34d399' : '#888',
+                        color: isSelected ? '#34d399' : isSkippedUnselected ? '#555' : '#ccc',
                         cursor: isPending ? 'pointer' : 'default',
-                        transition: 'all 0.15s ease'
+                        transition: 'all 0.15s ease',
+                        textAlign: 'left',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'flex-start',
+                        gap: '0.25rem',
+                        opacity: isSkippedUnselected ? 0.5 : 1
                       }}
-                      title={opt.description}
                     >
-                      {isSelected && <span style={{ marginRight: '0.25rem' }}>✓</span>}
-                      {opt.label}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                        {isSelected && <span style={{ color: '#34d399' }}>✓</span>}
+                        <span style={{ fontWeight: 500 }}>{opt.label}</span>
+                      </div>
+                      {opt.description && (
+                        <span style={{
+                          fontSize: '0.75rem',
+                          color: isSelected ? '#6ee7b7' : '#666',
+                          marginLeft: isSelected ? '1rem' : '0'
+                        }}>
+                          {opt.description}
+                        </span>
+                      )}
                     </button>
                   );
                 })}
@@ -288,17 +398,21 @@ function AskUserQuestionBlock({ block, result, pendingQuestion, onAnswer }: {
                   <button
                     onClick={() => handleOtherSelect(questionKey)}
                     style={{
-                      padding: '0.35rem 0.6rem',
-                      borderRadius: '4px',
-                      fontSize: '0.8rem',
+                      padding: '0.5rem 0.75rem',
+                      borderRadius: '6px',
+                      fontSize: '0.85rem',
                       background: isCustom ? '#1a2f1a' : '#252525',
                       border: `1px solid ${isCustom ? '#34d399' : '#333'}`,
-                      color: isCustom ? '#34d399' : '#888',
+                      color: isCustom ? '#34d399' : '#ccc',
                       cursor: 'pointer',
-                      transition: 'all 0.15s ease'
+                      transition: 'all 0.15s ease',
+                      textAlign: 'left'
                     }}
                   >
-                    Other...
+                    <span style={{ fontWeight: 500 }}>Other...</span>
+                    <span style={{ fontSize: '0.75rem', color: '#666', display: 'block', marginTop: '0.25rem' }}>
+                      Enter a custom response
+                    </span>
                   </button>
                 )}
               </div>
@@ -344,9 +458,25 @@ function AskUserQuestionBlock({ block, result, pendingQuestion, onAnswer }: {
           );
         })}
 
-        {/* Submit button for pending questions */}
-        {isPending && (
-          <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'flex-end' }}>
+        {/* Submit/Skip buttons for pending questions */}
+        {isPending && !hasSubmitted && (
+          <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+            <button
+              onClick={handleSkip}
+              style={{
+                padding: '0.5rem 1rem',
+                borderRadius: '6px',
+                background: 'transparent',
+                border: '1px solid #444',
+                color: '#888',
+                fontSize: '0.85rem',
+                fontWeight: 500,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              Skip
+            </button>
             <button
               onClick={handleSubmit}
               disabled={!allAnswered || isSubmitting}
@@ -367,12 +497,36 @@ function AskUserQuestionBlock({ block, result, pendingQuestion, onAnswer }: {
             </button>
           </div>
         )}
+
+        {/* Submitting indicator */}
+        {isPending && hasSubmitted && (
+          <div style={{
+            marginTop: '1rem',
+            display: 'flex',
+            justifyContent: 'flex-end',
+            alignItems: 'center',
+            gap: '0.5rem',
+            color: '#888',
+            fontSize: '0.85rem'
+          }}>
+            <span style={{
+              display: 'inline-block',
+              width: '12px',
+              height: '12px',
+              border: '2px solid #333',
+              borderTopColor: '#f97316',
+              borderRadius: '50%',
+              animation: 'spin 1s linear infinite'
+            }} />
+            Submitting...
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-export function ToolCallBlock({ block, result, onViewDetails, pendingQuestion, onAnswer }: ToolCallBlockProps) {
+export function ToolCallBlock({ block, result, onViewDetails, pendingQuestion, onAnswer, onSkip }: ToolCallBlockProps) {
   const config = getToolConfig(block.name || '');
   const summary = getToolSummary(block.name || '', block.input);
   const resultStr = result ? contentToString(result.content) : undefined;
@@ -380,7 +534,7 @@ export function ToolCallBlock({ block, result, onViewDetails, pendingQuestion, o
 
   // Special rendering for AskUserQuestion
   if (block.name === 'AskUserQuestion') {
-    return <AskUserQuestionBlock block={block} result={result} pendingQuestion={pendingQuestion} onAnswer={onAnswer} />;
+    return <AskUserQuestionBlock block={block} result={result} pendingQuestion={pendingQuestion} onAnswer={onAnswer} onSkip={onSkip} />;
   }
 
   return (

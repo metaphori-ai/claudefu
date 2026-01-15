@@ -720,73 +720,93 @@ func (rt *WorkspaceRuntime) Clear() {
 // This function detects that pattern and marks the message with PendingQuestion
 // so the frontend can show an interactive UI.
 //
+// IMPORTANT: Only the LAST failed AskUserQuestion is truly "pending".
+// Historical ones where the conversation continued are marked as "skipped".
+//
 // Pattern:
 //   1. assistant message with tool_use (name: "AskUserQuestion", id: "toolu_xxx")
 //   2. user message with tool_result (tool_use_id: "toolu_xxx", is_error: true)
+//   3. No subsequent assistant messages or user input after the tool_result
 func DetectPendingQuestions(messages []types.Message) []types.Message {
 	// Map of tool_use_id -> questions from AskUserQuestion blocks
 	askUserQuestions := make(map[string][]map[string]interface{})
-
-	// Debug: log message types and block counts - especially for carrier messages
-	carrierCount := 0
-	for _, msg := range messages {
-		if msg.Type == "tool_result_carrier" {
-			carrierCount++
-			blockTypes := make(map[string]int)
-			for _, b := range msg.ContentBlocks {
-				blockTypes[b.Type]++
-			}
-			// Log first 3 carriers
-			if carrierCount <= 3 {
-				fmt.Printf("[DEBUG] CARRIER message: blocks=%d types=%v\n", len(msg.ContentBlocks), blockTypes)
-			}
-		}
-	}
-	if carrierCount > 0 {
-		fmt.Printf("[DEBUG] Total carrier messages: %d\n", carrierCount)
-	}
 
 	// First pass: collect AskUserQuestion tool_use blocks
 	for _, msg := range messages {
 		for _, block := range msg.ContentBlocks {
 			if block.Type == "tool_use" && block.Name == "AskUserQuestion" && block.ID != "" {
-				fmt.Printf("[DEBUG] Found AskUserQuestion tool_use: id=%s\n", block.ID)
 				if input, ok := block.Input.(map[string]interface{}); ok {
 					if questions, ok := input["questions"].([]interface{}); ok {
-						fmt.Printf("[DEBUG] AskUserQuestion has %d questions\n", len(questions))
 						askUserQuestions[block.ID] = convertToMapSlice(questions)
-					} else {
-						fmt.Printf("[DEBUG] AskUserQuestion input has no 'questions' field or wrong type\n")
 					}
-				} else {
-					fmt.Printf("[DEBUG] AskUserQuestion input is not map[string]interface{}: %T\n", block.Input)
 				}
 			}
 		}
 	}
 
-	fmt.Printf("[DEBUG] Found %d AskUserQuestion tool_use blocks\n", len(askUserQuestions))
+	// Second pass: find ALL failed AskUserQuestion tool_results and their positions
+	type failedQuestion struct {
+		messageIndex int
+		toolUseID    string
+		questions    []map[string]interface{}
+	}
+	var failedQuestions []failedQuestion
 
-	// Second pass: mark failed tool_results as pending
 	for i := range messages {
-		// Clear any previous pending state (important for re-detection after answer)
+		// Clear any previous pending state
 		messages[i].PendingQuestion = nil
 
 		for _, block := range messages[i].ContentBlocks {
-			if block.Type == "tool_result" {
-				fmt.Printf("[DEBUG] Found tool_result: tool_use_id=%s, is_error=%v\n", block.ToolUseID, block.IsError)
-			}
 			if block.Type == "tool_result" && block.IsError && block.ToolUseID != "" {
 				if questions, ok := askUserQuestions[block.ToolUseID]; ok {
-					fmt.Printf("[DEBUG] Marking message as pending question: tool_use_id=%s\n", block.ToolUseID)
-					messages[i].PendingQuestion = &types.PendingQuestion{
-						ToolUseID: block.ToolUseID,
-						Questions: questions,
-					}
-					break // Only one pending question per message
+					failedQuestions = append(failedQuestions, failedQuestion{
+						messageIndex: i,
+						toolUseID:    block.ToolUseID,
+						questions:    questions,
+					})
 				}
 			}
 		}
+	}
+
+	if len(failedQuestions) == 0 {
+		return messages
+	}
+
+	// Third pass: determine which failed questions are truly "pending" vs "skipped"
+	// A question is pending ONLY if there's no meaningful content after it
+	// (no assistant messages, no user messages with actual content)
+	for idx, fq := range failedQuestions {
+		isLast := idx == len(failedQuestions)-1
+		isPending := false
+
+		if isLast {
+			// Check if there's any meaningful content after this failed question
+			hasContentAfter := false
+			for j := fq.messageIndex + 1; j < len(messages); j++ {
+				msg := messages[j]
+				// Assistant message with actual content = conversation continued
+				if msg.Type == "assistant" && (msg.Content != "" || len(msg.ContentBlocks) > 0) {
+					hasContentAfter = true
+					break
+				}
+				// User message with actual text content = user responded
+				if msg.Type == "user" && msg.Content != "" {
+					hasContentAfter = true
+					break
+				}
+			}
+			isPending = !hasContentAfter
+		}
+
+		if isPending {
+			messages[fq.messageIndex].PendingQuestion = &types.PendingQuestion{
+				ToolUseID: fq.toolUseID,
+				Questions: fq.questions,
+			}
+		}
+		// For non-pending (skipped) questions, PendingQuestion stays nil
+		// The frontend will show them as read-only with "Skipped" status
 	}
 
 	return messages

@@ -546,6 +546,26 @@ export function ChatView({ agentId, folder, sessionId, onSessionCreated, initial
     return map;
   }, [messages]);
 
+  // Check if there's a pending question
+  const hasPendingQuestion = globalPendingQuestionMap.size > 0;
+
+  // Find the index of the message containing a pending question
+  // We'll hide all messages AFTER this one (Claude's error response, etc.)
+  const pendingQuestionMsgIdx = React.useMemo(() => {
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i];
+      if (msg.pendingQuestion && globalPendingQuestionMap.has(msg.pendingQuestion.toolUseId)) {
+        return i;
+      }
+    }
+    return -1;
+  }, [messages, globalPendingQuestionMap]);
+
+  // Filter messages: hide all messages AFTER the one with pending question
+  const messagesToRender = pendingQuestionMsgIdx >= 0
+    ? messages.slice(0, pendingQuestionMsgIdx + 1)
+    : messages;
+
   // Helper to convert ImageSource to displayable URL
   const getImageUrl = (source?: ImageSource): string | null => {
     if (!source) return null;
@@ -573,12 +593,31 @@ export function ChatView({ agentId, folder, sessionId, onSessionCreated, initial
     answers: Record<string, string>
   ) => {
     try {
+      // AnswerQuestion patches the JSONL and resumes Claude with "question answered"
       await AnswerQuestion(agentId, sessionId, toolUseId, questions, answers);
-      // The file watcher will detect the JSONL change and update the UI
-      // The pending question will be replaced with a completed one
+      // Clear processed UUIDs so we can receive the updated messages
+      processedUUIDsRef.current.clear();
+      // Small delay to ensure file write completes before reload
+      await new Promise(resolve => setTimeout(resolve, 200));
+      // Reload conversation to get updated messages (pendingQuestion cleared)
+      await loadConversation();
     } catch (err) {
       console.error('Failed to answer question:', err);
       // Could show an error toast here
+    }
+  };
+
+  // Handle skipping a pending AskUserQuestion
+  const handleQuestionSkip = async (toolUseId: string) => {
+    try {
+      // Send a message telling Claude the user skipped the question
+      await SendMessage(agentId, sessionId, "I'm skipping this question. Please continue.", planningMode);
+      // Clear processed UUIDs so we can receive all messages
+      processedUUIDsRef.current.clear();
+      // Reload to get updated state
+      await loadConversation();
+    } catch (err) {
+      console.error('Failed to skip question:', err);
     }
   };
 
@@ -762,9 +801,27 @@ export function ChatView({ agentId, folder, sessionId, onSessionCreated, initial
     // Filter out tool_result blocks (they'll be shown with their tool_use)
     const displayBlocks = blocks.filter(b => b.type !== 'tool_result');
 
+    // Check if there's a pending AskUserQuestion in this message
+    // If so, we should stop rendering blocks after it (Claude's "post-tool" response should be hidden)
+    let pendingQuestionIdx = -1;
+    for (let i = 0; i < displayBlocks.length; i++) {
+      const block = displayBlocks[i];
+      if (block.type === 'tool_use' && block.name === 'AskUserQuestion' && block.id) {
+        if (globalPendingQuestionMap.has(block.id)) {
+          pendingQuestionIdx = i;
+          break;
+        }
+      }
+    }
+
+    // If there's a pending question, only render blocks UP TO AND INCLUDING the question
+    const blocksToRender = pendingQuestionIdx >= 0
+      ? displayBlocks.slice(0, pendingQuestionIdx + 1)
+      : displayBlocks;
+
     return (
       <>
-        {displayBlocks.map((block, idx) => {
+        {blocksToRender.map((block, idx) => {
           const isFirstBlock = idx === 0;
 
           if (block.type === 'text' && block.text) {
@@ -967,6 +1024,7 @@ export function ChatView({ agentId, folder, sessionId, onSessionCreated, initial
                 onViewDetails={handleViewToolDetails}
                 pendingQuestion={pendingQ}
                 onAnswer={pendingQ ? handleQuestionAnswer : undefined}
+                onSkip={pendingQ ? handleQuestionSkip : undefined}
               />
             );
           }
@@ -1087,7 +1145,7 @@ export function ChatView({ agentId, folder, sessionId, onSessionCreated, initial
             textAlign: 'left'
           }}
         >
-          {messages
+          {messagesToRender
             .filter(msg => msg.type !== 'tool_result_carrier') // Don't render carrier messages
             .map((message, index) => (
           <div key={message.uuid || index}>
@@ -1359,8 +1417,12 @@ export function ChatView({ agentId, folder, sessionId, onSessionCreated, initial
             value={inputValue}
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
-            placeholder={isSending ? 'Sending...' : 'Type a message... (Shift+Enter for newline)'}
-            disabled={isSending}
+            placeholder={
+              isSending ? 'Sending...' :
+              hasPendingQuestion ? 'Claude has a question... please answer above ↑' :
+              'Type a message... (Shift+Enter for newline)'
+            }
+            disabled={isSending || hasPendingQuestion}
             rows={1}
             style={{
               flex: 1,
@@ -1381,14 +1443,14 @@ export function ChatView({ agentId, folder, sessionId, onSessionCreated, initial
           />
           <button
             onClick={handleSend}
-            disabled={isSending || !inputValue.trim()}
+            disabled={isSending || !inputValue.trim() || hasPendingQuestion}
             style={{
               padding: '0.75rem 1.5rem',
               borderRadius: '8px',
               border: 'none',
-              background: isSending || !inputValue.trim() ? '#333' : '#f97316',
-              color: isSending || !inputValue.trim() ? '#666' : '#fff',
-              cursor: isSending || !inputValue.trim() ? 'not-allowed' : 'pointer',
+              background: isSending || !inputValue.trim() || hasPendingQuestion ? '#333' : '#f97316',
+              color: isSending || !inputValue.trim() || hasPendingQuestion ? '#666' : '#fff',
+              cursor: isSending || !inputValue.trim() || hasPendingQuestion ? 'not-allowed' : 'pointer',
               fontWeight: 500,
               transition: 'background 0.15s ease'
             }}

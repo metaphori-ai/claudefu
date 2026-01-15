@@ -5,6 +5,23 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3] - 2025-01-15
+
+### Added
+- **Skip button** for AskUserQuestion - allows users to ignore questions and continue
+- **Prompt area hint** - shows "Claude has a question... please answer above ↑" when waiting for answer
+- **Submitting indicator** - spinner and "Submitting..." text after clicking Submit
+
+### Fixed
+- **Post-question text hidden** - Claude's error response after failed AskUserQuestion is now hidden until answered
+- **Submit button overlay bug** - button now properly hides after submission with "Submitting..." indicator
+- **Stuck in Submitting state** - reload conversation after answering to get fresh state
+- **Question shows as Skipped** - explicitly set `is_error: false` in JSONL patch (not just delete)
+
+### Changed
+- Input area disabled when there's a pending question
+- Cleaned up debug logging in convert.go
+
 ## [0.2.2] - 2025-01-14
 
 ### Added

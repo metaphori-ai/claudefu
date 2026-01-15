@@ -4,6 +4,7 @@
 package types
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 )
@@ -255,10 +256,21 @@ func extractContentBlock(blockMap map[string]any) *ContentBlock {
 
 	case "tool_result":
 		resultContent := extractToolResultContent(blockMap["content"])
-		isError, _ := blockMap["is_error"].(bool)
+		// Handle is_error which should be a bool but check for edge cases
+		isError := false
+		if isErrVal, ok := blockMap["is_error"]; ok {
+			switch v := isErrVal.(type) {
+			case bool:
+				isError = v
+			default:
+				// Unexpected type - log and treat as false
+				fmt.Printf("[WARN] tool_result is_error unexpected type: %T value: %v\n", isErrVal, isErrVal)
+			}
+		}
+		toolUseID := getString(blockMap, "tool_use_id")
 		return &ContentBlock{
 			Type:      "tool_result",
-			ToolUseID: getString(blockMap, "tool_use_id"),
+			ToolUseID: toolUseID,
 			Content:   resultContent,
 			IsError:   isError,
 		}
