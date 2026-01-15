@@ -45,7 +45,7 @@ type ContentBlock struct {
 	// Tool result block fields (type: "tool_result")
 	ToolUseID string `json:"tool_use_id,omitempty"` // References the tool_use block ID
 	Content   any    `json:"content,omitempty"`     // Result content (string or structured)
-	IsError   bool   `json:"is_error,omitempty"`    // True if tool execution failed
+	IsError   bool   `json:"is_error"`    // True if tool execution failed (must not use omitempty!)
 
 	// Image block fields (type: "image")
 	Source *ImageSource `json:"source,omitempty"` // Image source data

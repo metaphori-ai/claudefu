@@ -90,7 +90,7 @@ export namespace types {
 	    input?: any;
 	    tool_use_id?: string;
 	    content?: any;
-	    is_error?: boolean;
+	    is_error: boolean;
 	    source?: ImageSource;
 	    thinking?: string;
 	    signature?: string;
