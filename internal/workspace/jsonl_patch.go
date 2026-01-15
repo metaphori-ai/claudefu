@@ -14,7 +14,8 @@ import (
 // The function:
 // 1. Finds the JSONL line with the failed tool_result matching toolUseID
 // 2. Rewrites it with the success format (no is_error, formatted content, object toolUseResult)
-// 3. Writes the modified file back
+// 3. Deletes stale assistant messages that followed the failed tool_result
+// 4. Writes the modified file back
 func PatchQuestionAnswer(folder, sessionID, toolUseID string, questions []map[string]any, answers map[string]string) error {
 	// Build JSONL path
 	encodedName := encodeProjectPath(folder)
@@ -28,6 +29,7 @@ func PatchQuestionAnswer(folder, sessionID, toolUseID string, questions []map[st
 
 	lines := strings.Split(string(data), "\n")
 	found := false
+	patchedLineIdx := -1
 
 	// Find and patch the line with matching tool_use_id
 	for i, line := range lines {
@@ -114,6 +116,7 @@ func PatchQuestionAnswer(folder, sessionID, toolUseID string, questions []map[st
 		}
 
 		lines[i] = string(patchedLine)
+		patchedLineIdx = i
 		found = true
 		break
 	}
@@ -121,6 +124,10 @@ func PatchQuestionAnswer(folder, sessionID, toolUseID string, questions []map[st
 	if !found {
 		return fmt.Errorf("tool_use_id not found in session: %s", toolUseID)
 	}
+
+	// 4. Delete stale assistant messages after the patched line
+	// These are Claude's responses to what it thought was a failed tool call
+	lines = deleteStaleAssistantMessages(lines, patchedLineIdx)
 
 	// Write the modified file back
 	output := strings.Join(lines, "\n")
@@ -130,6 +137,105 @@ func PatchQuestionAnswer(folder, sessionID, toolUseID string, questions []map[st
 
 	fmt.Printf("[PATCH] Successfully wrote patched JSONL to %s\n", sessionPath)
 	return nil
+}
+
+// deleteStaleAssistantMessages removes assistant messages that come after the patched
+// tool_result line. These are Claude's responses to the original failed AskUserQuestion,
+// which are now invalid since we patched it to be successful.
+// Stops when it hits a real user message (not just a tool_result carrier).
+func deleteStaleAssistantMessages(lines []string, patchedIdx int) []string {
+	if patchedIdx < 0 || patchedIdx >= len(lines)-1 {
+		return lines
+	}
+
+	// Find lines to delete (assistant messages until we hit a real user message)
+	deleteStart := -1
+	deleteEnd := -1
+
+	for i := patchedIdx + 1; i < len(lines); i++ {
+		line := lines[i]
+		if line == "" {
+			continue
+		}
+
+		var event map[string]any
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			continue
+		}
+
+		eventType, _ := event["type"].(string)
+
+		switch eventType {
+		case "assistant":
+			// Mark assistant messages for deletion
+			if deleteStart == -1 {
+				deleteStart = i
+			}
+			deleteEnd = i
+			fmt.Printf("[PATCH] Marking stale assistant message at line %d for deletion\n", i)
+
+		case "user":
+			// Check if this is a real user message or just a tool_result carrier
+			if isRealUserMessage(event) {
+				// Stop - this is the user's actual message after answering
+				goto done
+			}
+			// Tool result carrier - continue looking
+
+		case "queue-operation":
+			// These can be deleted along with assistant messages
+			if deleteStart != -1 {
+				deleteEnd = i
+			}
+
+		default:
+			// Unknown type - stop to be safe
+			goto done
+		}
+	}
+
+done:
+	// Remove the marked lines
+	if deleteStart != -1 && deleteEnd >= deleteStart {
+		fmt.Printf("[PATCH] Deleting lines %d-%d (stale responses)\n", deleteStart, deleteEnd)
+		lines = append(lines[:deleteStart], lines[deleteEnd+1:]...)
+	}
+
+	return lines
+}
+
+// isRealUserMessage checks if a user event contains actual user content
+// (not just tool_result blocks which are auto-generated)
+func isRealUserMessage(event map[string]any) bool {
+	message, ok := event["message"].(map[string]any)
+	if !ok {
+		return false
+	}
+
+	content := message["content"]
+
+	// String content = real user message
+	if _, ok := content.(string); ok {
+		return true
+	}
+
+	// Array content - check if it has text blocks (real user content)
+	contentArr, ok := content.([]any)
+	if !ok {
+		return false
+	}
+
+	for _, block := range contentArr {
+		blockMap, ok := block.(map[string]any)
+		if !ok {
+			continue
+		}
+		if blockMap["type"] == "text" {
+			return true
+		}
+	}
+
+	return false
 }
 
 // formatAnswerContent creates the formatted answer content for the tool_result.

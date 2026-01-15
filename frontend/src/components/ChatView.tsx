@@ -58,6 +58,7 @@ interface Message {
   isPending?: boolean;  // True for optimistic messages sent from ClaudeFu
   isFailed?: boolean;   // True if send failed
   pendingQuestion?: PendingQuestion;  // Non-null if this message contains a failed AskUserQuestion
+  isSynthetic?: boolean;  // True if model="<synthetic>" (e.g., "No response requested.")
 }
 
 interface ChatViewProps {
@@ -146,6 +147,7 @@ export function ChatView({ agentId, folder, sessionId, onSessionCreated, initial
   const processedUUIDsRef = useRef<Set<string>>(new Set());   // Track already processed UUIDs to prevent duplicates
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);  // Debounce rapid fsnotify events
   const pendingEventDataRef = useRef<{ sessionId: string; messages: Message[] } | null>(null);  // Store pending event
+  const watcherPausedRef = useRef<boolean>(false);  // Pause watcher during JSONL patching to avoid stale data
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -180,6 +182,12 @@ export function ChatView({ agentId, folder, sessionId, onSessionCreated, initial
     // Listen for new messages and append them (EventEnvelope structure)
     // The watcher sends session:messages for the active session
     const handleSessionMessages = (envelope: { sessionId?: string; payload?: { messages?: Message[] } }) => {
+      // Skip if watcher is paused (during JSONL patching)
+      if (watcherPausedRef.current) {
+        console.log('handleSessionMessages: SKIPPED (watcher paused for patching)');
+        return;
+      }
+
       const data = { sessionId: envelope.sessionId || '', messages: envelope.payload?.messages || [] };
       console.log('handleSessionMessages called:', {
         dataSessionId: data.sessionId,
@@ -418,6 +426,23 @@ export function ChatView({ agentId, folder, sessionId, onSessionCreated, initial
         lastMsg: msgs?.[msgs?.length - 1]?.type
       });
 
+      // DEBUG: Log tool_result blocks and their is_error values
+      if (msgs) {
+        for (const msg of msgs) {
+          const blocks = msg.contentBlocks || [];
+          for (const block of blocks) {
+            if (block.type === 'tool_result') {
+              console.log('[DEBUG] loadConversation tool_result:', {
+                tool_use_id: block.tool_use_id?.substring(0, 15),
+                is_error: block.is_error,
+                is_error_type: typeof block.is_error,
+                content_preview: typeof block.content === 'string' ? block.content.substring(0, 50) : 'non-string'
+              });
+            }
+          }
+        }
+      }
+
       setMessages(msgs || []);
 
       // Get plan file path from backend (it extracts from messages during processing)
@@ -549,6 +574,25 @@ export function ChatView({ agentId, folder, sessionId, onSessionCreated, initial
   // Check if there's a pending question
   const hasPendingQuestion = globalPendingQuestionMap.size > 0;
 
+  // Check if any AskUserQuestion was answered successfully (is_error=false)
+  // This is used to filter out synthetic "No response requested." messages
+  const hasSuccessfulAskUserQuestion = React.useMemo(() => {
+    for (const msg of messages) {
+      const blocks = msg.contentBlocks || [];
+      for (const block of blocks) {
+        // Find AskUserQuestion tool_use blocks
+        if (block.type === 'tool_use' && block.name === 'AskUserQuestion' && block.id) {
+          const result = globalToolResultMap.get(block.id);
+          // Check if the result exists and is successful (is_error=false)
+          if (result && result.is_error === false) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }, [messages, globalToolResultMap]);
+
   // Find the index of the message containing a pending question
   // We'll hide all messages AFTER this one (Claude's error response, etc.)
   const pendingQuestionMsgIdx = React.useMemo(() => {
@@ -562,9 +606,19 @@ export function ChatView({ agentId, folder, sessionId, onSessionCreated, initial
   }, [messages, globalPendingQuestionMap]);
 
   // Filter messages: hide all messages AFTER the one with pending question
-  const messagesToRender = pendingQuestionMsgIdx >= 0
-    ? messages.slice(0, pendingQuestionMsgIdx + 1)
-    : messages;
+  // Also filter out synthetic messages when AskUserQuestion was answered successfully
+  const messagesToRender = React.useMemo(() => {
+    let filtered = pendingQuestionMsgIdx >= 0
+      ? messages.slice(0, pendingQuestionMsgIdx + 1)
+      : messages;
+
+    // Filter out synthetic messages if AskUserQuestion was answered successfully
+    if (hasSuccessfulAskUserQuestion) {
+      filtered = filtered.filter(msg => !msg.isSynthetic);
+    }
+
+    return filtered;
+  }, [messages, pendingQuestionMsgIdx, hasSuccessfulAskUserQuestion]);
 
   // Helper to convert ImageSource to displayable URL
   const getImageUrl = (source?: ImageSource): string | null => {
@@ -593,17 +647,45 @@ export function ChatView({ agentId, folder, sessionId, onSessionCreated, initial
     answers: Record<string, string>
   ) => {
     try {
-      // AnswerQuestion patches the JSONL and resumes Claude with "question answered"
+      console.log('[PATCH] === START handleQuestionAnswer ===');
+      console.log('[PATCH] toolUseId:', toolUseId);
+      console.log('[PATCH] Current messages count:', messages.length);
+
+      // PAUSE watcher events for this session to avoid stale data during patching
+      watcherPausedRef.current = true;
+      console.log('[PATCH] Watcher paused for patching');
+
+      // Cancel any pending debounced watcher events - they have stale data
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = null;
+        pendingEventDataRef.current = null;
+        console.log('[PATCH] Cancelled pending debounced events');
+      }
+
+      // AnswerQuestion patches the JSONL, deletes stale messages, and resumes Claude
+      // This waits for Claude CLI to complete
+      console.log('[PATCH] Calling AnswerQuestion...');
       await AnswerQuestion(agentId, sessionId, toolUseId, questions, answers);
-      // Clear processed UUIDs so we can receive the updated messages
+      console.log('[PATCH] AnswerQuestion completed');
+
+      // Clear processed UUIDs so we can receive all messages fresh
       processedUUIDsRef.current.clear();
-      // Small delay to ensure file write completes before reload
-      await new Promise(resolve => setTimeout(resolve, 200));
-      // Reload conversation to get updated messages (pendingQuestion cleared)
+      console.log('[PATCH] Cleared processedUUIDs');
+
+      // Reload conversation to get the patched messages
+      console.log('[PATCH] Calling loadConversation...');
       await loadConversation();
+      console.log('[PATCH] loadConversation completed');
+
+      // RESUME watcher events now that we have clean state
+      watcherPausedRef.current = false;
+      console.log('[PATCH] Watcher resumed');
+      console.log('[PATCH] === END handleQuestionAnswer ===');
     } catch (err) {
-      console.error('Failed to answer question:', err);
-      // Could show an error toast here
+      console.error('[PATCH] Failed to answer question:', err);
+      // Ensure watcher is resumed even on error
+      watcherPausedRef.current = false;
     }
   };
 

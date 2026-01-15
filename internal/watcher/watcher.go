@@ -385,6 +385,49 @@ func (fw *FileWatcher) StopAllWatchers() {
 }
 
 // =============================================================================
+// SESSION RELOAD
+// =============================================================================
+
+// ReloadSession clears a session's cache and reloads it from the JSONL file.
+// This is called after JSONL patching to refresh the in-memory state.
+func (fw *FileWatcher) ReloadSession(folder, sessionID string) error {
+	fw.mu.RLock()
+	rt := fw.runtime
+	agentID, ok := fw.folderToAgentID[folder]
+	fw.mu.RUnlock()
+
+	if rt == nil {
+		return fmt.Errorf("runtime not set")
+	}
+	if !ok {
+		return fmt.Errorf("agent not found for folder: %s", folder)
+	}
+
+	// Build JSONL file path
+	sessionsDir := GetSessionsDir(folder)
+	filePath := filepath.Join(sessionsDir, sessionID+".jsonl")
+
+	fmt.Printf("[DEBUG] ReloadSession: clearing and reloading agent=%s session=%s from %s\n",
+		agentID[:8], sessionID[:8], filePath)
+
+	// Clear the session cache in runtime
+	rt.ClearSession(agentID, sessionID)
+
+	// Reload messages from JSONL
+	messages, filePos := fw.loadInitialMessages(filePath)
+	if len(messages) > 0 {
+		rt.AppendMessages(agentID, sessionID, messages)
+	}
+	rt.SetFilePosition(agentID, sessionID, filePos)
+
+	// Mark initial load complete
+	rt.MarkInitialLoadDone(agentID, sessionID)
+
+	fmt.Printf("[DEBUG] ReloadSession: loaded %d messages, filePos=%d\n", len(messages), filePos)
+	return nil
+}
+
+// =============================================================================
 // FILE READING
 // =============================================================================
 

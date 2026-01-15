@@ -224,12 +224,16 @@ func convertAssistantToMessage(event *AssistantEvent) *Message {
 		return nil
 	}
 
+	// Check if this is a synthetic message (model="<synthetic>")
+	isSynthetic := event.Message.Model == "<synthetic>"
+
 	return &Message{
 		Type:          "assistant",
 		Content:       content,
 		ContentBlocks: contentBlocks,
 		Timestamp:     event.Timestamp,
 		UUID:          event.UUID,
+		IsSynthetic:   isSynthetic,
 	}
 }
 

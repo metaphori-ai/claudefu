@@ -711,6 +711,35 @@ func (rt *WorkspaceRuntime) Clear() {
 	rt.activeSessionID = ""
 }
 
+// ClearSession clears a session's message cache and resets its state.
+// This is called after JSONL patching to force a reload from disk.
+func (rt *WorkspaceRuntime) ClearSession(agentID, sessionID string) {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+
+	agentState, ok := rt.agentStates[agentID]
+	if !ok {
+		fmt.Printf("[DEBUG] ClearSession: agent %s not found\n", agentID)
+		return
+	}
+
+	session, ok := agentState.Sessions[sessionID]
+	if !ok {
+		fmt.Printf("[DEBUG] ClearSession: session %s not found for agent %s\n", sessionID, agentID)
+		return
+	}
+
+	fmt.Printf("[DEBUG] ClearSession: clearing %d messages for agent=%s session=%s\n",
+		len(session.Messages), agentID[:8], sessionID[:8])
+
+	// Clear messages and reset state for reload
+	session.Messages = make([]types.Message, 0)
+	session.FilePosition = 0
+	session.InitialLoadDone = false
+	session.PlanFilePath = ""
+	// Keep ViewedIndex and LastViewedAt - these represent user's read state
+}
+
 // =============================================================================
 // PENDING QUESTION DETECTION
 // =============================================================================

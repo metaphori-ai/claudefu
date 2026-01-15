@@ -18,6 +18,7 @@ type Message struct {
 	IsCompaction      bool             `json:"isCompaction,omitempty"`
 	CompactionPreview string           `json:"compactionPreview,omitempty"`
 	PendingQuestion   *PendingQuestion `json:"pendingQuestion,omitempty"` // Non-nil if AskUserQuestion failed (interactive mode)
+	IsSynthetic       bool             `json:"isSynthetic,omitempty"`     // True if model="<synthetic>" (e.g., "No response requested.")
 }
 
 // PendingQuestion tracks a failed AskUserQuestion tool call that needs user interaction.

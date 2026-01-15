@@ -799,7 +799,16 @@ func (a *App) AnswerQuestion(agentID, sessionID, toolUseID string, questions []m
 		return fmt.Errorf("failed to patch JSONL: %w", err)
 	}
 
-	// Step 2: Resume the session with "question answered" to trigger Claude continuation
+	// Step 2: Reload session cache from the patched JSONL file
+	// This ensures GetMessages returns fresh data with is_error=false
+	if a.watcher != nil {
+		if err := a.watcher.ReloadSession(agent.Folder, sessionID); err != nil {
+			fmt.Printf("[WARN] Failed to reload session after patch: %v\n", err)
+			// Continue anyway - the data is on disk, worst case user refreshes
+		}
+	}
+
+	// Step 3: Resume the session with "question answered" to trigger Claude continuation
 	return a.claude.SendMessage(agent.Folder, sessionID, "question answered", false)
 }
 

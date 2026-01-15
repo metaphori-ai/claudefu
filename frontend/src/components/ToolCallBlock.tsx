@@ -162,9 +162,21 @@ function AskUserQuestionBlock({ block, result, pendingQuestion, onAnswer, onSkip
   const questions = pendingQuestion?.questions || block.input?.questions || [];
   const isPending = !!pendingQuestion;
 
+  // DEBUG: Log the result state for AskUserQuestion
+  console.log('[DEBUG] AskUserQuestionBlock render:', {
+    toolUseId: block.id?.substring(0, 15),
+    isPending,
+    hasResult: !!result,
+    result_is_error: result?.is_error,
+    result_is_error_type: typeof result?.is_error,
+    result_tool_use_id: result?.tool_use_id?.substring(0, 15)
+  });
+
   // Determine status: pending (waiting), skipped (is_error but conversation continued), or answered
   const isSkipped = !isPending && result?.is_error === true;
   const isAnswered = !isPending && !isSkipped;
+
+  console.log('[DEBUG] AskUserQuestionBlock status:', { isSkipped, isAnswered, isPending });
 
   // Parse answers from result content for read-only mode
   let completedAnswers: Record<string, string> = {};
