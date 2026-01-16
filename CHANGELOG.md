@@ -5,6 +5,18 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.7] - 2025-01-16
+
+### Added
+- **Homebrew distribution** - Install via `brew tap metaphori-ai/claudefu && brew install --cask claudefu`
+- **Release script** - `./scripts/release.sh v0.2.7` builds, tags, releases, and updates Homebrew tap
+- **Sessions dialog improvements** - New Session (+) and Refresh buttons in header
+- **Workspace dropdown enhancements** - Rename Workspace option with keyboard shortcut hint (⌘S)
+- **Keyboard shortcut hints** - New Workspace (⌘N) shown in dropdown
+
+### Fixed
+- **New workspace agent assignment** - Call `SwitchWorkspace` before adding agents so they're assigned to the correct workspace
+
 ## [0.2.6] - 2025-01-16
 
 ### Fixed
