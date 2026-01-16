@@ -11,6 +11,7 @@ import (
 	wailsrt "github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"claudefu/internal/auth"
+	"claudefu/internal/mcpserver"
 	"claudefu/internal/providers"
 	"claudefu/internal/runtime"
 	"claudefu/internal/settings"
@@ -30,6 +31,7 @@ type App struct {
 	claude           *providers.ClaudeCodeService
 	rt               *runtime.WorkspaceRuntime
 	currentWorkspace *workspace.Workspace
+	mcpServer        *mcpserver.MCPService
 }
 
 // NewApp creates a new App application struct
@@ -75,7 +77,11 @@ func (a *App) startup(ctx context.Context) {
 	a.emitLoadingStatus("Initializing Claude CLI...")
 	a.initializeClaude()
 
-	// Step 7: Emit initial state to frontend
+	// Step 7: Initialize MCP server for inter-agent communication
+	a.emitLoadingStatus("Starting MCP server...")
+	a.initializeMCPServer()
+
+	// Step 8: Emit initial state to frontend
 	a.emitInitialState()
 
 	wailsrt.LogInfo(ctx, fmt.Sprintf("ClaudeFu initialized. Config path: %s", a.settings.GetConfigPath()))
@@ -198,6 +204,46 @@ func (a *App) initializeClaude() {
 	}
 }
 
+// initializeMCPServer initializes the MCP server for inter-agent communication
+func (a *App) initializeMCPServer() {
+	// Default port 9315 for MCP server
+	port := 9315
+	// Inbox databases stored in ~/.claudefu/inbox/
+	inboxPath := filepath.Join(a.settings.GetConfigPath(), "inbox")
+	a.mcpServer = mcpserver.NewMCPService(port, inboxPath)
+
+	// Set up dependencies
+	a.mcpServer.SetClaudeService(a.claude)
+	a.mcpServer.SetWorkspaceGetter(func() *workspace.Workspace {
+		return a.currentWorkspace
+	})
+
+	// Set up emit function to forward events to Wails
+	a.mcpServer.SetEmitFunc(func(envelope types.EventEnvelope) {
+		// Add workspace ID to envelope if available
+		if a.currentWorkspace != nil {
+			envelope.WorkspaceID = a.currentWorkspace.ID
+		}
+		wailsrt.EventsEmit(a.ctx, envelope.EventType, envelope)
+	})
+
+	// Start the server
+	if err := a.mcpServer.Start(); err != nil {
+		wailsrt.LogWarning(a.ctx, fmt.Sprintf("Failed to start MCP server: %v", err))
+	} else {
+		wailsrt.LogInfo(a.ctx, fmt.Sprintf("MCP server started on port %d", port))
+		// Configure ClaudeCodeService to inject MCP config into spawned processes
+		a.claude.SetMCPServerPort(port)
+	}
+
+	// Load inbox for current workspace
+	if a.currentWorkspace != nil {
+		if err := a.mcpServer.LoadInbox(a.currentWorkspace.ID); err != nil {
+			wailsrt.LogWarning(a.ctx, fmt.Sprintf("Failed to load inbox: %v", err))
+		}
+	}
+}
+
 // emitInitialState emits the workspace:loaded event with all initial state
 func (a *App) emitInitialState() {
 	if a.currentWorkspace == nil || a.rt == nil {
@@ -236,6 +282,141 @@ func (a *App) emitInitialState() {
 		"sessions":     sessionsMap,
 		"unreadCounts": unreadMap,
 	})
+}
+
+// shutdown is called when the app is closing
+func (a *App) shutdown(ctx context.Context) {
+	// Stop MCP server
+	if a.mcpServer != nil {
+		a.mcpServer.Stop()
+	}
+
+	// Stop file watchers
+	if a.watcher != nil {
+		a.watcher.StopAllWatchers()
+	}
+}
+
+// =============================================================================
+// MCP INBOX METHODS (Bound to frontend)
+// =============================================================================
+
+// GetInboxMessages returns all messages in an agent's inbox
+func (a *App) GetInboxMessages(agentID string) []mcpserver.InboxMessage {
+	if a.mcpServer == nil {
+		return []mcpserver.InboxMessage{}
+	}
+	return a.mcpServer.GetInbox().GetMessages(agentID)
+}
+
+// GetInboxUnreadCount returns the number of unread inbox messages for an agent
+func (a *App) GetInboxUnreadCount(agentID string) int {
+	if a.mcpServer == nil {
+		return 0
+	}
+	return a.mcpServer.GetInbox().GetUnreadCount(agentID)
+}
+
+// GetInboxTotalCount returns the total number of inbox messages for an agent
+func (a *App) GetInboxTotalCount(agentID string) int {
+	if a.mcpServer == nil {
+		return 0
+	}
+	return a.mcpServer.GetInbox().GetTotalCount(agentID)
+}
+
+// MarkInboxMessageRead marks an inbox message as read
+func (a *App) MarkInboxMessageRead(agentID, messageID string) bool {
+	if a.mcpServer == nil {
+		return false
+	}
+	return a.mcpServer.GetInbox().MarkRead(agentID, messageID)
+}
+
+// DeleteInboxMessage removes an inbox message
+func (a *App) DeleteInboxMessage(agentID, messageID string) bool {
+	if a.mcpServer == nil {
+		return false
+	}
+	deleted := a.mcpServer.GetInbox().DeleteMessage(agentID, messageID)
+	if deleted {
+		// Emit updated unread count
+		wailsrt.EventsEmit(a.ctx, "mcp:inbox", types.EventEnvelope{
+			AgentID:   agentID,
+			EventType: "mcp:inbox",
+			Payload: map[string]any{
+				"unreadCount": a.mcpServer.GetInbox().GetUnreadCount(agentID),
+			},
+		})
+	}
+	return deleted
+}
+
+// InjectInboxMessage sends an inbox message to a Claude session
+func (a *App) InjectInboxMessage(agentID, sessionID, messageID string) error {
+	if a.mcpServer == nil {
+		return fmt.Errorf("MCP server not initialized")
+	}
+	if a.claude == nil {
+		return fmt.Errorf("claude service not initialized")
+	}
+
+	// Get the message
+	msg := a.mcpServer.GetInbox().GetMessage(agentID, messageID)
+	if msg == nil {
+		return fmt.Errorf("message not found: %s", messageID)
+	}
+
+	// Get agent folder
+	agent := a.getAgentByID(agentID)
+	if agent == nil {
+		return fmt.Errorf("agent not found: %s", agentID)
+	}
+
+	// Format the injected message with context
+	formattedMsg := fmt.Sprintf("[Message from %s]\n\n%s", msg.FromAgentName, msg.Message)
+
+	// Send to Claude session
+	if err := a.claude.SendMessage(agent.Folder, sessionID, formattedMsg, false); err != nil {
+		return err
+	}
+
+	// Mark as read and delete after injection
+	a.mcpServer.GetInbox().MarkRead(agentID, messageID)
+	a.mcpServer.GetInbox().DeleteMessage(agentID, messageID)
+
+	// Emit updated count
+	wailsrt.EventsEmit(a.ctx, "mcp:inbox", types.EventEnvelope{
+		AgentID:   agentID,
+		EventType: "mcp:inbox",
+		Payload: map[string]any{
+			"unreadCount": a.mcpServer.GetInbox().GetUnreadCount(agentID),
+		},
+	})
+
+	return nil
+}
+
+// GetMCPServerPort returns the port the MCP server is running on
+func (a *App) GetMCPServerPort() int {
+	if a.mcpServer == nil {
+		return 0
+	}
+	return a.mcpServer.GetPort()
+}
+
+// MarkAllInboxRead marks all inbox messages for an agent as read
+func (a *App) MarkAllInboxRead(agentID string) {
+	if a.mcpServer != nil {
+		a.mcpServer.GetInbox().MarkAllRead(agentID)
+	}
+}
+
+// ClearAgentInbox clears all messages in an agent's inbox
+func (a *App) ClearAgentInbox(agentID string) {
+	if a.mcpServer != nil {
+		a.mcpServer.GetInbox().Clear(agentID)
+	}
 }
 
 // =============================================================================
@@ -440,7 +621,15 @@ func (a *App) SwitchWorkspace(workspaceID string) (*workspace.Workspace, error) 
 	// Step 8: Start watching all agents (emits per-agent status internally)
 	a.startWatchingAllAgents()
 
-	// Step 9: Emit initial state
+	// Step 9: Restart MCP server and load inbox for new workspace
+	if a.mcpServer != nil {
+		a.mcpServer.Restart()
+		if err := a.mcpServer.LoadInbox(ws.ID); err != nil {
+			wailsrt.LogWarning(a.ctx, fmt.Sprintf("Failed to load inbox for workspace: %v", err))
+		}
+	}
+
+	// Step 10: Emit initial state
 	a.emitInitialState()
 
 	return ws, nil

@@ -1,7 +1,9 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { types } from '../../wailsjs/go/models';
+import { ClipboardSetText } from '../../wailsjs/runtime/runtime';
 
 type Session = types.Session;
+type SortOrder = 'recency' | 'messages';
 
 interface SessionsDialogProps {
   isOpen: boolean;
@@ -23,6 +25,20 @@ export function SessionsDialog({
   onClose
 }: SessionsDialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
+  const [sortOrder, setSortOrder] = useState<SortOrder>('recency');
+  const [hideEmpty, setHideEmpty] = useState(true);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const handleCopySessionId = async (e: React.MouseEvent, sessionId: string) => {
+    e.stopPropagation();
+    try {
+      await ClipboardSetText(sessionId);
+      setCopiedId(sessionId);
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch (err) {
+      console.error('Failed to copy session ID:', err);
+    }
+  };
 
   // Close on Escape key
   useEffect(() => {
@@ -76,6 +92,19 @@ export function SessionsDialog({
     return customName || session.preview || 'New conversation';
   };
 
+  // Filter and sort sessions
+  const filteredAndSortedSessions = sessions
+    .filter(s => !hideEmpty || s.messageCount > 0)
+    .sort((a, b) => {
+      if (sortOrder === 'recency') {
+        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+      } else {
+        return b.messageCount - a.messageCount;
+      }
+    });
+
+  const hiddenCount = sessions.length - filteredAndSortedSessions.length;
+
   return (
     <div
       onClick={handleBackdropClick}
@@ -109,63 +138,141 @@ export function SessionsDialog({
       >
         {/* Header */}
         <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
           padding: '1rem 1.25rem',
-          borderBottom: '1px solid #333'
+          borderBottom: '1px solid #333',
+          textAlign: 'left'
         }}>
-          <div>
-            <h2 style={{
-              margin: 0,
-              fontSize: '1rem',
-              fontWeight: 600,
-              color: '#fff'
-            }}>
-              Sessions
-            </h2>
-            <p style={{
-              margin: '0.25rem 0 0 0',
+          <div style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'space-between',
+            marginBottom: '0.75rem'
+          }}>
+            <div style={{ margin: 0, padding: 0 }}>
+              <h2 style={{
+                margin: 0,
+                padding: 0,
+                fontSize: '1rem',
+                fontWeight: 600,
+                color: '#fff'
+              }}>
+                Sessions
+              </h2>
+              <p style={{
+                margin: '0.25rem 0 0 0',
+                padding: 0,
+                fontSize: '0.8rem',
+                color: '#888'
+              }}>
+                {agentName}
+              </p>
+            </div>
+            <button
+              onClick={onClose}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#888',
+                cursor: 'pointer',
+                padding: '0.5rem',
+                fontSize: '1.25rem',
+                lineHeight: 1
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.color = '#fff'}
+              onMouseLeave={(e) => e.currentTarget.style.color = '#888'}
+            >
+              ×
+            </button>
+          </div>
+
+          {/* Controls */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '1rem'
+          }}>
+            {/* Sort controls */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
               fontSize: '0.8rem',
               color: '#888'
             }}>
-              {agentName}
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            style={{
-              background: 'none',
-              border: 'none',
+              <span>Sort:</span>
+              <button
+                onClick={() => setSortOrder('recency')}
+                style={{
+                  background: sortOrder === 'recency' ? '#333' : 'transparent',
+                  border: '1px solid #444',
+                  borderRadius: '4px',
+                  color: sortOrder === 'recency' ? '#fff' : '#888',
+                  cursor: 'pointer',
+                  padding: '0.25rem 0.5rem',
+                  fontSize: '0.75rem'
+                }}
+              >
+                Recent
+              </button>
+              <button
+                onClick={() => setSortOrder('messages')}
+                style={{
+                  background: sortOrder === 'messages' ? '#333' : 'transparent',
+                  border: '1px solid #444',
+                  borderRadius: '4px',
+                  color: sortOrder === 'messages' ? '#fff' : '#888',
+                  cursor: 'pointer',
+                  padding: '0.25rem 0.5rem',
+                  fontSize: '0.75rem'
+                }}
+              >
+                Messages
+              </button>
+            </div>
+
+            {/* Hide empty checkbox */}
+            <label style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.4rem',
+              fontSize: '0.8rem',
               color: '#888',
-              cursor: 'pointer',
-              padding: '0.5rem',
-              fontSize: '1.25rem',
-              lineHeight: 1
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.color = '#fff'}
-            onMouseLeave={(e) => e.currentTarget.style.color = '#888'}
-          >
-            ×
-          </button>
+              cursor: 'pointer'
+            }}>
+              <input
+                type="checkbox"
+                checked={hideEmpty}
+                onChange={(e) => setHideEmpty(e.target.checked)}
+                style={{
+                  cursor: 'pointer',
+                  accentColor: '#8b5cf6'
+                }}
+              />
+              Hide empty
+            </label>
+          </div>
         </div>
 
         {/* Sessions List */}
         <div style={{
           flex: 1,
           overflowY: 'auto',
-          padding: '0.5rem'
+          padding: '0.5rem',
+          textAlign: 'left'
         }}>
-          {sessions.length === 0 ? (
+          {filteredAndSortedSessions.length === 0 ? (
             <div style={{
               padding: '2rem',
               textAlign: 'center',
               color: '#666'
             }}>
-              No sessions yet. Start a conversation to create one.
+              {sessions.length === 0
+                ? 'No sessions yet. Start a conversation to create one.'
+                : 'No sessions match the current filters.'}
             </div>
           ) : (
-            sessions.map(session => (
+            filteredAndSortedSessions.map(session => (
               <div
                 key={session.id}
                 onClick={() => onSelectSession(session)}
@@ -173,12 +280,19 @@ export function SessionsDialog({
                   padding: '0.75rem 1rem',
                   borderRadius: '8px',
                   cursor: 'pointer',
-                  marginBottom: '0.25rem',
-                  background: 'transparent',
-                  transition: 'background 0.15s ease'
+                  marginBottom: '0.5rem',
+                  background: '#1f1f1f',
+                  border: '1px solid #2a2a2a',
+                  transition: 'background 0.15s ease, border-color 0.15s ease'
                 }}
-                onMouseEnter={(e) => e.currentTarget.style.background = '#252525'}
-                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = '#252525';
+                  e.currentTarget.style.borderColor = '#333';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = '#1f1f1f';
+                  e.currentTarget.style.borderColor = '#2a2a2a';
+                }}
               >
                 <div style={{
                   display: 'flex',
@@ -230,6 +344,77 @@ export function SessionsDialog({
                     }}>
                       {getSessionDisplayName(session)}
                     </div>
+                    {/* Session ID with copy button */}
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                      fontSize: '0.7rem',
+                      color: '#555',
+                      marginBottom: '0.35rem',
+                      fontFamily: 'monospace'
+                    }}>
+                      <span style={{
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
+                      }}>
+                        {session.id}
+                      </span>
+                      <button
+                        onClick={(e) => handleCopySessionId(e, session.id)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          padding: '0.15rem',
+                          color: copiedId === session.id ? '#22c55e' : '#555',
+                          flexShrink: 0,
+                          display: 'flex',
+                          alignItems: 'center'
+                        }}
+                        onMouseEnter={(e) => {
+                          if (copiedId !== session.id) {
+                            e.currentTarget.style.color = '#888';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (copiedId !== session.id) {
+                            e.currentTarget.style.color = '#555';
+                          }
+                        }}
+                        title={copiedId === session.id ? 'Copied!' : 'Copy session ID'}
+                      >
+                        {copiedId === session.id ? (
+                          <svg
+                            width="12"
+                            height="12"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                        ) : (
+                          <svg
+                            width="12"
+                            height="12"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                          </svg>
+                        )}
+                      </button>
+                    </div>
                     <div style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -272,7 +457,12 @@ export function SessionsDialog({
           color: '#555',
           textAlign: 'center'
         }}>
-          {sessions.length} session{sessions.length !== 1 ? 's' : ''}
+          {filteredAndSortedSessions.length} session{filteredAndSortedSessions.length !== 1 ? 's' : ''}
+          {hiddenCount > 0 && (
+            <span style={{ color: '#444' }}>
+              {' '}({hiddenCount} hidden)
+            </span>
+          )}
         </div>
       </div>
     </div>

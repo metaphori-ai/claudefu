@@ -65,7 +65,8 @@ func GetClaudePath() string {
 
 // ClaudeCodeService provides interaction with the Claude Code CLI
 type ClaudeCodeService struct {
-	ctx context.Context
+	ctx       context.Context
+	mcpConfig string // JSON config for --mcp-config flag (empty = disabled)
 }
 
 // NewClaudeCodeService creates a new Claude Code service
@@ -76,6 +77,34 @@ func NewClaudeCodeService(ctx context.Context) *ClaudeCodeService {
 // SetContext updates the context (called from OnStartup)
 func (s *ClaudeCodeService) SetContext(ctx context.Context) {
 	s.ctx = ctx
+}
+
+// SetMCPServerPort configures the MCP server URL for inter-agent communication
+// When set, all spawned Claude processes will include --mcp-config with this server
+func (s *ClaudeCodeService) SetMCPServerPort(port int) {
+	if port <= 0 {
+		s.mcpConfig = ""
+		return
+	}
+	// Generate inline JSON config for SSE transport
+	// Format: {"mcpServers":{"name":{"type":"sse","url":"..."}}}
+	s.mcpConfig = fmt.Sprintf(`{"mcpServers":{"claudefu":{"type":"sse","url":"http://localhost:%d/sse"}}}`, port)
+}
+
+// ClearMCPConfig disables MCP config injection
+func (s *ClaudeCodeService) ClearMCPConfig() {
+	s.mcpConfig = ""
+}
+
+// getMCPArgs returns the --mcp-config and --allowed-tools args if MCP is configured
+func (s *ClaudeCodeService) getMCPArgs() []string {
+	if s.mcpConfig == "" {
+		return nil
+	}
+	return []string{
+		"--mcp-config", s.mcpConfig,
+		"--allowed-tools", "mcp__claudefu__AgentBroadcast,mcp__claudefu__AgentQuery,mcp__claudefu__NotifyUser",
+	}
 }
 
 // SendMessage sends a message to Claude Code in the specified folder/session
@@ -114,6 +143,9 @@ func (s *ClaudeCodeService) SendMessage(folder, sessionId, message string, planM
 		"-p", message,
 	}
 
+	// Add MCP config if configured (enables inter-agent communication)
+	args = append(args, s.getMCPArgs()...)
+
 	cmd := exec.CommandContext(s.ctx, path, args...)
 	cmd.Dir = folder
 
@@ -147,12 +179,17 @@ func (s *ClaudeCodeService) NewSession(folder string) (string, error) {
 	// Use --output-format stream-json to parse the session ID from output
 	// Use acceptEdits to auto-approve file edits in non-interactive mode
 	// Note: --print with --output-format stream-json requires --verbose
-	cmd := exec.CommandContext(s.ctx, path,
+	args := []string{
 		"--print",
 		"--verbose",
 		"--permission-mode", "acceptEdits",
 		"--output-format", "stream-json",
-		"-p", "Hello! Starting a new session.")
+		"-p", "Hello! Starting a new session.",
+	}
+	// Add MCP config if configured (enables inter-agent communication)
+	args = append(args, s.getMCPArgs()...)
+
+	cmd := exec.CommandContext(s.ctx, path, args...)
 	cmd.Dir = folder
 
 	// Get stdout to parse session ID

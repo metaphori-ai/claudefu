@@ -303,14 +303,29 @@ func (fw *FileWatcher) StartWatchingAgent(agentID, folder string, lastViewedMap 
 		sessionID := strings.TrimSuffix(entry.Name(), ".jsonl")
 		filePath := filepath.Join(sessionsDir, entry.Name())
 
+		// Load initial messages first to check if this is a real session
+		messages, filePos := fw.loadInitialMessages(filePath)
+
+		// Skip summary-only sessions (no actual user/assistant messages)
+		hasRealMessages := false
+		for _, msg := range messages {
+			if msg.Type == "user" || msg.Type == "assistant" {
+				hasRealMessages = true
+				break
+			}
+		}
+		if !hasRealMessages {
+			fmt.Printf("[DEBUG] Skipping summary-only session: %s\n", sessionID)
+			continue
+		}
+
 		// Create session state in runtime
 		session := rt.GetOrCreateSessionState(agentID, sessionID)
 		if session == nil {
 			continue
 		}
 
-		// Load initial messages
-		messages, filePos := fw.loadInitialMessages(filePath)
+		// Add messages to session
 		if len(messages) > 0 {
 			rt.AppendMessages(agentID, sessionID, messages)
 		}

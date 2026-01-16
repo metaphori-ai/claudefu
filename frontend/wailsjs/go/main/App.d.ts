@@ -3,6 +3,7 @@
 import {workspace} from '../models';
 import {auth} from '../models';
 import {types} from '../models';
+import {mcpserver} from '../models';
 import {settings} from '../models';
 
 export function AddAgent(arg1:string,arg2:string):Promise<workspace.Agent>;
@@ -15,11 +16,15 @@ export function ClearAPIKey():Promise<void>;
 
 export function ClearActiveSession():Promise<void>;
 
+export function ClearAgentInbox(arg1:string):Promise<void>;
+
 export function CompleteHyperLogin(arg1:string,arg2:number):Promise<void>;
 
 export function ConfirmDialog(arg1:string,arg2:string):Promise<boolean>;
 
 export function CreateWorkspace(arg1:string):Promise<workspace.Workspace>;
+
+export function DeleteInboxMessage(arg1:string,arg2:string):Promise<boolean>;
 
 export function GetAgent(arg1:string):Promise<workspace.Agent>;
 
@@ -37,6 +42,14 @@ export function GetConversation(arg1:string,arg2:string):Promise<Array<types.Mes
 
 export function GetCurrentWorkspaceID():Promise<string>;
 
+export function GetInboxMessages(arg1:string):Promise<Array<mcpserver.InboxMessage>>;
+
+export function GetInboxTotalCount(arg1:string):Promise<number>;
+
+export function GetInboxUnreadCount(arg1:string):Promise<number>;
+
+export function GetMCPServerPort():Promise<number>;
+
 export function GetPlanFilePath(arg1:string,arg2:string):Promise<string>;
 
 export function GetSessionName(arg1:string,arg2:string):Promise<string>;
@@ -51,9 +64,15 @@ export function GetUnreadCounts(arg1:string):Promise<Record<string, number>>;
 
 export function GetVersion():Promise<string>;
 
+export function InjectInboxMessage(arg1:string,arg2:string,arg3:string):Promise<void>;
+
 export function IsClaudeInstalled():Promise<boolean>;
 
 export function Logout():Promise<void>;
+
+export function MarkAllInboxRead(arg1:string):Promise<void>;
+
+export function MarkInboxMessageRead(arg1:string,arg2:string):Promise<boolean>;
 
 export function MarkSessionViewed(arg1:string,arg2:string):Promise<void>;
 

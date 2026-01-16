@@ -5,6 +5,14 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.6] - 2025-01-16
+
+### Fixed
+- **Context compaction card not displaying** - Compaction messages have both `isCompactSummary: true` AND `isVisibleInTranscriptOnly: true`. Fixed by exempting compaction summaries from the metadata filter.
+- **CLI command metadata showing as user messages** - Filter out slash command invocations (`<command-name>...`) and local command output (`<local-command-...`) from chat display.
+- **Summary events incorrectly displayed** - Summary events with `leafUuid` are reference pointers to other sessions, not actual content. Now properly filtered out instead of showing as "Context Compaction Summary".
+- **Ghost sessions appearing** - Sessions containing only summary/metadata events no longer appear in the session list.
+
 ## [0.2.5] - 2025-01-15
 
 ### Fixed

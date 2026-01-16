@@ -17,13 +17,18 @@ import (
 // Agent represents a configured agent in a workspace
 type Agent struct {
 	ID                string `json:"id"`                          // UUID for stable identification
-	Name              string `json:"name"`
+	Name              string `json:"name"`                        // Display name
 	Folder            string `json:"folder"`                      // Project folder path this agent monitors
 	WatchMode         string `json:"watchMode,omitempty"`         // "file" or "stream" (default: file)
 	SelectedSessionID string `json:"selectedSessionId,omitempty"` // Last viewed session for this agent
 	Provider          string `json:"provider,omitempty"`          // claude_code, anthropic, openai
 	Specialization    string `json:"specialization,omitempty"`    // backend, frontend, devops, etc.
 	ClaudeMdPath      string `json:"claudeMdPath,omitempty"`
+
+	// MCP Inter-Agent Communication Fields
+	MCPSlug        string `json:"mcpSlug,omitempty"`        // Custom MCP identifier (e.g., "bff"). Auto-derived from name if empty
+	MCPEnabled     *bool  `json:"mcpEnabled,omitempty"`     // Participates in inter-agent communication (default: true)
+	MCPDescription string `json:"mcpDescription,omitempty"` // What this agent knows (e.g., "handles auth, sessions")
 }
 
 // GetWatchMode returns the agent's watch mode, defaulting to "file"
@@ -34,6 +39,38 @@ func (a *Agent) GetWatchMode() string {
 	return a.WatchMode
 }
 
+// GetMCPEnabled returns whether this agent participates in MCP communication (default: true)
+func (a *Agent) GetMCPEnabled() bool {
+	if a.MCPEnabled == nil {
+		return true // Default to enabled
+	}
+	return *a.MCPEnabled
+}
+
+// GetSlug returns the MCP slug for this agent.
+// If MCPSlug is set, returns it; otherwise derives from Name.
+func (a *Agent) GetSlug() string {
+	if a.MCPSlug != "" {
+		return a.MCPSlug
+	}
+	return slugify(a.Name)
+}
+
+// slugify converts a name to a URL-friendly slug
+// e.g., "TrueMemory BFF" -> "truememory-bff"
+func slugify(name string) string {
+	slug := strings.ToLower(name)
+	slug = strings.ReplaceAll(slug, " ", "-")
+	// Remove non-alphanumeric characters except dashes
+	var result strings.Builder
+	for _, r := range slug {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+			result.WriteRune(r)
+		}
+	}
+	return result.String()
+}
+
 // SelectedSession tracks the last viewed session
 type SelectedSession struct {
 	AgentID   string `json:"agentId,omitempty"`
@@ -41,19 +78,42 @@ type SelectedSession struct {
 	Folder    string `json:"folder,omitempty"`
 }
 
+// MCPConfig holds MCP server configuration for a workspace
+type MCPConfig struct {
+	Enabled bool `json:"enabled"` // Master switch for MCP server (default: true)
+	Port    int  `json:"port"`    // SSE server port (default: 9315)
+}
+
+// GetPort returns the configured port or default (9315)
+func (c *MCPConfig) GetPort() int {
+	if c == nil || c.Port == 0 {
+		return 9315
+	}
+	return c.Port
+}
+
+// IsEnabled returns whether MCP is enabled (default: true)
+func (c *MCPConfig) IsEnabled() bool {
+	if c == nil {
+		return true // Default to enabled
+	}
+	return c.Enabled
+}
+
 // Workspace represents a saved workspace configuration
 type Workspace struct {
-	Version         int              `json:"version"`                   // Schema version (2 = with agent UUIDs)
+	Version         int              `json:"version"`                   // Schema version (3 = with MCP config)
 	ID              string           `json:"id"`
 	Name            string           `json:"name"`
 	Agents          []Agent          `json:"agents"`
+	MCPConfig       *MCPConfig       `json:"mcpConfig,omitempty"`       // MCP server configuration
 	SelectedSession *SelectedSession `json:"selectedSession,omitempty"`
 	Created         time.Time        `json:"created"`
 	LastOpened      time.Time        `json:"lastOpened"`
 }
 
 // CurrentWorkspaceVersion is the latest workspace schema version
-const CurrentWorkspaceVersion = 2
+const CurrentWorkspaceVersion = 3
 
 // WorkspaceSummary is a minimal reference for listing workspaces
 type WorkspaceSummary struct {
@@ -300,6 +360,11 @@ func (m *Manager) GetSessions(folder string) ([]Session, error) {
 
 		// Get preview and count from file
 		preview, count := getSessionPreview(filePath)
+
+		// Skip summary-only sessions (no actual user/assistant messages)
+		if count == 0 {
+			continue
+		}
 
 		sessions = append(sessions, Session{
 			SessionID:    sessionID,

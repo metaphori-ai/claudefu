@@ -1,9 +1,12 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import './App.css';
 import { Sidebar } from './components/Sidebar';
 import { ChatView } from './components/ChatView';
 import { InputDialog } from './components/InputDialog';
 import { WorkspaceDropdown } from './components/WorkspaceDropdown';
+import { MCPSettingsPane } from './components/MCPSettingsPane';
+import { WorkspaceProvider, SessionProvider } from './context';
+import { useWorkspace, useSession, useSelectedAgent, WailsEventHub } from './hooks';
 import {
   GetAuthStatus,
   GetSettings,
@@ -21,7 +24,7 @@ import {
   AddAgent,
   GetVersion
 } from "../wailsjs/go/main/App";
-import { EventsOn, EventsOff } from "../wailsjs/runtime/runtime";
+import { EventsOn } from "../wailsjs/runtime/runtime";
 import { workspace } from "../wailsjs/go/models";
 
 interface AuthStatus {
@@ -40,12 +43,10 @@ interface DeviceAuthInfo {
   expiresIn: number;
 }
 
-// Use the Wails-generated Agent type
-type Agent = workspace.Agent;
-
 type View = 'startup' | 'auth' | 'main';
 
-function App() {
+// Main app content that uses the context hooks
+function AppContent() {
   const [view, setView] = useState<View>('startup');
   const [version, setVersion] = useState<string>('');
   const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
@@ -57,65 +58,72 @@ function App() {
   const [deviceAuth, setDeviceAuth] = useState<DeviceAuthInfo | null>(null);
   const [loadingStatus, setLoadingStatus] = useState<string>('Initializing...');
 
-  // Workspace state
-  const [agents, setAgents] = useState<Agent[]>([]);
-  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
-  const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
-  const [workspaceName, setWorkspaceName] = useState<string>('New Workspace');
-  const [workspaceId, setWorkspaceId] = useState<string>(''); // Workspace ID (empty = unsaved new workspace)
-  const [allWorkspaces, setAllWorkspaces] = useState<workspace.WorkspaceSummary[]>([]);
+  // Local UI state
   const [saveDialogOpen, setSaveDialogOpen] = useState<boolean>(false);
-  const [reloadKey, setReloadKey] = useState<number>(0); // Increment to force ChatView remount
-  const [pendingInitialMessage, setPendingInitialMessage] = useState<string | null>(null); // Message to send after new session creation
+  const [mcpSettingsOpen, setMcpSettingsOpen] = useState<boolean>(false);
+  const [reloadKey, setReloadKey] = useState<number>(0);
+  const [pendingInitialMessage, setPendingInitialMessage] = useState<string | null>(null);
 
-  // Refs to track latest values for saveWorkspace (avoids stale closure issues)
-  const workspaceNameRef = useRef(workspaceName);
-  const workspaceIdRef = useRef(workspaceId);
-  const agentsRef = useRef(agents);
-  const selectedAgentIdRef = useRef(selectedAgentId);
-  const selectedSessionIdRef = useRef(selectedSessionId);
-  const selectedFolderRef = useRef(selectedFolder);
+  // MCP notification state
+  const [notification, setNotification] = useState<{
+    type: 'info' | 'success' | 'warning' | 'question';
+    message: string;
+    title?: string;
+  } | null>(null);
 
-  // Keep refs in sync with state
-  useEffect(() => { workspaceNameRef.current = workspaceName; }, [workspaceName]);
-  useEffect(() => { workspaceIdRef.current = workspaceId; }, [workspaceId]);
-  useEffect(() => { agentsRef.current = agents; }, [agents]);
-  useEffect(() => { selectedAgentIdRef.current = selectedAgentId; }, [selectedAgentId]);
-  useEffect(() => { selectedSessionIdRef.current = selectedSessionId; }, [selectedSessionId]);
-  useEffect(() => { selectedFolderRef.current = selectedFolder; }, [selectedFolder]);
+  // Use context hooks for workspace and session state
+  const {
+    workspaceId,
+    workspaceName,
+    allWorkspaces,
+    mcpConfig,
+    agents,
+    selectedAgentId,
+    setWorkspace,
+    setWorkspaceName,
+    setAllWorkspaces,
+    setMcpConfig,
+    addAgent,
+    removeAgent,
+    renameAgent,
+    setAgents,
+    selectAgent,
+    setAgentSelectedSession,
+  } = useWorkspace();
+
+  const {
+    selectedSessionId,
+    selectedFolder,
+    selectSession,
+    clearSelection,
+  } = useSession();
+
+  const selectedAgent = useSelectedAgent();
 
   // Clear pendingInitialMessage after it's been passed to ChatView
-  // The message is consumed on mount, so we clear it shortly after
   useEffect(() => {
     if (pendingInitialMessage) {
       const timer = setTimeout(() => {
         setPendingInitialMessage(null);
-      }, 500); // Small delay to ensure ChatView has received it
+      }, 500);
       return () => clearTimeout(timer);
     }
   }, [pendingInitialMessage]);
 
-  // Save workspace function (uses refs for latest values)
+  // Save workspace function
   const saveWorkspaceState = useCallback(async () => {
-    try {
-      // Use refs for latest values (avoids stale closure issues)
-      const id = workspaceIdRef.current;
-      if (!id) return; // Don't save if workspace has no ID (unsaved new workspace)
+    if (!workspaceId) return;
 
-      // Build selected session object if we have one
-      const selAgentId = selectedAgentIdRef.current;
-      const selSessionId = selectedSessionIdRef.current;
-      const selFolder = selectedFolderRef.current;
-      const selectedSession = selAgentId && selSessionId && selFolder
-        ? { agentId: selAgentId, sessionId: selSessionId, folder: selFolder }
+    try {
+      const selectedSession = selectedAgentId && selectedSessionId && selectedFolder
+        ? { agentId: selectedAgentId, sessionId: selectedSessionId, folder: selectedFolder }
         : undefined;
 
-      // Save workspace using Wails-generated class
       const ws = workspace.Workspace.createFrom({
-        id: id,
-        name: workspaceNameRef.current,
-        agents: agentsRef.current,
+        id: workspaceId,
+        name: workspaceName,
+        agents: agents,
+        mcpConfig: mcpConfig,
         selectedSession: selectedSession,
         created: new Date().toISOString(),
         lastOpened: new Date().toISOString()
@@ -125,7 +133,7 @@ function App() {
     } catch (err) {
       console.error('Failed to save workspace:', err);
     }
-  }, []);
+  }, [workspaceId, workspaceName, agents, mcpConfig, selectedAgentId, selectedSessionId, selectedFolder]);
 
   useEffect(() => {
     loadData();
@@ -144,7 +152,6 @@ function App() {
   // Subscribe to workspace:changed to trigger splash on workspace switch
   useEffect(() => {
     const unsubscribe = EventsOn('workspace:changed', (data: any) => {
-      // When workspace:changed with null workspaceId, show splash
       if (data?.workspaceId === null) {
         setView('startup');
         setLoadingStatus('Switching workspace...');
@@ -155,50 +162,59 @@ function App() {
     };
   }, []);
 
-  // Keyboard shortcuts: CMD-1/2/3 for agents, CMD-S to save, CMD-N for new window
+  // Subscribe to mcp:notification events for toast notifications
+  useEffect(() => {
+    const unsubscribe = EventsOn('mcp:notification', (data: { payload?: { type?: string; message?: string; title?: string } }) => {
+      if (data?.payload?.message) {
+        const notifType = data.payload.type as 'info' | 'success' | 'warning' | 'question';
+        setNotification({
+          type: notifType || 'info',
+          message: data.payload.message,
+          title: data.payload.title
+        });
+        setTimeout(() => setNotification(null), 5000);
+      }
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // CMD-S: Save workspace (open dialog)
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault();
         setSaveDialogOpen(true);
         return;
       }
 
-      // CMD-N: New workspace (clear state)
       if ((e.metaKey || e.ctrlKey) && e.key === 'n') {
         e.preventDefault();
         handleNewWorkspace();
         return;
       }
 
-      // CMD-R: Reload workspace (restart watchers, refresh state)
       if ((e.metaKey || e.ctrlKey) && e.key === 'r') {
         e.preventDefault();
         handleReloadWorkspace();
         return;
       }
 
-      // CMD-1/2/3... to select agents
       if ((e.metaKey || e.ctrlKey) && e.key >= '1' && e.key <= '9') {
         e.preventDefault();
         const index = parseInt(e.key) - 1;
         if (index < agents.length) {
           const agent = agents[index];
-          // Toggle selection - if already selected, deselect
           if (selectedAgentId === agent.id) {
-            setSelectedAgentId(null);
-            setSelectedSessionId(null);
-            setSelectedFolder(null);
+            selectAgent(null);
+            clearSelection();
           } else {
-            setSelectedAgentId(agent.id);
-            // Restore agent's last selected session if it has one
+            selectAgent(agent.id);
             if (agent.selectedSessionId) {
-              setSelectedSessionId(agent.selectedSessionId);
-              setSelectedFolder(agent.folder);
+              selectSession(agent.selectedSessionId, agent.folder);
             } else {
-              setSelectedSessionId(null);
-              setSelectedFolder(null);
+              clearSelection();
             }
           }
         }
@@ -207,20 +223,18 @@ function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [agents, selectedAgentId]);
+  }, [agents, selectedAgentId, selectAgent, selectSession, clearSelection]);
 
-  // Auto-save workspace when agents, session, or name changes
-  // Use a small delay to ensure refs are updated with latest state
+  // Auto-save workspace when state changes
   useEffect(() => {
-    if (!workspaceId) return; // Only auto-save if we have a workspace ID
+    if (!workspaceId) return;
 
-    // Debounce saves to avoid rapid successive writes
     const timeoutId = setTimeout(() => {
       saveWorkspaceState();
     }, 100);
 
     return () => clearTimeout(timeoutId);
-  }, [agents, selectedAgentId, selectedSessionId, selectedFolder, workspaceName, workspaceId, saveWorkspaceState]);
+  }, [agents, selectedAgentId, selectedSessionId, selectedFolder, workspaceName, workspaceId, mcpConfig, saveWorkspaceState]);
 
   const loadData = async () => {
     try {
@@ -235,7 +249,6 @@ function App() {
       setConfigPath(path);
       setVersion(ver);
 
-      // Load all workspaces and current workspace ID
       let workspaces: workspace.WorkspaceSummary[] = [];
       let currentId = '';
       try {
@@ -248,28 +261,25 @@ function App() {
         console.log('Failed to load workspaces');
       }
 
-      // Auto-load the current workspace (if set)
       if (currentId) {
         try {
           const ws = await SwitchWorkspace(currentId);
           if (ws) {
-            setWorkspaceName(ws.name || 'Workspace');
-            setWorkspaceId(ws.id);
-            setAgents(ws.agents || []);
-            console.log(`Loaded workspace "${ws.name}" with ${ws.agents?.length || 0} agent(s)`);
+            setWorkspace({
+              id: ws.id,
+              name: ws.name || 'Workspace',
+              agents: ws.agents || [],
+              mcpConfig: ws.mcpConfig,
+              selectedAgentId: ws.selectedSession?.agentId || null,
+            });
 
-            // Restore selected session
             if (ws.selectedSession?.agentId && ws.selectedSession?.sessionId && ws.selectedSession?.folder) {
-              setSelectedAgentId(ws.selectedSession.agentId);
-              setSelectedSessionId(ws.selectedSession.sessionId);
-              setSelectedFolder(ws.selectedSession.folder);
+              selectSession(ws.selectedSession.sessionId, ws.selectedSession.folder);
             } else {
-              // Find first agent with a saved session
               const agentWithSession = ws.agents?.find((a: any) => a.selectedSessionId);
               if (agentWithSession?.selectedSessionId) {
-                setSelectedAgentId(agentWithSession.id);
-                setSelectedSessionId(agentWithSession.selectedSessionId);
-                setSelectedFolder(agentWithSession.folder);
+                selectAgent(agentWithSession.id);
+                selectSession(agentWithSession.selectedSessionId, agentWithSession.folder);
               }
             }
           }
@@ -277,23 +287,23 @@ function App() {
           console.log('Failed to load current workspace, starting fresh');
         }
       } else if (workspaces.length > 0) {
-        // No current set, but workspaces exist - load the most recent
         try {
           const ws = await SwitchWorkspace(workspaces[0].id);
           if (ws) {
-            setWorkspaceName(ws.name || 'Workspace');
-            setWorkspaceId(ws.id);
-            setAgents(ws.agents || []);
+            setWorkspace({
+              id: ws.id,
+              name: ws.name || 'Workspace',
+              agents: ws.agents || [],
+              mcpConfig: ws.mcpConfig,
+            });
           }
         } catch (e) {
           console.log('Failed to load workspace');
         }
       } else {
-        // No workspaces exist - start with empty state
         console.log('No workspaces found, starting fresh');
       }
 
-      // Transition to main or auth view (no delay - backend loading:status shows progress)
       if (auth.isAuthenticated) {
         setView('main');
       } else {
@@ -351,71 +361,35 @@ function App() {
 
   const handleAddAgent = async (folder: string, name: string) => {
     try {
-      // Create the agent in the backend (generates UUID, starts watching)
       const newAgent = await AddAgent(name, folder);
-      setAgents(prev => [...prev, newAgent]);
+      addAgent(newAgent);
 
-      // Auto-select the agent and its newest session
       const sessions = await GetSessions(newAgent.id);
       if (sessions && sessions.length > 0) {
-        // Sessions are sorted by updatedAt (newest first)
         const newestSession = sessions[0];
-        setSelectedAgentId(newAgent.id);
-        setSelectedSessionId(newestSession.id);
-        setSelectedFolder(folder);
-        // Also save to agent for persistence
-        setAgents(prev => prev.map(agent =>
-          agent.id === newAgent.id
-            ? { ...agent, selectedSessionId: newestSession.id }
-            : agent
-        ));
+        selectAgent(newAgent.id);
+        selectSession(newestSession.id, folder);
+        setAgentSelectedSession(newAgent.id, newestSession.id);
       } else {
-        // No sessions yet, just select the agent
-        setSelectedAgentId(newAgent.id);
-        setSelectedSessionId(null);
-        setSelectedFolder(null);
+        selectAgent(newAgent.id);
+        clearSelection();
       }
     } catch (err) {
       console.error('Failed to add agent:', err);
     }
   };
 
-  const handleRenameAgent = (agentId: string, newName: string) => {
-    setAgents(prev => prev.map(agent =>
-      agent.id === agentId ? { ...agent, name: newName } : agent
-    ));
-  };
-
-  const handleRemoveAgent = (agentId: string) => {
-    setAgents(prev => prev.filter(agent => agent.id !== agentId));
-    if (selectedAgentId === agentId) {
-      setSelectedAgentId(null);
-      setSelectedSessionId(null);
-      setSelectedFolder(null);
-    }
-  };
-
   const handleSessionSelect = (agentId: string, sessionId: string, folder: string) => {
-    setSelectedAgentId(agentId);
-    setSelectedSessionId(sessionId);
-    setSelectedFolder(folder);
-    // Save selectedSessionId to the agent for persistence
-    setAgents(prev => prev.map(agent =>
-      agent.id === agentId
-        ? { ...agent, selectedSessionId: sessionId }
-        : agent
-    ));
+    selectAgent(agentId);
+    selectSession(sessionId, folder);
+    setAgentSelectedSession(agentId, sessionId);
   };
 
-  // Handler for when a new session is created from ChatView
   const handleNewSessionCreated = (newSessionId: string, initialMessage: string) => {
     console.log('New session created:', newSessionId, 'with message:', initialMessage);
-    // Store the message to send after switching
     setPendingInitialMessage(initialMessage);
-    // Switch to the new session (using current agent's folder)
     if (selectedAgentId && selectedFolder) {
       handleSessionSelect(selectedAgentId, newSessionId, selectedFolder);
-      // Increment reloadKey to force ChatView remount
       setReloadKey(prev => prev + 1);
     }
   };
@@ -424,20 +398,15 @@ function App() {
     const agent = agents.find(a => a.id === agentId);
     if (!agent) return;
 
-    // Toggle selection - if already selected, deselect
     if (selectedAgentId === agentId) {
-      setSelectedAgentId(null);
-      setSelectedSessionId(null);
-      setSelectedFolder(null);
+      selectAgent(null);
+      clearSelection();
     } else {
-      setSelectedAgentId(agentId);
-      // Restore agent's last selected session if it has one
+      selectAgent(agentId);
       if (agent.selectedSessionId) {
-        setSelectedSessionId(agent.selectedSessionId);
-        setSelectedFolder(agent.folder);
+        selectSession(agent.selectedSessionId, agent.folder);
       } else {
-        setSelectedSessionId(null);
-        setSelectedFolder(null);
+        clearSelection();
       }
     }
   };
@@ -445,56 +414,50 @@ function App() {
   const handleSaveWorkspaceName = async (newName: string) => {
     setWorkspaceName(newName);
     setSaveDialogOpen(false);
-    // Save to workspace file
     await saveWorkspaceState();
     console.log(`Workspace renamed to: ${newName}`);
   };
 
   const handleSwitchWorkspace = async (id: string) => {
-    // Show splash immediately before async call
     setView('startup');
     setLoadingStatus('Switching workspace...');
 
     try {
       const ws = await SwitchWorkspace(id);
       if (ws) {
-        setWorkspaceName(ws.name || 'Workspace');
-        setWorkspaceId(ws.id);
-        setAgents(ws.agents || []);
-        // Restore selected session if any
+        setWorkspace({
+          id: ws.id,
+          name: ws.name || 'Workspace',
+          agents: ws.agents || [],
+          mcpConfig: ws.mcpConfig,
+          selectedAgentId: ws.selectedSession?.agentId || null,
+        });
+
         if (ws.selectedSession?.agentId && ws.selectedSession?.sessionId && ws.selectedSession?.folder) {
-          setSelectedAgentId(ws.selectedSession.agentId);
-          setSelectedSessionId(ws.selectedSession.sessionId);
-          setSelectedFolder(ws.selectedSession.folder);
+          selectSession(ws.selectedSession.sessionId, ws.selectedSession.folder);
         } else {
-          setSelectedAgentId(null);
-          setSelectedSessionId(null);
-          setSelectedFolder(null);
+          clearSelection();
         }
       }
-      // Refresh workspace list
       const workspaces = await GetAllWorkspaces();
       setAllWorkspaces(workspaces || []);
-      // Transition back to main view
       setView('main');
     } catch (err) {
       console.error('Failed to switch workspace:', err);
-      setView('main'); // Go back to main even on error
+      setView('main');
     }
   };
 
   const handleNewWorkspace = async () => {
     try {
-      // Create a new workspace with default name
       const ws = await CreateWorkspace('New Workspace');
       if (ws) {
-        setWorkspaceName(ws.name);
-        setWorkspaceId(ws.id);
-        setAgents([]);
-        setSelectedAgentId(null);
-        setSelectedSessionId(null);
-        setSelectedFolder(null);
-        // Refresh workspace list
+        setWorkspace({
+          id: ws.id,
+          name: ws.name,
+          agents: [],
+        });
+        clearSelection();
         const workspaces = await GetAllWorkspaces();
         setAllWorkspaces(workspaces || []);
       }
@@ -504,20 +467,16 @@ function App() {
   };
 
   const handleReloadWorkspace = async () => {
-    // Reload current workspace from disk and restart file watchers
     console.log('Reloading workspace...');
-
-    // Increment reloadKey to force ChatView remount (restarts file watchers)
     setReloadKey(k => k + 1);
 
-    // Reload workspace from disk if we have one
     if (workspaceId) {
       try {
         const ws = await SwitchWorkspace(workspaceId);
         if (ws) {
           setWorkspaceName(ws.name || 'Workspace');
           setAgents(ws.agents || []);
-          // Keep current selection but refresh data
+          setMcpConfig(ws.mcpConfig);
           console.log(`Reloaded workspace "${ws.name}"`);
         }
       } catch (err) {
@@ -525,13 +484,18 @@ function App() {
       }
     }
 
-    // Refresh workspace list
     try {
       const workspaces = await GetAllWorkspaces();
       setAllWorkspaces(workspaces || []);
     } catch (err) {
       console.error('Failed to refresh workspace list:', err);
     }
+  };
+
+  const handleSaveMCPSettings = async (config: workspace.MCPConfig, updatedAgents: workspace.Agent[]) => {
+    setMcpConfig(config);
+    setAgents(updatedAgents);
+    console.log('MCP settings saved:', config, updatedAgents.map(a => ({ name: a.name, slug: a.mcpSlug, enabled: a.mcpEnabled })));
   };
 
   // Startup View
@@ -719,9 +683,6 @@ function App() {
     );
   }
 
-  // Get selected agent for header
-  const selectedAgent = agents.find(a => a.id === selectedAgentId);
-
   // Main View
   return (
     <div style={{
@@ -770,21 +731,36 @@ function App() {
               <span style={{ color: '#f97316' }}>API Key</span>
             )}
           </span>
+          <button
+            onClick={() => setMcpSettingsOpen(true)}
+            title="MCP Settings"
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '0.25rem',
+              color: '#666',
+              display: 'flex',
+              alignItems: 'center',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = '#8b5cf6')}
+            onMouseLeave={(e) => (e.currentTarget.style.color = '#666')}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83" />
+            </svg>
+          </button>
         </div>
       </header>
 
       {/* Main Layout */}
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        {/* Sidebar */}
+        {/* Sidebar - reduced props, uses context internally */}
         <Sidebar
-          agents={agents}
           onAddAgent={handleAddAgent}
-          onRenameAgent={handleRenameAgent}
-          onRemoveAgent={handleRemoveAgent}
           onAgentSelect={handleAgentSelect}
           onSessionSelect={handleSessionSelect}
-          selectedAgentId={selectedAgentId}
-          selectedSessionId={selectedSessionId}
         />
 
         {/* Main Content */}
@@ -796,7 +772,6 @@ function App() {
           flexDirection: 'column'
         }}>
           {agents.length === 0 ? (
-            // No agents - show welcome
             <div style={{
               display: 'flex',
               flexDirection: 'column',
@@ -818,7 +793,6 @@ function App() {
               </p>
             </div>
           ) : selectedSessionId && selectedFolder && selectedAgentId ? (
-            // Session selected - show conversation
             <ChatView
               key={`${selectedAgentId}-${selectedSessionId}-${reloadKey}`}
               agentId={selectedAgentId}
@@ -828,7 +802,6 @@ function App() {
               initialMessage={pendingInitialMessage || undefined}
             />
           ) : (
-            // Agents but no session selected
             <div style={{
               display: 'flex',
               flexDirection: 'column',
@@ -863,7 +836,90 @@ function App() {
         onSubmit={handleSaveWorkspaceName}
         onClose={() => setSaveDialogOpen(false)}
       />
+
+      {/* MCP Settings Pane */}
+      <MCPSettingsPane
+        isOpen={mcpSettingsOpen}
+        onClose={() => setMcpSettingsOpen(false)}
+        agents={agents}
+        mcpConfig={mcpConfig}
+        onSave={handleSaveMCPSettings}
+      />
+
+      {/* MCP Notification Toast */}
+      {notification && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: '2rem',
+            right: '2rem',
+            background: notification.type === 'success' ? '#14532d' :
+                       notification.type === 'warning' ? '#78350f' :
+                       notification.type === 'question' ? '#4c1d95' : '#1e3a5f',
+            border: `1px solid ${
+              notification.type === 'success' ? '#22c55e' :
+              notification.type === 'warning' ? '#f59e0b' :
+              notification.type === 'question' ? '#8b5cf6' : '#3b82f6'
+            }`,
+            borderRadius: '12px',
+            padding: '1rem 1.25rem',
+            maxWidth: '400px',
+            boxShadow: '0 10px 40px rgba(0, 0, 0, 0.5)',
+            zIndex: 200,
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '0.75rem'
+          }}
+        >
+          <div style={{
+            color: notification.type === 'success' ? '#22c55e' :
+                   notification.type === 'warning' ? '#f59e0b' :
+                   notification.type === 'question' ? '#8b5cf6' : '#3b82f6',
+            fontSize: '1.25rem'
+          }}>
+            {notification.type === 'success' && '✓'}
+            {notification.type === 'warning' && '⚠'}
+            {notification.type === 'question' && '?'}
+            {notification.type === 'info' && 'ℹ'}
+          </div>
+          <div style={{ flex: 1 }}>
+            {notification.title && (
+              <div style={{ fontWeight: 600, color: '#fff', marginBottom: '0.25rem' }}>
+                {notification.title}
+              </div>
+            )}
+            <div style={{ color: '#ccc', fontSize: '0.9rem' }}>
+              {notification.message}
+            </div>
+          </div>
+          <button
+            onClick={() => setNotification(null)}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#666',
+              fontSize: '1rem',
+              cursor: 'pointer',
+              padding: '0'
+            }}
+          >
+            ×
+          </button>
+        </div>
+      )}
     </div>
+  );
+}
+
+// Main App component with providers
+function App() {
+  return (
+    <WorkspaceProvider>
+      <SessionProvider>
+        <WailsEventHub />
+        <AppContent />
+      </SessionProvider>
+    </WorkspaceProvider>
   );
 }
 

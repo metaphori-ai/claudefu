@@ -22,6 +22,10 @@ export function ClearActiveSession() {
   return window['go']['main']['App']['ClearActiveSession']();
 }
 
+export function ClearAgentInbox(arg1) {
+  return window['go']['main']['App']['ClearAgentInbox'](arg1);
+}
+
 export function CompleteHyperLogin(arg1, arg2) {
   return window['go']['main']['App']['CompleteHyperLogin'](arg1, arg2);
 }
@@ -32,6 +36,10 @@ export function ConfirmDialog(arg1, arg2) {
 
 export function CreateWorkspace(arg1) {
   return window['go']['main']['App']['CreateWorkspace'](arg1);
+}
+
+export function DeleteInboxMessage(arg1, arg2) {
+  return window['go']['main']['App']['DeleteInboxMessage'](arg1, arg2);
 }
 
 export function GetAgent(arg1) {
@@ -66,6 +74,22 @@ export function GetCurrentWorkspaceID() {
   return window['go']['main']['App']['GetCurrentWorkspaceID']();
 }
 
+export function GetInboxMessages(arg1) {
+  return window['go']['main']['App']['GetInboxMessages'](arg1);
+}
+
+export function GetInboxTotalCount(arg1) {
+  return window['go']['main']['App']['GetInboxTotalCount'](arg1);
+}
+
+export function GetInboxUnreadCount(arg1) {
+  return window['go']['main']['App']['GetInboxUnreadCount'](arg1);
+}
+
+export function GetMCPServerPort() {
+  return window['go']['main']['App']['GetMCPServerPort']();
+}
+
 export function GetPlanFilePath(arg1, arg2) {
   return window['go']['main']['App']['GetPlanFilePath'](arg1, arg2);
 }
@@ -94,12 +118,24 @@ export function GetVersion() {
   return window['go']['main']['App']['GetVersion']();
 }
 
+export function InjectInboxMessage(arg1, arg2, arg3) {
+  return window['go']['main']['App']['InjectInboxMessage'](arg1, arg2, arg3);
+}
+
 export function IsClaudeInstalled() {
   return window['go']['main']['App']['IsClaudeInstalled']();
 }
 
 export function Logout() {
   return window['go']['main']['App']['Logout']();
+}
+
+export function MarkAllInboxRead(arg1) {
+  return window['go']['main']['App']['MarkAllInboxRead'](arg1);
+}
+
+export function MarkInboxMessageRead(arg1, arg2) {
+  return window['go']['main']['App']['MarkInboxMessageRead'](arg1, arg2);
 }
 
 export function MarkSessionViewed(arg1, arg2) {

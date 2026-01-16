@@ -40,19 +40,13 @@ func ConvertToMessage(classified *ClassifiedJSONLEvent) *Message {
 // SUMMARY EVENT CONVERSION
 // =============================================================================
 
-func convertSummaryToMessage(event *SummaryEvent) *Message {
-	if event == nil || event.Summary == "" {
-		return nil
-	}
-
-	return &Message{
-		Type:              "summary",
-		Content:           event.Summary,
-		Timestamp:         "", // Summary events don't have timestamp
-		UUID:              event.LeafUUID,
-		IsCompaction:      true,
-		CompactionPreview: "Context Compaction Summary",
-	}
+func convertSummaryToMessage(_ *SummaryEvent) *Message {
+	// Summary events with leafUuid are just reference indexes/pointers to
+	// message UUIDs - they are NOT actual context compaction summaries.
+	// Real compaction summaries come from user events with isCompactSummary: true
+	// or content starting with "This session is being continued..."
+	// We skip these metadata entries entirely.
+	return nil
 }
 
 // =============================================================================
@@ -64,8 +58,9 @@ func convertUserToMessage(event *UserEvent) *Message {
 		return nil
 	}
 
-	// Skip metadata events
-	if event.IsMeta || event.IsVisibleInTranscriptOnly {
+	// Skip metadata events (but allow compaction summaries through)
+	// Compaction summaries have both isCompactSummary=true AND isVisibleInTranscriptOnly=true
+	if event.IsMeta || (event.IsVisibleInTranscriptOnly && !event.IsCompactSummary) {
 		return nil
 	}
 
@@ -97,10 +92,19 @@ func convertUserToMessage(event *UserEvent) *Message {
 		return nil
 	}
 
+	// Skip CLI command metadata messages (slash commands and local command output)
+	// These are internal Claude Code CLI messages, not real user content
+	if strings.HasPrefix(content, "<command-name>") || strings.HasPrefix(content, "<local-command-") {
+		return nil
+	}
+
 	// Detect context compaction in user messages
+	// Context compaction can be identified by:
+	// 1. isCompactSummary: true field in the JSON
+	// 2. Content starting with "This session is being continued"
 	isCompaction := false
 	compactionPreview := ""
-	if strings.HasPrefix(content, "This session is being continued") {
+	if event.IsCompactSummary || strings.HasPrefix(content, "This session is being continued") {
 		isCompaction = true
 		compactionPreview = "Context Compaction Summary"
 	}
