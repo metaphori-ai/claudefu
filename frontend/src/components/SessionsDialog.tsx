@@ -12,6 +12,8 @@ interface SessionsDialogProps {
   sessionNames: Map<string, string>;
   onSelectSession: (session: Session) => void;
   onRenameSession: (session: Session) => void;
+  onNewSession: () => Promise<void>;
+  onRefresh: () => Promise<void>;
   onClose: () => void;
 }
 
@@ -22,12 +24,34 @@ export function SessionsDialog({
   sessionNames,
   onSelectSession,
   onRenameSession,
+  onNewSession,
+  onRefresh,
   onClose
 }: SessionsDialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const [sortOrder, setSortOrder] = useState<SortOrder>('recency');
   const [hideEmpty, setHideEmpty] = useState(true);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await onRefresh();
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  const handleNewSession = async () => {
+    setIsCreating(true);
+    try {
+      await onNewSession();
+    } finally {
+      setIsCreating(false);
+    }
+  };
 
   const handleCopySessionId = async (e: React.MouseEvent, sessionId: string) => {
     e.stopPropagation();
@@ -62,6 +86,14 @@ export function SessionsDialog({
   };
 
   if (!isOpen) return null;
+
+  // Add spin animation for refresh button
+  const spinKeyframes = `
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+  `;
 
   const formatRelativeTime = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -106,12 +138,14 @@ export function SessionsDialog({
   const hiddenCount = sessions.length - filteredAndSortedSessions.length;
 
   return (
-    <div
-      onClick={handleBackdropClick}
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
+    <>
+      <style>{spinKeyframes}</style>
+      <div
+        onClick={handleBackdropClick}
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
         right: 0,
         bottom: 0,
         background: 'rgba(0, 0, 0, 0.6)',
@@ -167,22 +201,92 @@ export function SessionsDialog({
                 {agentName}
               </p>
             </div>
-            <button
-              onClick={onClose}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: '#888',
-                cursor: 'pointer',
-                padding: '0.5rem',
-                fontSize: '1.25rem',
-                lineHeight: 1
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.color = '#fff'}
-              onMouseLeave={(e) => e.currentTarget.style.color = '#888'}
-            >
-              ×
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+              {/* New Session button */}
+              <button
+                onClick={handleNewSession}
+                disabled={isCreating}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#888',
+                  cursor: isCreating ? 'default' : 'pointer',
+                  padding: '0.5rem',
+                  fontSize: '1rem',
+                  lineHeight: 1,
+                  opacity: isCreating ? 0.5 : 1
+                }}
+                onMouseEnter={(e) => !isCreating && (e.currentTarget.style.color = '#fff')}
+                onMouseLeave={(e) => e.currentTarget.style.color = '#888'}
+                title="New session"
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+              </button>
+              {/* Refresh button */}
+              <button
+                onClick={handleRefresh}
+                disabled={isRefreshing}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#888',
+                  cursor: isRefreshing ? 'default' : 'pointer',
+                  padding: '0.5rem',
+                  fontSize: '1rem',
+                  lineHeight: 1,
+                  opacity: isRefreshing ? 0.5 : 1
+                }}
+                onMouseEnter={(e) => !isRefreshing && (e.currentTarget.style.color = '#fff')}
+                onMouseLeave={(e) => e.currentTarget.style.color = '#888'}
+                title="Refresh sessions"
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  style={{
+                    animation: isRefreshing ? 'spin 1s linear infinite' : 'none'
+                  }}
+                >
+                  <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+                  <path d="M21 3v5h-5" />
+                </svg>
+              </button>
+              {/* Close button */}
+              <button
+                onClick={onClose}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#888',
+                  cursor: 'pointer',
+                  padding: '0.5rem',
+                  fontSize: '1.25rem',
+                  lineHeight: 1
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.color = '#fff'}
+                onMouseLeave={(e) => e.currentTarget.style.color = '#888'}
+              >
+                ×
+              </button>
+            </div>
           </div>
 
           {/* Controls */}
@@ -466,5 +570,6 @@ export function SessionsDialog({
         </div>
       </div>
     </div>
+    </>
   );
 }

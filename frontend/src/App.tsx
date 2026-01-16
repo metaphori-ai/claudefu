@@ -452,6 +452,9 @@ function AppContent() {
     try {
       const ws = await CreateWorkspace('New Workspace');
       if (ws) {
+        // CRITICAL: Tell backend to switch to this workspace so AddAgent works correctly
+        await SwitchWorkspace(ws.id);
+
         setWorkspace({
           id: ws.id,
           name: ws.name,
@@ -712,6 +715,7 @@ function AppContent() {
             workspaces={allWorkspaces}
             onSelectWorkspace={handleSwitchWorkspace}
             onNewWorkspace={handleNewWorkspace}
+            onRenameWorkspace={() => setSaveDialogOpen(true)}
           />
           {selectedAgent && (
             <>

@@ -11,6 +11,7 @@ import {
   MarkInboxMessageRead,
   DeleteInboxMessage,
   InjectInboxMessage,
+  NewSession,
 } from '../../wailsjs/go/main/App';
 import { AgentMenu } from './AgentMenu';
 import { InputDialog } from './InputDialog';
@@ -169,6 +170,18 @@ export function Sidebar({
       console.error('Failed to mark session as viewed:', err);
     }
     onSessionSelect(agent.id, session.id, agent.folder);
+  };
+
+  const handleNewSession = async (agent: Agent) => {
+    try {
+      const newSessionId = await NewSession(agent.id);
+      // Close the sessions dialog
+      setSessionsDialogAgent(null);
+      // Select the new session
+      onSessionSelect(agent.id, newSessionId, agent.folder);
+    } catch (err) {
+      console.error('Failed to create new session:', err);
+    }
   };
 
   // Get display name for a session (custom name or fallback to preview)
@@ -364,6 +377,8 @@ export function Sidebar({
           onRenameSession={(session) => {
             setRenameSessionDialog({ agent: sessionsDialogAgent, session });
           }}
+          onNewSession={() => handleNewSession(sessionsDialogAgent)}
+          onRefresh={() => loadAgentSessions(sessionsDialogAgent)}
           onClose={() => setSessionsDialogAgent(null)}
         />
       )}
