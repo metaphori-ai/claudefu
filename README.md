@@ -108,17 +108,36 @@ ClaudeFu uses `fsnotify` to watch Claude Code's session directories. When change
 
 ## Installation
 
+### Via Homebrew (Recommended)
+
+```bash
+brew tap metaphori-ai/claudefu
+brew install --cask claudefu
+```
+
+**Upgrade to latest version:**
+```bash
+brew upgrade --cask claudefu
+```
+
+> **Note:** For unsigned builds, macOS may block the app. Right-click → Open, or run:
+> ```bash
+> xattr -cr /Applications/ClaudeFu.app
+> ```
+
 ### Prerequisites
 
-- Go 1.21+
-- Node.js 18+
-- [Wails CLI](https://wails.io/docs/gettingstarted/installation)
+ClaudeFu requires the Claude Code CLI:
+
+```bash
+npm install -g @anthropic-ai/claude-code
+```
 
 ### Build from Source
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/claudefu.git
+git clone https://github.com/metaphori-ai/claudefu.git
 cd claudefu
 
 # Install frontend dependencies
