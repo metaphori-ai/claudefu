@@ -6,7 +6,7 @@ import { InputDialog } from './components/InputDialog';
 import { WorkspaceDropdown } from './components/WorkspaceDropdown';
 import { MCPSettingsPane } from './components/MCPSettingsPane';
 import { DialogBase } from './components/DialogBase';
-import { WorkspaceProvider, SessionProvider } from './context';
+import { WorkspaceProvider, SessionProvider, MessagesProvider } from './context';
 import { useWorkspace, useSession, useSelectedAgent, WailsEventHub } from './hooks';
 import {
   GetAuthStatus,
@@ -1146,8 +1146,10 @@ function App() {
   return (
     <WorkspaceProvider>
       <SessionProvider>
-        <WailsEventHub />
-        <AppContent />
+        <MessagesProvider>
+          <WailsEventHub />
+          <AppContent />
+        </MessagesProvider>
       </SessionProvider>
     </WorkspaceProvider>
   );

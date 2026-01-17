@@ -51,6 +51,40 @@ func (a *App) GetConversation(agentID, sessionID string) ([]types.Message, error
 	return messages, nil
 }
 
+// ConversationResult is the paged conversation response for frontend
+type ConversationResult struct {
+	SessionID  string          `json:"sessionId"`
+	Messages   []types.Message `json:"messages"`
+	TotalCount int             `json:"totalCount"`
+	HasMore    bool            `json:"hasMore"`
+}
+
+// GetConversationPaged returns messages with pagination support
+// limit: max messages to return (0 = all)
+// offset: skip this many messages from the end (for loading older messages)
+func (a *App) GetConversationPaged(agentID, sessionID string, limit, offset int) (*ConversationResult, error) {
+	if a.workspace == nil {
+		return nil, fmt.Errorf("workspace manager not initialized")
+	}
+
+	agent := a.getAgentByID(agentID)
+	if agent == nil {
+		return nil, fmt.Errorf("agent not found: %s", agentID)
+	}
+
+	conv, err := a.workspace.GetConversationPaged(agent.Folder, sessionID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ConversationResult{
+		SessionID:  conv.SessionID,
+		Messages:   conv.Messages,
+		TotalCount: conv.TotalCount,
+		HasMore:    conv.HasMore,
+	}, nil
+}
+
 // GetSubagentConversation returns messages from a subagent JSONL file
 func (a *App) GetSubagentConversation(agentID, sessionID, subagentID string) ([]types.Message, error) {
 	if a.workspace == nil {
