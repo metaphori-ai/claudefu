@@ -663,7 +663,8 @@ func (a *App) SaveWorkspaceWithRename(ws workspace.Workspace, oldName string) er
 // SelectWorkspaceFolder opens folder picker and returns selected path
 func (a *App) SelectWorkspaceFolder() (string, error) {
 	return wailsrt.OpenDirectoryDialog(a.ctx, wailsrt.OpenDialogOptions{
-		Title: "Select Project Folder",
+		Title:                "Select Project Folder",
+		CanCreateDirectories: true,
 	})
 }
 

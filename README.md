@@ -5,6 +5,12 @@
 </p>
 
 <p align="center">
+  <em>ClaudeFu is an independent open source project and is not affiliated with, endorsed by, or sponsored by Anthropic, PBC.<br/>
+  "Claude" and related marks are trademarks of Anthropic.<br/>
+  This application requires a working <a href="https://docs.anthropic.com/en/docs/claude-code">Claude Code CLI</a> installation.</em>
+</p>
+
+<p align="center">
   <strong>Multi-Claude Code Orchestration Desktop App</strong>
 </p>
 

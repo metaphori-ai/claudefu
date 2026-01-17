@@ -5,6 +5,32 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.9] - 2025-01-16
+
+### Added
+- **MCP Inter-Agent Tools** - New tools for agent-to-agent communication
+  - `AgentQuery` - Synchronous stateless query to another agent
+  - `AgentMessage` - Send message to specific agent(s) inbox
+  - `AgentBroadcast` - Broadcast message to ALL agents
+  - `NotifyUser` - Display toast notification in ClaudeFu UI
+- **Notifications System** - Bell icon in header with notification history
+  - Glow effect when unread notifications exist
+  - Dialog showing notification list with type icons, timestamps, and originating agent
+  - Clear all and individual delete options
+- **Ko-fi Support Link** - Support button in header opens Ko-fi page in browser
+- **MCP Logo** - Official MCP logo replaces sun/star icon in header and settings pane
+- **MIT License** - Added LICENSE file to repository
+- **README Disclaimer** - Added independence/trademark disclaimer under logo
+
+### Changed
+- **Splash Screen** - Added acknowledgments (Wails, Claude Code), trademark disclaimer, CLI requirement notice
+- **Splash Minimum Duration** - Splash screen displays for minimum 3 seconds regardless of load time
+- **Send Button** - Shows spinning indicator instead of "Sending..." text, fixed width to prevent size changes
+- **Notification Toast** - Moved from bottom-left to top-right position
+
+### Fixed
+- **Folder Picker** - Added `CanCreateDirectories` option to fix macOS folder selection behavior (selecting folder now works without double-clicking into it)
+
 ## [0.2.8] - 2025-01-16
 
 ### Added

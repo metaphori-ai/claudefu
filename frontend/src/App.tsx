@@ -5,6 +5,7 @@ import { ChatView } from './components/ChatView';
 import { InputDialog } from './components/InputDialog';
 import { WorkspaceDropdown } from './components/WorkspaceDropdown';
 import { MCPSettingsPane } from './components/MCPSettingsPane';
+import { DialogBase } from './components/DialogBase';
 import { WorkspaceProvider, SessionProvider } from './context';
 import { useWorkspace, useSession, useSelectedAgent, WailsEventHub } from './hooks';
 import {
@@ -24,7 +25,7 @@ import {
   AddAgent,
   GetVersion
 } from "../wailsjs/go/main/App";
-import { EventsOn } from "../wailsjs/runtime/runtime";
+import { EventsOn, BrowserOpenURL } from "../wailsjs/runtime/runtime";
 import { workspace } from "../wailsjs/go/models";
 
 interface AuthStatus {
@@ -57,6 +58,8 @@ function AppContent() {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [deviceAuth, setDeviceAuth] = useState<DeviceAuthInfo | null>(null);
   const [loadingStatus, setLoadingStatus] = useState<string>('Initializing...');
+  const [splashMinTimeElapsed, setSplashMinTimeElapsed] = useState<boolean>(false);
+  const [pendingView, setPendingView] = useState<'auth' | 'main' | null>(null);
 
   // Local UI state
   const [saveDialogOpen, setSaveDialogOpen] = useState<boolean>(false);
@@ -70,6 +73,16 @@ function AppContent() {
     message: string;
     title?: string;
   } | null>(null);
+  const [notifications, setNotifications] = useState<Array<{
+    id: string;
+    type: 'info' | 'success' | 'warning' | 'question';
+    message: string;
+    title?: string;
+    fromAgent?: string;
+    timestamp: Date;
+    read: boolean;
+  }>>([]);
+  const [notificationsDialogOpen, setNotificationsDialogOpen] = useState(false);
 
   // Use context hooks for workspace and session state
   const {
@@ -137,7 +150,20 @@ function AppContent() {
 
   useEffect(() => {
     loadData();
+    // Start 3 second minimum splash timer
+    const timer = setTimeout(() => {
+      setSplashMinTimeElapsed(true);
+    }, 3000);
+    return () => clearTimeout(timer);
   }, []);
+
+  // Transition from splash only when both loading is done AND minimum time elapsed
+  useEffect(() => {
+    if (splashMinTimeElapsed && pendingView && view === 'startup') {
+      setView(pendingView);
+      setPendingView(null);
+    }
+  }, [splashMinTimeElapsed, pendingView, view]);
 
   // Subscribe to loading:status events from backend
   useEffect(() => {
@@ -164,14 +190,26 @@ function AppContent() {
 
   // Subscribe to mcp:notification events for toast notifications
   useEffect(() => {
-    const unsubscribe = EventsOn('mcp:notification', (data: { payload?: { type?: string; message?: string; title?: string } }) => {
+    const unsubscribe = EventsOn('mcp:notification', (data: { payload?: { type?: string; message?: string; title?: string; from_agent?: string } }) => {
       if (data?.payload?.message) {
         const notifType = data.payload.type as 'info' | 'success' | 'warning' | 'question';
+        // Show toast
         setNotification({
           type: notifType || 'info',
           message: data.payload.message,
           title: data.payload.title
         });
+        // Add to notifications list
+        const payload = data.payload!;
+        setNotifications(prev => [{
+          id: Date.now().toString(),
+          type: notifType || 'info',
+          message: payload.message!,
+          title: payload.title,
+          fromAgent: payload.from_agent,
+          timestamp: new Date(),
+          read: false
+        }, ...prev].slice(0, 50)); // Keep last 50 notifications
         setTimeout(() => setNotification(null), 5000);
       }
     });
@@ -304,14 +342,19 @@ function AppContent() {
         console.log('No workspaces found, starting fresh');
       }
 
-      if (auth.isAuthenticated) {
-        setView('main');
+      // Set pending view - will transition after splash minimum time
+      if (view === 'startup') {
+        setPendingView(auth.isAuthenticated ? 'main' : 'auth');
       } else {
-        setView('auth');
+        setView(auth.isAuthenticated ? 'main' : 'auth');
       }
     } catch (err) {
       setMessage(`Error loading data: ${err}`);
-      setView('auth');
+      if (view === 'startup') {
+        setPendingView('auth');
+      } else {
+        setView('auth');
+      }
     }
   };
 
@@ -522,8 +565,25 @@ function AppContent() {
             v{version}
           </div>
         )}
-        <div style={{ color: '#666', fontSize: '0.9rem' }}>
+        <div style={{ color: '#666', fontSize: '0.9rem', marginBottom: '3rem' }}>
           {loadingStatus}
+        </div>
+
+        {/* Acknowledgments & Disclaimer */}
+        <div style={{
+          maxWidth: '550px',
+          textAlign: 'center',
+          padding: '0 2rem'
+        }}>
+          <div style={{ color: '#888', fontSize: '0.9rem', marginBottom: '1rem' }}>
+            Built on <a href="https://wails.io/" target="_blank" rel="noopener noreferrer" style={{ color: '#aaa', textDecoration: 'underline' }}>Wails</a> · Powered by <a href="https://docs.anthropic.com/en/docs/claude-code" target="_blank" rel="noopener noreferrer" style={{ color: '#aaa', textDecoration: 'underline' }}>Claude Code</a> CLI
+          </div>
+          <div style={{ color: '#666', fontSize: '0.8rem', lineHeight: 1.6, marginBottom: '1rem' }}>
+            ClaudeFu is an independent open source project and is not affiliated with, endorsed by, or sponsored by Anthropic, PBC. "Claude" and "Claude Code" are trademarks of Anthropic, PBC.
+          </div>
+          <div style={{ color: '#555', fontSize: '0.75rem' }}>
+            This application requires a working Claude Code CLI installation. See <a href="https://docs.anthropic.com/en/docs/claude-code" target="_blank" rel="noopener noreferrer" style={{ color: '#888', textDecoration: 'underline' }}>Claude Code</a> for setup.
+          </div>
         </div>
       </div>
     );
@@ -725,6 +785,76 @@ function AppContent() {
           )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          {/* Ko-fi Support Link */}
+          <button
+            onClick={() => BrowserOpenURL('https://ko-fi.com/metaphori')}
+            title="Support ClaudeFu on Ko-fi"
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '0.25rem',
+              display: 'flex',
+              alignItems: 'center',
+              opacity: 0.7,
+              transition: 'opacity 0.2s ease'
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
+            onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.7')}
+          >
+            <img src="/assets/ko-fi.png" alt="Support on Ko-fi" style={{ width: '26px', height: '26px' }} />
+          </button>
+
+          {/* Notification Bell */}
+          {(() => {
+            const unreadCount = notifications.filter(n => !n.read).length;
+            return (
+              <button
+                onClick={() => {
+                  setNotificationsDialogOpen(true);
+                  // Mark all as read when opening
+                  setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+                }}
+                title={unreadCount > 0 ? `${unreadCount} notification${unreadCount > 1 ? 's' : ''} - click to view` : 'Notifications'}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '0.25rem',
+                  color: unreadCount > 0 ? '#f97316' : '#666',
+                  display: 'flex',
+                  alignItems: 'center',
+                  position: 'relative',
+                  filter: unreadCount > 0 ? 'drop-shadow(0 0 6px #f97316)' : 'none',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                  <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                </svg>
+                {unreadCount > 0 && (
+                  <span style={{
+                    position: 'absolute',
+                    top: '-2px',
+                    right: '-2px',
+                    background: '#f97316',
+                    color: '#fff',
+                    fontSize: '0.65rem',
+                    fontWeight: 600,
+                    borderRadius: '50%',
+                    width: '16px',
+                    height: '16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+              </button>
+            );
+          })()}
           <span style={{ fontSize: '0.8rem', color: '#666' }}>
             {authStatus?.hasClaudeCode && authStatus.claudeCodeSubscription && (
               <span style={{ color: '#4ade80' }}>
@@ -743,17 +873,23 @@ function AppContent() {
               border: 'none',
               cursor: 'pointer',
               padding: '0.25rem',
-              color: '#666',
               display: 'flex',
               alignItems: 'center',
+              opacity: 0.5,
+              transition: 'opacity 0.2s ease'
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = '#8b5cf6')}
-            onMouseLeave={(e) => (e.currentTarget.style.color = '#666')}
+            onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
+            onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.5')}
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="3" />
-              <path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83" />
-            </svg>
+            <img
+              src="/assets/mcp.png"
+              alt="MCP Settings"
+              style={{
+                width: '22px',
+                height: '22px',
+                filter: 'invert(1)'
+              }}
+            />
           </button>
         </div>
       </header>
@@ -850,12 +986,112 @@ function AppContent() {
         onSave={handleSaveMCPSettings}
       />
 
+      {/* Notifications Dialog */}
+      <DialogBase
+        isOpen={notificationsDialogOpen}
+        onClose={() => setNotificationsDialogOpen(false)}
+        title="Notifications"
+        width="500px"
+        maxHeight="600px"
+        headerActions={
+          notifications.length > 0 ? (
+            <button
+              onClick={() => setNotifications([])}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#666',
+                cursor: 'pointer',
+                fontSize: '0.8rem',
+                padding: '0.25rem 0.5rem'
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = '#f97316')}
+              onMouseLeave={(e) => (e.currentTarget.style.color = '#666')}
+            >
+              Clear All
+            </button>
+          ) : undefined
+        }
+      >
+        <div style={{ maxHeight: '450px', overflowY: 'auto' }}>
+          {notifications.length === 0 ? (
+            <div style={{ textAlign: 'center', color: '#666', padding: '2rem' }}>
+              No notifications yet
+            </div>
+          ) : (
+            notifications.map((notif) => (
+              <div
+                key={notif.id}
+                style={{
+                  padding: '0.75rem 1rem',
+                  borderBottom: '1px solid #333',
+                  display: 'flex',
+                  gap: '0.75rem',
+                  alignItems: 'flex-start'
+                }}
+              >
+                <div style={{
+                  color: notif.type === 'success' ? '#22c55e' :
+                         notif.type === 'warning' ? '#f59e0b' :
+                         notif.type === 'question' ? '#8b5cf6' : '#3b82f6',
+                  fontSize: '1.1rem',
+                  flexShrink: 0
+                }}>
+                  {notif.type === 'success' && '✓'}
+                  {notif.type === 'warning' && '⚠'}
+                  {notif.type === 'question' && '?'}
+                  {notif.type === 'info' && 'ℹ'}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                    <div>
+                      {notif.title && (
+                        <span style={{ fontWeight: 600, color: '#fff', marginRight: '0.5rem' }}>
+                          {notif.title}
+                        </span>
+                      )}
+                      {notif.fromAgent && (
+                        <span style={{ fontSize: '0.75rem', color: '#f97316', background: '#2a1a0a', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>
+                          {notif.fromAgent}
+                        </span>
+                      )}
+                    </div>
+                    <span style={{ fontSize: '0.7rem', color: '#555', whiteSpace: 'nowrap' }}>
+                      {notif.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                  <div style={{ color: '#aaa', fontSize: '0.85rem', wordBreak: 'break-word' }}>
+                    {notif.message}
+                  </div>
+                </div>
+                <button
+                  onClick={() => setNotifications(prev => prev.filter(n => n.id !== notif.id))}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#555',
+                    cursor: 'pointer',
+                    padding: '0',
+                    fontSize: '0.9rem',
+                    flexShrink: 0
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.color = '#f97316')}
+                  onMouseLeave={(e) => (e.currentTarget.style.color = '#555')}
+                >
+                  ×
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      </DialogBase>
+
       {/* MCP Notification Toast */}
       {notification && (
         <div
           style={{
             position: 'fixed',
-            bottom: '2rem',
+            top: '2rem',
             right: '2rem',
             background: notification.type === 'success' ? '#14532d' :
                        notification.type === 'warning' ? '#78350f' :

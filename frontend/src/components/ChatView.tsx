@@ -1419,7 +1419,7 @@ export function ChatView({ agentId, folder, sessionId, onSessionCreated, initial
           gap: '4px',
           marginBottom: '0.5rem',
           alignItems: 'center',
-          paddingRight: 'calc(77px + 0.75rem)', // Align with textarea right edge (accounts for Send button + gap)
+          paddingRight: 'calc(75px + 0.75rem)', // Align with textarea right edge (accounts for Send button + gap)
         }}>
           {/* New Session */}
           <button
@@ -1616,17 +1616,30 @@ export function ChatView({ agentId, folder, sessionId, onSessionCreated, initial
             onClick={handleSend}
             disabled={isSending || !inputValue.trim() || hasPendingQuestion}
             style={{
-              padding: '0.75rem 1.5rem',
+              width: '70px',
+              padding: '0.75rem 0',
               borderRadius: '8px',
               border: 'none',
               background: isSending || !inputValue.trim() || hasPendingQuestion ? '#333' : '#f97316',
               color: isSending || !inputValue.trim() || hasPendingQuestion ? '#666' : '#fff',
               cursor: isSending || !inputValue.trim() || hasPendingQuestion ? 'not-allowed' : 'pointer',
               fontWeight: 500,
-              transition: 'background 0.15s ease'
+              transition: 'background 0.15s ease',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
             }}
           >
-            {isSending ? 'Sending...' : 'Send'}
+            {isSending ? (
+              <div style={{
+                width: '16px',
+                height: '16px',
+                border: '2px solid #666',
+                borderTopColor: '#f97316',
+                borderRadius: '50%',
+                animation: 'spin 1s linear infinite'
+              }} />
+            ) : 'Send'}
           </button>
         </div>
       </div>
