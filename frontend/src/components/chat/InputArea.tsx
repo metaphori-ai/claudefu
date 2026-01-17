@@ -1,21 +1,33 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState, useImperativeHandle, forwardRef } from 'react';
+
+// Imperative handle interface for parent to control input
+export interface InputAreaHandle {
+  setValue: (value: string) => void;
+  getValue: () => string;
+  focus: () => void;
+}
 
 interface InputAreaProps {
-  inputValue: string;
-  onInputChange: (value: string) => void;
-  onSend: () => void;
+  onSend: (message: string) => void;
   isSending: boolean;
   hasPendingQuestion: boolean;
 }
 
-export function InputArea({
-  inputValue,
-  onInputChange,
+export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function InputArea({
   onSend,
   isSending,
   hasPendingQuestion
-}: InputAreaProps) {
+}, ref) {
+  // Input state lives here - isolated from parent re-renders
+  const [inputValue, setInputValue] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Expose imperative methods to parent
+  useImperativeHandle(ref, () => ({
+    setValue: (value: string) => setInputValue(value),
+    getValue: () => inputValue,
+    focus: () => textareaRef.current?.focus()
+  }), [inputValue]);
 
   // Auto-resize textarea based on content
   const adjustTextareaHeight = () => {
@@ -38,17 +50,25 @@ export function InputArea({
     textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
   };
 
+  // Handle send - clear input and notify parent
+  const handleSend = () => {
+    const message = inputValue.trim();
+    if (!message || isSending) return;
+    setInputValue('');
+    onSend(message);
+  };
+
   // Handle Enter key to send, Shift+Enter for newline
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      onSend();
+      handleSend();
     }
   };
 
   // Handle input change with auto-resize
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    onInputChange(e.target.value);
+    setInputValue(e.target.value);
     // Use setTimeout to ensure the DOM has updated
     setTimeout(adjustTextareaHeight, 0);
   };
@@ -96,7 +116,7 @@ export function InputArea({
         }}
       />
       <button
-        onClick={onSend}
+        onClick={handleSend}
         disabled={isSendDisabled}
         style={{
           width: '70px',
@@ -126,4 +146,4 @@ export function InputArea({
       </button>
     </div>
   );
-}
+});

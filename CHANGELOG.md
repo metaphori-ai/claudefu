@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Input Typing Performance** - Decoupled input state from ChatView render cycle
+  - `InputArea` now owns its own state (isolated from parent re-renders)
+  - Typing no longer triggers expensive message list reconciliation
+  - Exposes `InputAreaHandle` via `useImperativeHandle` for future injection features (setValue, getValue, focus)
+
 ## [0.3.2] - 2025-01-17
 
 ### Added
