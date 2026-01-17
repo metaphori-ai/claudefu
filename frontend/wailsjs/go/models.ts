@@ -43,6 +43,27 @@ export namespace auth {
 
 }
 
+export namespace main {
+	
+	export class ClaudePermissions {
+	    allow: string[];
+	    deny: string[];
+	    additionalDirectories: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new ClaudePermissions(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.allow = source["allow"];
+	        this.deny = source["deny"];
+	        this.additionalDirectories = source["additionalDirectories"];
+	    }
+	}
+
+}
+
 export namespace mcpserver {
 	
 	export class InboxMessage {

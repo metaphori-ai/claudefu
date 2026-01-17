@@ -62,6 +62,14 @@ export function GetAuthStatus() {
   return window['go']['main']['App']['GetAuthStatus']();
 }
 
+export function GetClaudeMD(arg1) {
+  return window['go']['main']['App']['GetClaudeMD'](arg1);
+}
+
+export function GetClaudePermissions(arg1) {
+  return window['go']['main']['App']['GetClaudePermissions'](arg1);
+}
+
 export function GetConfigPath() {
   return window['go']['main']['App']['GetConfigPath']();
 }
@@ -156,6 +164,14 @@ export function ReadPlanFile(arg1) {
 
 export function RemoveAgent(arg1) {
   return window['go']['main']['App']['RemoveAgent'](arg1);
+}
+
+export function SaveClaudeMD(arg1, arg2) {
+  return window['go']['main']['App']['SaveClaudeMD'](arg1, arg2);
+}
+
+export function SaveClaudePermissions(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['SaveClaudePermissions'](arg1, arg2, arg3, arg4);
 }
 
 export function SaveFile(arg1) {

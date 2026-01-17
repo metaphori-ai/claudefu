@@ -5,6 +5,26 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.8] - 2025-01-16
+
+### Added
+- **Permissions Dialog** - New dedicated dialog for managing Claude Code permissions
+  - Core Tools section with toggles for all 18 built-in tools
+  - Bash Permissions section with add/remove capability
+  - Additional Directories section for configuring `additionalDirectories`
+  - Alphabetized sorting on save (Core Tools → Bash → Others)
+- **New toolbar icons** - `view-permissions.png` and `view-plan.png` with grey/orange hover styling
+- **Start maximized** - App window now opens maximized by default
+
+### Changed
+- **ClaudeSettingsDialog** simplified to CLAUDE.md editor only (permissions moved to new dialog)
+- **Icon layout** - Order: Plan (if exists) → Permissions → Clawd (CLAUDE.md)
+
+### Technical
+- Backend `ClaudePermissions` struct now includes `AdditionalDirectories`
+- `SaveClaudePermissions` accepts and saves `additionalDirectories` array
+- Wails `WindowStartState: options.Maximised` for maximized startup
+
 ## [0.2.7] - 2025-01-16
 
 ### Added
