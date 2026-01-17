@@ -7,7 +7,7 @@ import { EventsOn, EventsOff } from '../../wailsjs/runtime/runtime';
 // Extracted components
 import { MessageList } from './chat/MessageList';
 import { DebugStatsOverlay } from './chat/DebugStatsOverlay';
-import { InputArea } from './chat/InputArea';
+import { InputArea, InputAreaHandle } from './chat/InputArea';
 import { ControlButtonsRow } from './chat/ControlButtonsRow';
 import type { Message, ContentBlock, PendingQuestion, ChatViewProps } from './chat/types';
 
@@ -54,9 +54,11 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
   const [compactionContent, setCompactionContent] = useState<string | null>(null);
   const [selectedToolCall, setSelectedToolCall] = useState<ContentBlock | null>(null);
   const [selectedToolResult, setSelectedToolResult] = useState<ContentBlock | null>(null);
-  const [inputValue, setInputValue] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
+
+  // Ref for InputArea imperative control (setValue, focus)
+  const inputAreaRef = useRef<InputAreaHandle>(null);
 
   // Toggle states for prompt controls
   const [newSessionMode, setNewSessionMode] = useState(false);
@@ -314,12 +316,10 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
     }
   };
 
-  // Handle sending a message
-  const handleSend = async () => {
-    if (!inputValue.trim() || isSending) return;
+  // Handle sending a message (receives message from InputArea)
+  const handleSend = async (message: string) => {
+    if (!message || isSending) return;
 
-    const message = inputValue.trim();
-    setInputValue('');
     setIsSending(true);
 
     if (newSessionMode) {
@@ -338,7 +338,8 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
         console.error('Failed to create new session:', err);
         setIsCreatingSession(false);
         setIsSending(false);
-        setInputValue(message);
+        // Restore message to input on failure
+        inputAreaRef.current?.setValue(message);
         loadConversation();
         return;
       }
@@ -369,7 +370,8 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
             : m
         )
       );
-      setInputValue(message);
+      // Restore message to input on failure
+      inputAreaRef.current?.setValue(message);
     } finally {
       setIsSending(false);
     }
@@ -467,8 +469,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
           onOpenClaudeSettings={() => setClaudeSettingsOpen(true)}
         />
         <InputArea
-          inputValue={inputValue}
-          onInputChange={setInputValue}
+          ref={inputAreaRef}
           onSend={handleSend}
           isSending={isSending}
           hasPendingQuestion={hasPendingQuestion}
