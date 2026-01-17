@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2025-01-17
+
+### Added
+- **Copy to Clipboard for Messages** - New copy functionality throughout chat
+  - Copy user prompts (hover to show, right-aligned) - copies raw text with newlines preserved
+  - Copy individual AI messages (hover to show, left-aligned) - copies text blocks only, excludes tool calls
+  - Copy full Claude response (always visible centered button) - aggregates all text from response
+  - Reusable `CopyButton` component with copied feedback (green checkmark for 2s)
+- **Expand/Collapse for Long User Messages** - Messages >6 lines show collapsed with "Show more (N lines)" link
+- **Preserve Newlines in User Messages** - User prompts now display with `white-space: pre-wrap`
+
+### Technical
+- New utility functions in `messageUtils.ts`: `getMessageText()`, `getFullResponseText()`, `isLastAssistantInResponse()`, `findResponseGroupStart()`
+- `MessageList.tsx` computes `fullResponseMap` for response boundary detection
+- State-based hover tracking in `MessageRow.tsx` for copy button visibility
+
 ## [0.3.1] - 2025-01-17
 
 ### Added
