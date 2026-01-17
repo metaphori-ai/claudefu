@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { DialogBase } from './DialogBase';
+import { useSaveShortcut } from '../hooks';
 
 interface InputDialogProps {
   isOpen: boolean;
@@ -31,11 +32,14 @@ export function InputDialog({
     }
   }, [isOpen, value]);
 
-  const handleSubmit = () => {
+  const handleSubmit = useCallback(() => {
     if (inputValue.trim()) {
       onSubmit(inputValue.trim());
     }
-  };
+  }, [inputValue, onSubmit]);
+
+  // CMD-S to submit
+  useSaveShortcut(isOpen, handleSubmit);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {

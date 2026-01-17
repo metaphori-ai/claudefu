@@ -44,12 +44,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **New Scroll Management Hook**
   - `hooks/useScrollManagement.ts` - Encapsulates scroll state, userHasScrolled tracking, auto-scroll logic
 
+- **CMD-S Save Shortcut for Dialogs** - New `useSaveShortcut` hook
+  - Press CMD-S (or Ctrl-S) to save when dialogs/panes are open
+  - Supported in: ClaudeSettingsDialog, PermissionsDialog, MCPSettingsPane, InputDialog
+  - Reusable hook pattern for consistent keyboard shortcuts
+
 ### Changed
 - **MCP Settings Pane** - Wider panel (700px) with tabbed interface
   - "Configuration" tab for workspace-level MCP settings
   - "Tool Instructions" tab for customizing tool prompts
   - Fixed Save button at bottom with border separator
 - **All MCP tools pre-approved** - AgentMessage added to `--allowed-tools` in both main session spawner and AgentQuery subprocess
+- **Removed global CMD-S shortcut** - Workspace rename shortcut removed to prevent conflicts with dialog save shortcuts (rename still available via dropdown menu)
 
 ### Fixed
 - **AgentMessage permission prompt** - Tool was missing from `--allowed-tools` in `internal/providers/claudecode.go`, causing permission prompts when agents tried to use it

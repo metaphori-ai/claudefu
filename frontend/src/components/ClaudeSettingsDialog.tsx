@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { DialogBase } from './DialogBase';
 import { GetClaudeMD, SaveClaudeMD } from '../../wailsjs/go/main/App';
+import { useSaveShortcut } from '../hooks';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -54,7 +55,7 @@ export function ClaudeSettingsDialog({
     }
   };
 
-  const handleSave = async () => {
+  const handleSave = useCallback(async () => {
     setSaving(true);
     setError(null);
     try {
@@ -65,7 +66,10 @@ export function ClaudeSettingsDialog({
     } finally {
       setSaving(false);
     }
-  };
+  }, [folder, content]);
+
+  // CMD-S to save
+  useSaveShortcut(isOpen, handleSave);
 
   const displayTitle = agentName ? `${agentName} // CLAUDE.md` : 'CLAUDE.md';
 
