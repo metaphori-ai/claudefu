@@ -111,6 +111,26 @@ export namespace mcpserver {
 		    return a;
 		}
 	}
+	export class ToolInstructions {
+	    agentQuery: string;
+	    agentQuerySystemPrompt: string;
+	    agentMessage: string;
+	    agentBroadcast: string;
+	    notifyUser: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ToolInstructions(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.agentQuery = source["agentQuery"];
+	        this.agentQuerySystemPrompt = source["agentQuerySystemPrompt"];
+	        this.agentMessage = source["agentMessage"];
+	        this.agentBroadcast = source["agentBroadcast"];
+	        this.notifyUser = source["notifyUser"];
+	    }
+	}
 
 }
 

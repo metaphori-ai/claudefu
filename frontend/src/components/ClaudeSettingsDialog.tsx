@@ -1,17 +1,21 @@
 import { useState, useEffect } from 'react';
 import { DialogBase } from './DialogBase';
 import { GetClaudeMD, SaveClaudeMD } from '../../wailsjs/go/main/App';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface ClaudeSettingsDialogProps {
   isOpen: boolean;
   onClose: () => void;
   folder: string;  // Agent folder for CLAUDE.md location
+  agentName?: string;  // Agent display name for title
 }
 
 export function ClaudeSettingsDialog({
   isOpen,
   onClose,
   folder,
+  agentName,
 }: ClaudeSettingsDialogProps) {
   // CLAUDE.md state
   const [content, setContent] = useState('');
@@ -19,6 +23,7 @@ export function ClaudeSettingsDialog({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [viewMode, setViewMode] = useState<'edit' | 'preview'>('edit');
 
   // Load data when dialog opens
   useEffect(() => {
@@ -62,20 +67,25 @@ export function ClaudeSettingsDialog({
     }
   };
 
+  const displayTitle = agentName ? `${agentName} // CLAUDE.md` : 'CLAUDE.md';
+
   return (
     <DialogBase
       isOpen={isOpen}
       onClose={onClose}
-      title="CLAUDE.md"
-      width="700px"
+      title={displayTitle}
+      width="850px"
       height="600px"
     >
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        {/* Header with path */}
+        {/* Header with path and view toggle */}
         <div style={{
           padding: '0.5rem 1rem',
           borderBottom: '1px solid #333',
           background: '#1a1a1a',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
         }}>
           <div style={{
             fontSize: '0.7rem',
@@ -86,9 +96,54 @@ export function ClaudeSettingsDialog({
           }}>
             {folder}/CLAUDE.md
           </div>
+          {/* View Mode Toggle */}
+          <div style={{ display: 'flex', gap: '2px', background: '#0d0d0d', borderRadius: '4px', padding: '2px' }}>
+            <button
+              onClick={() => setViewMode('edit')}
+              style={{
+                padding: '0.25rem 0.5rem',
+                borderRadius: '3px',
+                border: 'none',
+                background: viewMode === 'edit' ? '#333' : 'transparent',
+                color: viewMode === 'edit' ? '#fff' : '#666',
+                fontSize: '0.7rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.25rem',
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+              </svg>
+              Edit
+            </button>
+            <button
+              onClick={() => setViewMode('preview')}
+              style={{
+                padding: '0.25rem 0.5rem',
+                borderRadius: '3px',
+                border: 'none',
+                background: viewMode === 'preview' ? '#333' : 'transparent',
+                color: viewMode === 'preview' ? '#fff' : '#666',
+                fontSize: '0.7rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.25rem',
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+              Preview
+            </button>
+          </div>
         </div>
 
-        {/* Editor */}
+        {/* Editor or Preview */}
         <div style={{ flex: 1, padding: '0.5rem', overflow: 'hidden' }}>
           {loading ? (
             <div style={{ padding: '1rem', color: '#666', textAlign: 'center' }}>
@@ -98,7 +153,7 @@ export function ClaudeSettingsDialog({
             <div style={{ padding: '1rem', color: '#f87171', fontSize: '0.85rem' }}>
               {error}
             </div>
-          ) : (
+          ) : viewMode === 'edit' ? (
             <textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
@@ -118,9 +173,37 @@ export function ClaudeSettingsDialog({
                 outline: 'none',
                 boxSizing: 'border-box',
               }}
-              onFocus={(e) => e.target.style.borderColor = '#f97316'}
+              onFocus={(e) => e.target.style.borderColor = '#d97757'}
               onBlur={(e) => e.target.style.borderColor = '#333'}
             />
+          ) : (
+            <div
+              className="markdown-content"
+              style={{
+                width: '100%',
+                height: '100%',
+                padding: '0.75rem',
+                borderRadius: '6px',
+                border: '1px solid #333',
+                background: '#0d0d0d',
+                color: '#ccc',
+                fontSize: '0.85rem',
+                lineHeight: 1.6,
+                overflow: 'auto',
+                boxSizing: 'border-box',
+                textAlign: 'left',
+              }}
+            >
+              {content ? (
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {content}
+                </ReactMarkdown>
+              ) : (
+                <div style={{ color: '#666', fontStyle: 'italic' }}>
+                  No content to preview
+                </div>
+              )}
+            </div>
           )}
         </div>
 
@@ -138,7 +221,7 @@ export function ClaudeSettingsDialog({
               padding: '0.5rem 1rem',
               borderRadius: '6px',
               border: 'none',
-              background: saved ? '#16a34a' : '#f97316',
+              background: saved ? '#16a34a' : '#d97757',
               color: '#fff',
               fontSize: '0.8rem',
               fontWeight: 500,

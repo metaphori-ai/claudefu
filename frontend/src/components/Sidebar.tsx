@@ -350,8 +350,8 @@ export function Sidebar({
           }}
           onMouseEnter={(e) => {
             if (!isLoading) {
-              e.currentTarget.style.background = '#f97316';
-              e.currentTarget.style.borderColor = '#f97316';
+              e.currentTarget.style.background = '#eb815e';
+              e.currentTarget.style.borderColor = '#eb815e';
               e.currentTarget.style.color = '#fff';
             }
           }}
@@ -533,7 +533,7 @@ function AgentRow({
           <span
             style={{
               flex: 1,
-              color: isSelected ? '#f97316' : '#ccc',
+              color: isSelected ? '#d97757' : '#ccc',
               fontSize: '0.9rem',
               fontWeight: isSelected ? 500 : 400,
               textAlign: 'center',
@@ -651,7 +651,7 @@ function AgentRow({
             {sessionUnread > 0 && (
               <span style={{
                 marginLeft: '0.35rem',
-                background: '#f97316',
+                background: '#d97757',
                 color: '#fff',
                 fontSize: '0.65rem',
                 padding: '0.05rem 0.35rem',

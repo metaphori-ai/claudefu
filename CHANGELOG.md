@@ -5,6 +5,61 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2025-01-17
+
+### Added
+- **Configurable MCP Tool Instructions** - Customize the instructions/prompts for all MCP inter-agent tools
+  - Tool instructions stored in `~/.claudefu/mcp_tool_instructions.json`
+  - Editable via new "Tool Instructions" tab in MCP Settings pane
+  - Configurable fields: AgentQuery, AgentQuerySystemPrompt, AgentMessage, AgentBroadcast, NotifyUser
+  - "Reset to Defaults" button to restore original instructions
+  - MCP server automatically restarts when instructions are saved
+
+- **New Backend Domain Files** - Refactored `app.go` from ~1235 lines to ~295 lines
+  - `app_agent.go` - Agent management (AddAgent, RemoveAgent, UpdateAgent, GetAgent)
+  - `app_auth.go` - Authentication (API key, Hyper login)
+  - `app_claude.go` - Claude CLI integration (SendMessage, NewSession, AnswerQuestion)
+  - `app_claude_settings.go` - Claude Code project-local settings (Permissions, CLAUDE.md)
+  - `app_dialogs.go` - Native dialog wrappers (SelectDirectory, ConfirmDialog, etc.)
+  - `app_inbox.go` - MCP inbox management
+  - `app_mcp.go` - MCP tool instructions bound methods
+  - `app_session.go` - Session state and conversation loading
+  - `app_settings.go` - Application settings
+  - `app_util.go` - Utility methods (ReadImageAsDataURL, GetVersion)
+  - `app_workspace.go` - Workspace CRUD and switching
+
+- **ChatView Component Extraction** - Refactored `ChatView.tsx` from ~1705 lines to ~535 lines
+  - `chat/ContentBlockRenderer.tsx` - Renders text, tool_use, tool_result, image, thinking blocks
+  - `chat/ControlButtonsRow.tsx` - New Session, Planning Mode, View Plan, Permissions, CLAUDE.md buttons
+  - `chat/DebugStatsOverlay.tsx` - Debug statistics display (message counts, costs, scroll info)
+  - `chat/InputArea.tsx` - Prompt textarea with auto-resize and send button
+  - `chat/MessageList.tsx` - Scrollable message container with scroll-to-bottom button
+  - `chat/MessageRow.tsx` - Individual user/assistant message rendering
+  - `chat/types.ts` - Shared TypeScript types
+
+- **New Frontend Utilities**
+  - `utils/scrollUtils.ts` - Scroll helpers (isNearBottom, scrollToBottom, scrollToBottomRAF, getScrollDebugInfo)
+  - `utils/messageUtils.ts` - Message processing (formatTime, buildToolResultMap, buildPendingQuestionMap, computeDebugStats)
+
+- **New Scroll Management Hook**
+  - `hooks/useScrollManagement.ts` - Encapsulates scroll state, userHasScrolled tracking, auto-scroll logic
+
+### Changed
+- **MCP Settings Pane** - Wider panel (700px) with tabbed interface
+  - "Configuration" tab for workspace-level MCP settings
+  - "Tool Instructions" tab for customizing tool prompts
+  - Fixed Save button at bottom with border separator
+- **All MCP tools pre-approved** - AgentMessage added to `--allowed-tools` in both main session spawner and AgentQuery subprocess
+
+### Fixed
+- **AgentMessage permission prompt** - Tool was missing from `--allowed-tools` in `internal/providers/claudecode.go`, causing permission prompts when agents tried to use it
+
+### Technical
+- Backend follows "one domain per file" pattern with all methods on `*App` receiver
+- Frontend follows component extraction pattern for maintainability
+- Tool instructions manager handles backward compatibility for new fields
+- MCP server restart on instruction changes ensures tools use latest prompts
+
 ## [0.2.9] - 2025-01-16
 
 ### Added

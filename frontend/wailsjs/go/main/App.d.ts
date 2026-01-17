@@ -47,6 +47,8 @@ export function GetConversation(arg1:string,arg2:string):Promise<Array<types.Mes
 
 export function GetCurrentWorkspaceID():Promise<string>;
 
+export function GetDefaultMCPToolInstructions():Promise<mcpserver.ToolInstructions>;
+
 export function GetInboxMessages(arg1:string):Promise<Array<mcpserver.InboxMessage>>;
 
 export function GetInboxTotalCount(arg1:string):Promise<number>;
@@ -54,6 +56,8 @@ export function GetInboxTotalCount(arg1:string):Promise<number>;
 export function GetInboxUnreadCount(arg1:string):Promise<number>;
 
 export function GetMCPServerPort():Promise<number>;
+
+export function GetMCPToolInstructions():Promise<mcpserver.ToolInstructions>;
 
 export function GetPlanFilePath(arg1:string,arg2:string):Promise<string>;
 
@@ -89,11 +93,15 @@ export function ReadPlanFile(arg1:string):Promise<string>;
 
 export function RemoveAgent(arg1:string):Promise<void>;
 
+export function ResetMCPToolInstructions():Promise<void>;
+
 export function SaveClaudeMD(arg1:string,arg2:string):Promise<void>;
 
 export function SaveClaudePermissions(arg1:string,arg2:Array<string>,arg3:Array<string>,arg4:Array<string>):Promise<void>;
 
 export function SaveFile(arg1:string):Promise<string>;
+
+export function SaveMCPToolInstructions(arg1:mcpserver.ToolInstructions):Promise<void>;
 
 export function SaveSettings(arg1:settings.Settings):Promise<void>;
 

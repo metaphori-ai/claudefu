@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { SlideInPane } from './SlideInPane';
-import { workspace } from '../../wailsjs/go/models';
+import { workspace, mcpserver } from '../../wailsjs/go/models';
+import { GetMCPToolInstructions, SaveMCPToolInstructions, GetDefaultMCPToolInstructions } from '../../wailsjs/go/main/App';
 
 interface MCPSettingsPaneProps {
   isOpen: boolean;
@@ -34,6 +35,13 @@ export function MCPSettingsPane({
     mcpDescription: string;
   }>>(new Map());
 
+  // Tool instructions state
+  const [toolInstructions, setToolInstructions] = useState<mcpserver.ToolInstructions | null>(null);
+  const [instructionsLoading, setInstructionsLoading] = useState(false);
+
+  // Tab state
+  const [activeTab, setActiveTab] = useState<'config' | 'instructions'>('config');
+
   // Initialize agent settings when pane opens or agents change
   useEffect(() => {
     const settings = new Map<string, { mcpEnabled: boolean; mcpSlug: string; mcpDescription: string }>();
@@ -53,7 +61,33 @@ export function MCPSettingsPane({
     setPort(mcpConfig?.port || 9315);
   }, [mcpConfig, isOpen]);
 
-  const handleSave = () => {
+  // Load tool instructions when pane opens
+  useEffect(() => {
+    if (isOpen) {
+      setInstructionsLoading(true);
+      GetMCPToolInstructions()
+        .then((instructions) => {
+          setToolInstructions(instructions);
+        })
+        .catch((err) => {
+          console.error('Failed to load tool instructions:', err);
+        })
+        .finally(() => {
+          setInstructionsLoading(false);
+        });
+    }
+  }, [isOpen]);
+
+  const handleSave = async () => {
+    // Save tool instructions if modified
+    if (toolInstructions) {
+      try {
+        await SaveMCPToolInstructions(toolInstructions);
+      } catch (err) {
+        console.error('Failed to save tool instructions:', err);
+      }
+    }
+
     // Build updated config
     const newConfig = workspace.MCPConfig.createFrom({
       enabled,
@@ -75,6 +109,23 @@ export function MCPSettingsPane({
     onClose();
   };
 
+  const handleResetInstructions = async () => {
+    try {
+      const defaults = await GetDefaultMCPToolInstructions();
+      setToolInstructions(defaults);
+    } catch (err) {
+      console.error('Failed to get default instructions:', err);
+    }
+  };
+
+  const updateInstruction = (field: keyof mcpserver.ToolInstructions, value: string) => {
+    if (!toolInstructions) return;
+    setToolInstructions({
+      ...toolInstructions,
+      [field]: value,
+    });
+  };
+
   const updateAgentSetting = (
     agentId: string,
     field: 'mcpEnabled' | 'mcpSlug' | 'mcpDescription',
@@ -93,6 +144,18 @@ export function MCPSettingsPane({
     return settings?.mcpSlug || slugify(agent.name);
   };
 
+  const tabStyle = (tab: 'config' | 'instructions') => ({
+    padding: '0.6rem 1.25rem',
+    borderRadius: '6px 6px 0 0',
+    border: 'none',
+    background: activeTab === tab ? '#1a1a1a' : 'transparent',
+    color: activeTab === tab ? '#fff' : '#666',
+    cursor: 'pointer',
+    fontSize: '0.85rem',
+    fontWeight: activeTab === tab ? 500 : 400,
+    borderBottom: activeTab === tab ? '2px solid #8b5cf6' : '2px solid transparent',
+  });
+
   return (
     <SlideInPane
       isOpen={isOpen}
@@ -100,7 +163,7 @@ export function MCPSettingsPane({
       title="MCP Settings"
       titleColor="#8b5cf6"
       storageKey="mcp-settings"
-      defaultWidth={600}
+      defaultWidth={700}
       icon={
         <img
           src="/assets/mcp.png"
@@ -113,8 +176,27 @@ export function MCPSettingsPane({
         />
       }
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-        {/* Global MCP Settings */}
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        {/* Tab Bar */}
+        <div style={{
+          display: 'flex',
+          gap: '0.25rem',
+          borderBottom: '1px solid #333',
+          marginBottom: '1rem',
+        }}>
+          <button style={tabStyle('config')} onClick={() => setActiveTab('config')}>
+            Configuration
+          </button>
+          <button style={tabStyle('instructions')} onClick={() => setActiveTab('instructions')}>
+            Tool Instructions
+          </button>
+        </div>
+
+        {/* Tab Content */}
+        <div style={{ flex: 1, overflowY: 'auto', paddingRight: '0.5rem' }}>
+          {activeTab === 'config' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+              {/* Global MCP Settings */}
         <section>
           <h3 style={{ color: '#888', fontSize: '0.75rem', textTransform: 'uppercase', marginBottom: '0.75rem' }}>
             MCP Server
@@ -317,9 +399,209 @@ export function MCPSettingsPane({
             </div>
           </section>
         )}
+            </div>
+          )}
 
-        {/* Save Button */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
+          {activeTab === 'instructions' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {instructionsLoading ? (
+                <div style={{ color: '#666', textAlign: 'center', padding: '2rem' }}>
+                  Loading instructions...
+                </div>
+              ) : toolInstructions ? (
+                <>
+                  <p style={{ color: '#888', fontSize: '0.85rem', margin: 0 }}>
+                    Customize the tool descriptions and system prompts sent to Claude Code agents.
+                  </p>
+
+                  {/* AgentQuery */}
+                  <div>
+                    <label style={{
+                      display: 'block',
+                      color: '#8b5cf6',
+                      fontSize: '0.8rem',
+                      fontWeight: 500,
+                      marginBottom: '0.5rem',
+                    }}>
+                      AgentQuery
+                    </label>
+                    <textarea
+                      value={toolInstructions.agentQuery}
+                      onChange={(e) => updateInstruction('agentQuery', e.target.value)}
+                      rows={5}
+                      style={{
+                        width: '100%',
+                        padding: '0.6rem',
+                        borderRadius: '4px',
+                        border: '1px solid #333',
+                        background: '#0a0a0a',
+                        color: '#fff',
+                        fontSize: '0.8rem',
+                        fontFamily: 'monospace',
+                        resize: 'vertical',
+                        lineHeight: '1.4',
+                      }}
+                    />
+                  </div>
+
+                  {/* AgentQuery System Prompt */}
+                  <div>
+                    <label style={{
+                      display: 'block',
+                      color: '#d97757',
+                      fontSize: '0.8rem',
+                      fontWeight: 500,
+                      marginBottom: '0.5rem',
+                    }}>
+                      AgentQuery System Prompt
+                      <span style={{ color: '#666', fontWeight: 400, marginLeft: '0.5rem' }}>
+                        (appended to target agent)
+                      </span>
+                    </label>
+                    <textarea
+                      value={toolInstructions.agentQuerySystemPrompt}
+                      onChange={(e) => updateInstruction('agentQuerySystemPrompt', e.target.value)}
+                      rows={3}
+                      style={{
+                        width: '100%',
+                        padding: '0.6rem',
+                        borderRadius: '4px',
+                        border: '1px solid #333',
+                        background: '#0a0a0a',
+                        color: '#fff',
+                        fontSize: '0.8rem',
+                        fontFamily: 'monospace',
+                        resize: 'vertical',
+                        lineHeight: '1.4',
+                      }}
+                    />
+                  </div>
+
+                  {/* AgentMessage */}
+                  <div>
+                    <label style={{
+                      display: 'block',
+                      color: '#8b5cf6',
+                      fontSize: '0.8rem',
+                      fontWeight: 500,
+                      marginBottom: '0.5rem',
+                    }}>
+                      AgentMessage
+                    </label>
+                    <textarea
+                      value={toolInstructions.agentMessage}
+                      onChange={(e) => updateInstruction('agentMessage', e.target.value)}
+                      rows={6}
+                      style={{
+                        width: '100%',
+                        padding: '0.6rem',
+                        borderRadius: '4px',
+                        border: '1px solid #333',
+                        background: '#0a0a0a',
+                        color: '#fff',
+                        fontSize: '0.8rem',
+                        fontFamily: 'monospace',
+                        resize: 'vertical',
+                        lineHeight: '1.4',
+                      }}
+                    />
+                  </div>
+
+                  {/* AgentBroadcast */}
+                  <div>
+                    <label style={{
+                      display: 'block',
+                      color: '#8b5cf6',
+                      fontSize: '0.8rem',
+                      fontWeight: 500,
+                      marginBottom: '0.5rem',
+                    }}>
+                      AgentBroadcast
+                    </label>
+                    <textarea
+                      value={toolInstructions.agentBroadcast}
+                      onChange={(e) => updateInstruction('agentBroadcast', e.target.value)}
+                      rows={4}
+                      style={{
+                        width: '100%',
+                        padding: '0.6rem',
+                        borderRadius: '4px',
+                        border: '1px solid #333',
+                        background: '#0a0a0a',
+                        color: '#fff',
+                        fontSize: '0.8rem',
+                        fontFamily: 'monospace',
+                        resize: 'vertical',
+                        lineHeight: '1.4',
+                      }}
+                    />
+                  </div>
+
+                  {/* NotifyUser */}
+                  <div>
+                    <label style={{
+                      display: 'block',
+                      color: '#8b5cf6',
+                      fontSize: '0.8rem',
+                      fontWeight: 500,
+                      marginBottom: '0.5rem',
+                    }}>
+                      NotifyUser
+                    </label>
+                    <textarea
+                      value={toolInstructions.notifyUser}
+                      onChange={(e) => updateInstruction('notifyUser', e.target.value)}
+                      rows={4}
+                      style={{
+                        width: '100%',
+                        padding: '0.6rem',
+                        borderRadius: '4px',
+                        border: '1px solid #333',
+                        background: '#0a0a0a',
+                        color: '#fff',
+                        fontSize: '0.8rem',
+                        fontFamily: 'monospace',
+                        resize: 'vertical',
+                        lineHeight: '1.4',
+                      }}
+                    />
+                  </div>
+
+                  {/* Reset to Defaults Button */}
+                  <button
+                    onClick={handleResetInstructions}
+                    style={{
+                      padding: '0.5rem 1rem',
+                      borderRadius: '4px',
+                      border: '1px solid #333',
+                      background: 'transparent',
+                      color: '#888',
+                      cursor: 'pointer',
+                      fontSize: '0.8rem',
+                      alignSelf: 'flex-start',
+                    }}
+                  >
+                    Reset to Defaults
+                  </button>
+                </>
+              ) : (
+                <div style={{ color: '#666', textAlign: 'center', padding: '2rem' }}>
+                  Failed to load instructions
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Save Button - Fixed at bottom */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'flex-end',
+          gap: '0.75rem',
+          paddingTop: '1rem',
+          borderTop: '1px solid #333',
+          marginTop: '1rem',
+        }}>
           <button
             onClick={onClose}
             style={{

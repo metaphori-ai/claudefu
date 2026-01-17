@@ -103,7 +103,7 @@ func (s *ClaudeCodeService) getMCPArgs() []string {
 	}
 	return []string{
 		"--mcp-config", s.mcpConfig,
-		"--allowed-tools", "mcp__claudefu__AgentBroadcast,mcp__claudefu__AgentQuery,mcp__claudefu__NotifyUser",
+		"--allowed-tools", "mcp__claudefu__AgentBroadcast,mcp__claudefu__AgentMessage,mcp__claudefu__AgentQuery,mcp__claudefu__NotifyUser",
 	}
 }
 
