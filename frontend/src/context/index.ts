@@ -3,3 +3,6 @@ export type { WorkspaceState, WorkspaceAction } from './WorkspaceContext';
 
 export { SessionContext, SessionProvider } from './SessionContext';
 export type { SessionState, SessionAction } from './SessionContext';
+
+export { MessagesContext, MessagesProvider } from './MessagesContext';
+export type { MessagesState, MessagesAction, SessionMessages } from './MessagesContext';
