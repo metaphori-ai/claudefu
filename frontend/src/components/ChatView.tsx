@@ -10,6 +10,8 @@ import { ToolDetailPane } from './ToolDetailPane';
 import { ImageBlock } from './ImageBlock';
 import { ThinkingBlock } from './ThinkingBlock';
 import { SlideInPane } from './SlideInPane';
+import { ClaudeSettingsDialog } from './ClaudeSettingsDialog';
+import { PermissionsDialog } from './PermissionsDialog';
 
 // ImageSource for image blocks
 interface ImageSource {
@@ -143,6 +145,8 @@ export function ChatView({ agentId, folder, sessionId, onSessionCreated, initial
   const [latestPlanFile, setLatestPlanFile] = useState<string | null>(null);
   const [planPaneOpen, setPlanPaneOpen] = useState(false);
   const [planContent, setPlanContent] = useState<string | null>(null);
+  const [claudeSettingsOpen, setClaudeSettingsOpen] = useState(false);
+  const [permissionsDialogOpen, setPermissionsDialogOpen] = useState(false);
 
   const pendingMessagesRef = useRef<Set<string>>(new Set());  // Track pending message content for deduplication
   const processedUUIDsRef = useRef<Set<string>>(new Set());   // Track already processed UUIDs to prevent duplicates
@@ -1414,7 +1418,8 @@ export function ChatView({ agentId, folder, sessionId, onSessionCreated, initial
           display: 'flex',
           gap: '4px',
           marginBottom: '0.5rem',
-          alignItems: 'center'
+          alignItems: 'center',
+          paddingRight: 'calc(77px + 0.75rem)', // Align with textarea right edge (accounts for Send button + gap)
         }}>
           {/* New Session */}
           <button
@@ -1483,10 +1488,10 @@ export function ChatView({ agentId, folder, sessionId, onSessionCreated, initial
             </svg>
           </button>
 
-          {/* Spacer to push View Plan to the right */}
+          {/* Spacer to push right-aligned icons */}
           <div style={{ flex: 1 }} />
 
-          {/* Planning File (only visible when plan exists) - far right */}
+          {/* Planning File (only visible when plan exists) */}
           {latestPlanFile && (
             <button
               onClick={async () => {
@@ -1501,7 +1506,6 @@ export function ChatView({ agentId, folder, sessionId, onSessionCreated, initial
               style={{
                 background: 'transparent',
                 border: 'none',
-                color: '#f97316',
                 cursor: 'pointer',
                 padding: '4px',
                 display: 'flex',
@@ -1510,15 +1514,69 @@ export function ChatView({ agentId, folder, sessionId, onSessionCreated, initial
               }}
               title="View Plan"
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                <polyline points="14 2 14 8 20 8" />
-                <line x1="16" y1="13" x2="8" y2="13" />
-                <line x1="16" y1="17" x2="8" y2="17" />
-                <polyline points="10 9 9 9 8 9" />
-              </svg>
+              <img
+                src="/assets/view-plan.png"
+                width="18"
+                height="18"
+                alt="View Plan"
+                style={{
+                  filter: 'invert(40%)',
+                  transition: 'filter 0.15s ease'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.filter = 'invert(68%) sepia(61%) saturate(4000%) hue-rotate(1deg) brightness(103%) contrast(97%)'}
+                onMouseLeave={(e) => e.currentTarget.style.filter = 'invert(40%)'}
+              />
             </button>
           )}
+
+          {/* Permissions */}
+          <button
+            onClick={() => setPermissionsDialogOpen(true)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '4px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+            title="Claude Permissions"
+          >
+            <img
+              src="/assets/view-permissions.png"
+              width="18"
+              height="18"
+              alt="Permissions"
+              style={{
+                filter: 'invert(40%)',
+                transition: 'filter 0.15s ease'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.filter = 'invert(68%) sepia(61%) saturate(4000%) hue-rotate(1deg) brightness(103%) contrast(97%)'}
+              onMouseLeave={(e) => e.currentTarget.style.filter = 'invert(40%)'}
+            />
+          </button>
+
+          {/* CLAUDE.md - far right */}
+          <button
+            onClick={() => setClaudeSettingsOpen(true)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '4px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              opacity: 0.7,
+              transition: 'opacity 0.15s ease'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+            onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'}
+            title="CLAUDE.md"
+          >
+            <img src="/assets/clawd.png" width="18" height="18" alt="CLAUDE.md" style={{ borderRadius: '2px' }} />
+          </button>
         </div>
 
         <div style={{
@@ -1613,6 +1671,20 @@ export function ChatView({ agentId, folder, sessionId, onSessionCreated, initial
           )}
         </div>
       </SlideInPane>
+
+      {/* Claude Settings Dialog (CLAUDE.md) */}
+      <ClaudeSettingsDialog
+        isOpen={claudeSettingsOpen}
+        onClose={() => setClaudeSettingsOpen(false)}
+        folder={folder}
+      />
+
+      {/* Permissions Dialog */}
+      <PermissionsDialog
+        isOpen={permissionsDialogOpen}
+        onClose={() => setPermissionsDialogOpen(false)}
+        folder={folder}
+      />
     </div>
   );
 }
