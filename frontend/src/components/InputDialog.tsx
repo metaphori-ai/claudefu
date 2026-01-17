@@ -82,7 +82,7 @@ export function InputDialog({
             boxSizing: 'border-box'
           }}
           onFocus={(e) => {
-            e.target.style.borderColor = '#f97316';
+            e.target.style.borderColor = '#d97757';
           }}
           onBlur={(e) => {
             e.target.style.borderColor = '#444';
@@ -122,7 +122,7 @@ export function InputDialog({
             padding: '0.6rem 1.25rem',
             borderRadius: '6px',
             border: 'none',
-            background: inputValue.trim() ? '#f97316' : '#444',
+            background: inputValue.trim() ? '#d97757' : '#444',
             color: inputValue.trim() ? '#fff' : '#666',
             cursor: inputValue.trim() ? 'pointer' : 'not-allowed',
             fontSize: '0.9rem',

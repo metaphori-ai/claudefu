@@ -121,7 +121,7 @@ export function WorkspaceDropdown({
                     }}
                     style={{
                       ...menuItemStyle,
-                      color: isCurrent ? '#f97316' : '#ccc',
+                      color: isCurrent ? '#d97757' : '#ccc',
                       fontWeight: isCurrent ? 500 : 400
                     }}
                     onMouseEnter={(e) => {

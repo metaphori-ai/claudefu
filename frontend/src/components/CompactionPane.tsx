@@ -84,7 +84,7 @@ export function CompactionPane({ content, isOpen, onClose }: CompactionPaneProps
                       padding: '0.15rem 0.4rem',
                       borderRadius: '4px',
                       fontSize: '0.85em',
-                      color: '#f97316'
+                      color: '#d97757'
                     }}
                     {...props}
                   >

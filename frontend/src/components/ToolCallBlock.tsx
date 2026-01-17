@@ -64,7 +64,7 @@ const TOOL_CONFIG: Record<string, { color: string; label: string }> = {
   TodoWrite: { color: '#4ade80', label: 'TodoWrite' },
   LSP: { color: '#c084fc', label: 'LSP' },
   NotebookEdit: { color: '#fbbf24', label: 'NotebookEdit' },
-  AskUserQuestion: { color: '#f97316', label: 'Question' },
+  AskUserQuestion: { color: '#d97757', label: 'Question' },
   EnterPlanMode: { color: '#60a5fa', label: 'Plan' },
   ExitPlanMode: { color: '#4ade80', label: 'Exit Plan' },
 };
@@ -248,7 +248,7 @@ function AskUserQuestionBlock({ block, result, pendingQuestion, onAnswer, onSkip
     <div style={{
       margin: '0.5rem 0',
       background: '#1a1a1a',
-      border: `1px solid ${isPending ? '#f97316' : '#333'}`,
+      border: `1px solid ${isPending ? '#d97757' : '#333'}`,
       borderRadius: '8px',
       overflow: 'hidden'
     }}>
@@ -256,14 +256,14 @@ function AskUserQuestionBlock({ block, result, pendingQuestion, onAnswer, onSkip
       <div style={{
         padding: '0.5rem 0.75rem',
         background: isPending ? '#2a1a0a' : '#222',
-        borderBottom: `1px solid ${isPending ? '#f97316' : '#333'}`,
+        borderBottom: `1px solid ${isPending ? '#d97757' : '#333'}`,
         display: 'flex',
         alignItems: 'center',
         gap: '0.5rem'
       }}>
-        <span style={{ color: '#f97316', fontSize: '0.9rem' }}>?</span>
+        <span style={{ color: '#d97757', fontSize: '0.9rem' }}>?</span>
         <span style={{
-          color: '#f97316',
+          color: '#d97757',
           fontWeight: 500,
           fontSize: '0.85rem'
         }}>
@@ -277,7 +277,7 @@ function AskUserQuestionBlock({ block, result, pendingQuestion, onAnswer, onSkip
             alignItems: 'center',
             gap: '0.35rem',
             fontSize: '0.75rem',
-            color: '#f97316',
+            color: '#d97757',
             background: 'rgba(249, 115, 22, 0.15)',
             padding: '0.2rem 0.5rem',
             borderRadius: '4px',
@@ -287,7 +287,7 @@ function AskUserQuestionBlock({ block, result, pendingQuestion, onAnswer, onSkip
               width: '6px',
               height: '6px',
               borderRadius: '50%',
-              background: '#f97316',
+              background: '#d97757',
               animation: 'pulse 1.5s ease-in-out infinite'
             }} />
             Waiting for your answer
@@ -495,7 +495,7 @@ function AskUserQuestionBlock({ block, result, pendingQuestion, onAnswer, onSkip
               style={{
                 padding: '0.5rem 1rem',
                 borderRadius: '6px',
-                background: allAnswered ? '#f97316' : '#333',
+                background: allAnswered ? '#d97757' : '#333',
                 border: 'none',
                 color: allAnswered ? '#fff' : '#666',
                 fontSize: '0.85rem',
@@ -526,7 +526,7 @@ function AskUserQuestionBlock({ block, result, pendingQuestion, onAnswer, onSkip
               width: '12px',
               height: '12px',
               border: '2px solid #333',
-              borderTopColor: '#f97316',
+              borderTopColor: '#d97757',
               borderRadius: '50%',
               animation: 'spin 1s linear infinite'
             }} />

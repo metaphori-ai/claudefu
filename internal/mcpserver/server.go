@@ -15,24 +15,27 @@ import (
 
 // MCPService provides an MCP server for inter-agent communication
 type MCPService struct {
-	server    *server.MCPServer
-	claude    *providers.ClaudeCodeService
-	workspace func() *workspace.Workspace
-	emitFunc  func(types.EventEnvelope)
-	inbox     *InboxManager
-	port      int
-	ctx       context.Context
-	cancel    context.CancelFunc
-	mu        sync.RWMutex
-	running   bool
+	server           *server.MCPServer
+	claude           *providers.ClaudeCodeService
+	workspace        func() *workspace.Workspace
+	emitFunc         func(types.EventEnvelope)
+	inbox            *InboxManager
+	toolInstructions *ToolInstructionsManager
+	port             int
+	ctx              context.Context
+	cancel           context.CancelFunc
+	mu               sync.RWMutex
+	running          bool
 }
 
 // NewMCPService creates a new MCP service on the specified port
+// configPath is the base config path (e.g., ~/.claudefu)
 // inboxConfigPath is the path to store inbox databases (e.g., ~/.claudefu/inbox)
-func NewMCPService(port int, inboxConfigPath string) *MCPService {
+func NewMCPService(port int, configPath string, inboxConfigPath string) *MCPService {
 	return &MCPService{
-		port:  port,
-		inbox: NewInboxManager(inboxConfigPath),
+		port:             port,
+		inbox:            NewInboxManager(inboxConfigPath),
+		toolInstructions: NewToolInstructionsManager(configPath),
 	}
 }
 
@@ -61,6 +64,11 @@ func (s *MCPService) GetPort() int {
 	return s.port
 }
 
+// GetToolInstructions returns the tool instructions manager
+func (s *MCPService) GetToolInstructions() *ToolInstructionsManager {
+	return s.toolInstructions
+}
+
 // Start starts the MCP server
 func (s *MCPService) Start() error {
 	s.mu.Lock()
@@ -76,6 +84,9 @@ func (s *MCPService) Start() error {
 	// Gather MCP-enabled agents for dynamic tool descriptions
 	agents := s.getMCPEnabledAgentInfo()
 
+	// Get tool instructions
+	instructions := s.toolInstructions.GetInstructions()
+
 	// Create MCP server
 	mcpServer := server.NewMCPServer(
 		"ClaudeFu",
@@ -85,11 +96,11 @@ func (s *MCPService) Start() error {
 		server.WithToolCapabilities(true),
 	)
 
-	// Register tools with dynamic agent list
-	mcpServer.AddTool(CreateAgentQueryTool(agents), s.handleAgentQuery)
-	mcpServer.AddTool(CreateAgentMessageTool(agents), s.handleAgentMessage)
-	mcpServer.AddTool(CreateAgentBroadcastTool(agents), s.handleAgentBroadcast)
-	mcpServer.AddTool(CreateNotifyUserTool(), s.handleNotifyUser)
+	// Register tools with dynamic agent list and configurable instructions
+	mcpServer.AddTool(CreateAgentQueryTool(instructions.AgentQuery, agents), s.handleAgentQuery)
+	mcpServer.AddTool(CreateAgentMessageTool(instructions.AgentMessage, agents), s.handleAgentMessage)
+	mcpServer.AddTool(CreateAgentBroadcastTool(instructions.AgentBroadcast, agents), s.handleAgentBroadcast)
+	mcpServer.AddTool(CreateNotifyUserTool(instructions.NotifyUser), s.handleNotifyUser)
 
 	s.server = mcpServer
 

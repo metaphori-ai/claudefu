@@ -82,6 +82,10 @@ export function GetCurrentWorkspaceID() {
   return window['go']['main']['App']['GetCurrentWorkspaceID']();
 }
 
+export function GetDefaultMCPToolInstructions() {
+  return window['go']['main']['App']['GetDefaultMCPToolInstructions']();
+}
+
 export function GetInboxMessages(arg1) {
   return window['go']['main']['App']['GetInboxMessages'](arg1);
 }
@@ -96,6 +100,10 @@ export function GetInboxUnreadCount(arg1) {
 
 export function GetMCPServerPort() {
   return window['go']['main']['App']['GetMCPServerPort']();
+}
+
+export function GetMCPToolInstructions() {
+  return window['go']['main']['App']['GetMCPToolInstructions']();
 }
 
 export function GetPlanFilePath(arg1, arg2) {
@@ -166,6 +174,10 @@ export function RemoveAgent(arg1) {
   return window['go']['main']['App']['RemoveAgent'](arg1);
 }
 
+export function ResetMCPToolInstructions() {
+  return window['go']['main']['App']['ResetMCPToolInstructions']();
+}
+
 export function SaveClaudeMD(arg1, arg2) {
   return window['go']['main']['App']['SaveClaudeMD'](arg1, arg2);
 }
@@ -176,6 +188,10 @@ export function SaveClaudePermissions(arg1, arg2, arg3, arg4) {
 
 export function SaveFile(arg1) {
   return window['go']['main']['App']['SaveFile'](arg1);
+}
+
+export function SaveMCPToolInstructions(arg1) {
+  return window['go']['main']['App']['SaveMCPToolInstructions'](arg1);
 }
 
 export function SaveSettings(arg1) {

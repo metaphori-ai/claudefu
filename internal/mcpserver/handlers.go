@@ -86,17 +86,25 @@ func (s *MCPService) handleAgentQuery(ctx context.Context, req mcp.CallToolReque
 		return mcp.NewToolResultError("claude CLI not found"), nil
 	}
 
-	// Spawn stateless query with --print
+	// Get system prompt from configurable instructions
+	systemPrompt := s.toolInstructions.GetInstructions().AgentQuerySystemPrompt
+
+	// Build command args
 	// Include MCP config so the queried agent can also use inter-agent tools
 	// Pre-approve MCP tools so they don't require permission prompts
-	// Append system prompt to ensure concise, fact-only response
-	cmd := exec.CommandContext(ctx, claudePath,
+	args := []string{
 		"--print",
 		"--mcp-config", s.getMCPConfigJSON(),
 		"--allowed-tools", "mcp__claudefu__AgentQuery,mcp__claudefu__AgentMessage,mcp__claudefu__AgentBroadcast,mcp__claudefu__NotifyUser",
 		"-p", query,
-		"--append-system-prompt", "You are responding to a query from another agent. Respond concisely with facts only. Do NOT offer to make changes or ask follow-up questions.",
-	)
+	}
+
+	// Only append system prompt if configured
+	if systemPrompt != "" {
+		args = append(args, "--append-system-prompt", systemPrompt)
+	}
+
+	cmd := exec.CommandContext(ctx, claudePath, args...)
 	cmd.Dir = agent.Folder
 
 	output, err := cmd.CombinedOutput()

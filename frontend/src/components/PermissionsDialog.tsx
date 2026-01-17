@@ -240,7 +240,7 @@ export function PermissionsDialog({
                           checked={isEnabled}
                           onChange={() => toggleCoreTool(tool.id)}
                           style={{
-                            accentColor: '#f97316',
+                            accentColor: '#d97757',
                             width: '14px',
                             height: '14px',
                             cursor: 'pointer',
@@ -302,7 +302,7 @@ export function PermissionsDialog({
                       padding: '0.4rem 0.75rem',
                       borderRadius: '4px',
                       border: 'none',
-                      background: '#f97316',
+                      background: '#d97757',
                       color: '#fff',
                       fontSize: '0.75rem',
                       fontWeight: 500,
@@ -422,7 +422,7 @@ export function PermissionsDialog({
                       padding: '0.4rem 0.75rem',
                       borderRadius: '4px',
                       border: 'none',
-                      background: '#f97316',
+                      background: '#d97757',
                       color: '#fff',
                       fontSize: '0.75rem',
                       fontWeight: 500,
@@ -584,7 +584,7 @@ export function PermissionsDialog({
               padding: '0.5rem 1rem',
               borderRadius: '6px',
               border: 'none',
-              background: saved ? '#16a34a' : '#f97316',
+              background: saved ? '#16a34a' : '#d97757',
               color: '#fff',
               fontSize: '0.8rem',
               fontWeight: 500,

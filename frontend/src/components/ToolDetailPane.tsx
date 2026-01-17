@@ -42,7 +42,7 @@ const TOOL_CONFIG: Record<string, { color: string; label: string }> = {
   TodoWrite: { color: '#4ade80', label: 'TodoWrite' },
   LSP: { color: '#c084fc', label: 'LSP' },
   NotebookEdit: { color: '#fbbf24', label: 'NotebookEdit' },
-  AskUserQuestion: { color: '#f97316', label: 'Question' },
+  AskUserQuestion: { color: '#d97757', label: 'Question' },
   EnterPlanMode: { color: '#60a5fa', label: 'Plan' },
   ExitPlanMode: { color: '#4ade80', label: 'Exit Plan' },
 };

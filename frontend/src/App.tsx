@@ -244,16 +244,12 @@ function AppContent() {
         const index = parseInt(e.key) - 1;
         if (index < agents.length) {
           const agent = agents[index];
-          if (selectedAgentId === agent.id) {
-            selectAgent(null);
-            clearSelection();
+          // Select the agent (no toggle - if already selected, stay selected)
+          selectAgent(agent.id);
+          if (agent.selectedSessionId) {
+            selectSession(agent.selectedSessionId, agent.folder);
           } else {
-            selectAgent(agent.id);
-            if (agent.selectedSessionId) {
-              selectSession(agent.selectedSessionId, agent.folder);
-            } else {
-              clearSelection();
-            }
+            clearSelection();
           }
         }
       }
@@ -441,16 +437,12 @@ function AppContent() {
     const agent = agents.find(a => a.id === agentId);
     if (!agent) return;
 
-    if (selectedAgentId === agentId) {
-      selectAgent(null);
-      clearSelection();
+    // Select the agent (no toggle - if already selected, stay selected)
+    selectAgent(agentId);
+    if (agent.selectedSessionId) {
+      selectSession(agent.selectedSessionId, agent.folder);
     } else {
-      selectAgent(agentId);
-      if (agent.selectedSessionId) {
-        selectSession(agent.selectedSessionId, agent.folder);
-      } else {
-        clearSelection();
-      }
+      clearSelection();
     }
   };
 
@@ -717,7 +709,7 @@ function AppContent() {
                 padding: '0.5rem 1rem',
                 borderRadius: '6px',
                 border: 'none',
-                background: '#f97316',
+                background: '#d97757',
                 color: '#fff',
                 cursor: 'pointer'
               }}
@@ -767,7 +759,7 @@ function AppContent() {
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <img src="/assets/claude-fu-icon.png" alt="ClaudeFu" style={{ width: '32px' }} />
-          <span style={{ fontWeight: 600, color: '#f97316' }}>ClaudeFu</span>
+          <span style={{ fontWeight: 600, color: '#d97757' }}>ClaudeFu</span>
           <span style={{ color: '#333' }}>/</span>
           <WorkspaceDropdown
             currentName={workspaceName}
@@ -821,11 +813,11 @@ function AppContent() {
                   border: 'none',
                   cursor: 'pointer',
                   padding: '0.25rem',
-                  color: unreadCount > 0 ? '#f97316' : '#666',
+                  color: unreadCount > 0 ? '#d97757' : '#666',
                   display: 'flex',
                   alignItems: 'center',
                   position: 'relative',
-                  filter: unreadCount > 0 ? 'drop-shadow(0 0 6px #f97316)' : 'none',
+                  filter: unreadCount > 0 ? 'drop-shadow(0 0 6px #d97757)' : 'none',
                   transition: 'all 0.2s ease'
                 }}
               >
@@ -838,7 +830,7 @@ function AppContent() {
                     position: 'absolute',
                     top: '-2px',
                     right: '-2px',
-                    background: '#f97316',
+                    background: '#d97757',
                     color: '#fff',
                     fontSize: '0.65rem',
                     fontWeight: 600,
@@ -862,7 +854,7 @@ function AppContent() {
               </span>
             )}
             {authStatus?.hasApiKey && !authStatus.hasClaudeCode && (
-              <span style={{ color: '#f97316' }}>API Key</span>
+              <span style={{ color: '#d97757' }}>API Key</span>
             )}
           </span>
           <button
@@ -936,6 +928,7 @@ function AppContent() {
             <ChatView
               key={`${selectedAgentId}-${selectedSessionId}-${reloadKey}`}
               agentId={selectedAgentId}
+              agentName={selectedAgent?.name}
               folder={selectedFolder}
               sessionId={selectedSessionId}
               onSessionCreated={handleNewSessionCreated}
@@ -1005,7 +998,7 @@ function AppContent() {
                 fontSize: '0.8rem',
                 padding: '0.25rem 0.5rem'
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = '#f97316')}
+              onMouseEnter={(e) => (e.currentTarget.style.color = '#eb815e')}
               onMouseLeave={(e) => (e.currentTarget.style.color = '#666')}
             >
               Clear All
@@ -1051,7 +1044,7 @@ function AppContent() {
                         </span>
                       )}
                       {notif.fromAgent && (
-                        <span style={{ fontSize: '0.75rem', color: '#f97316', background: '#2a1a0a', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>
+                        <span style={{ fontSize: '0.75rem', color: '#d97757', background: '#2a1a0a', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>
                           {notif.fromAgent}
                         </span>
                       )}
@@ -1075,7 +1068,7 @@ function AppContent() {
                     fontSize: '0.9rem',
                     flexShrink: 0
                   }}
-                  onMouseEnter={(e) => (e.currentTarget.style.color = '#f97316')}
+                  onMouseEnter={(e) => (e.currentTarget.style.color = '#eb815e')}
                   onMouseLeave={(e) => (e.currentTarget.style.color = '#555')}
                 >
                   ×
