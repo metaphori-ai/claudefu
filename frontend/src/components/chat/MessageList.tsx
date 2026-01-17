@@ -11,6 +11,9 @@ interface MessageListProps {
   scrollContainerRef: React.RefObject<HTMLDivElement>;
   messagesEndRef: React.RefObject<HTMLDivElement>;
   showScrollButton: boolean;
+  hasMore: boolean;
+  isLoadingMore: boolean;
+  onLoadMore: () => void;
   onScrollToBottom: () => void;
   onCompactionClick: (content: string) => void;
   onViewToolDetails: (toolCall: ContentBlock, result?: ContentBlock) => void;
@@ -26,6 +29,9 @@ export function MessageList({
   scrollContainerRef,
   messagesEndRef,
   showScrollButton,
+  hasMore,
+  isLoadingMore,
+  onLoadMore,
   onScrollToBottom,
   onCompactionClick,
   onViewToolDetails,
@@ -65,6 +71,67 @@ export function MessageList({
           textAlign: 'left'
         }}
       >
+        {/* Load More button (at top) */}
+        {hasMore && (
+          <div style={{
+            display: 'flex',
+            justifyContent: 'center',
+            padding: '0.75rem 0 1.5rem 0'
+          }}>
+            <button
+              onClick={onLoadMore}
+              disabled={isLoadingMore}
+              style={{
+                background: '#2a2a2a',
+                border: '1px solid #444',
+                borderRadius: '6px',
+                padding: '0.5rem 1.25rem',
+                color: isLoadingMore ? '#666' : '#aaa',
+                cursor: isLoadingMore ? 'default' : 'pointer',
+                fontSize: '0.85rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                transition: 'all 0.15s ease'
+              }}
+              onMouseEnter={(e) => {
+                if (!isLoadingMore) {
+                  e.currentTarget.style.background = '#333';
+                  e.currentTarget.style.borderColor = '#555';
+                  e.currentTarget.style.color = '#ccc';
+                }
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = '#2a2a2a';
+                e.currentTarget.style.borderColor = '#444';
+                e.currentTarget.style.color = isLoadingMore ? '#666' : '#aaa';
+              }}
+            >
+              {isLoadingMore ? (
+                <>
+                  <span style={{
+                    display: 'inline-block',
+                    width: '14px',
+                    height: '14px',
+                    border: '2px solid #444',
+                    borderTopColor: '#d97757',
+                    borderRadius: '50%',
+                    animation: 'spin 1s linear infinite'
+                  }} />
+                  Loading...
+                </>
+              ) : (
+                <>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 19V5M5 12l7-7 7 7"/>
+                  </svg>
+                  Load older messages
+                </>
+              )}
+            </button>
+          </div>
+        )}
+
         {/* Creating new session indicator */}
         {isCreatingSession && (
           <div style={{

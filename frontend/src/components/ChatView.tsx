@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { GetConversation, SetActiveSession, SendMessage, MarkSessionViewed, NewSession, ReadPlanFile, GetPlanFilePath, AnswerQuestion } from '../../wailsjs/go/main/App';
-import { EventsOn, EventsOff } from '../../wailsjs/runtime/runtime';
+import { GetConversationPaged, SetActiveSession, SendMessage, MarkSessionViewed, NewSession, ReadPlanFile, GetPlanFilePath, AnswerQuestion } from '../../wailsjs/go/main/App';
 
 // Extracted components
 import { MessageList } from './chat/MessageList';
@@ -20,6 +19,7 @@ import { PermissionsDialog } from './PermissionsDialog';
 
 // Hooks
 import { useScrollManagement } from '../hooks/useScrollManagement';
+import { useMessages } from '../hooks/useMessages';
 
 // Utilities
 import { buildToolResultMap, buildPendingQuestionMap, computeDebugStats, filterMessagesToRender } from '../utils/messageUtils';
@@ -44,10 +44,30 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
     }
   }, []);
 
-  // Core message state
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  // Use MessagesContext for centralized message state
+  const {
+    getSessionMessages,
+    setMessages: setContextMessages,
+    prependMessages: prependContextMessages,
+    setLoading: setContextLoading,
+    markInitialLoadDone,
+    addPendingMessage,
+    clearSession: clearContextSession,
+  } = useMessages();
+
+  // Get session messages from context
+  const sessionData = getSessionMessages(agentId, sessionId);
+  const messages = sessionData?.messages || [];
+  const isContextLoading = sessionData?.isLoading ?? false;
+  const hasMore = sessionData?.hasMore ?? false;
+  const initialLoadDone = sessionData?.initialLoadDone ?? false;
+
+  // Local loading state for initial render before context is populated
+  const [localLoading, setLocalLoading] = useState(!initialLoadDone);
   const [error, setError] = useState<string | null>(null);
+
+  // Combined loading state
+  const isLoading = localLoading || isContextLoading;
 
   // UI state
   const [showDebugStats, setShowDebugStats] = useState(false);
@@ -69,11 +89,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
   const [claudeSettingsOpen, setClaudeSettingsOpen] = useState(false);
   const [permissionsDialogOpen, setPermissionsDialogOpen] = useState(false);
 
-  // Refs for message processing
-  const pendingMessagesRef = useRef<Set<string>>(new Set());
-  const processedUUIDsRef = useRef<Set<string>>(new Set());
-  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingEventDataRef = useRef<{ sessionId: string; messages: Message[] } | null>(null);
+  // Refs for special flows (AnswerQuestion needs to pause watcher)
   const watcherPausedRef = useRef<boolean>(false);
 
   // Use scroll management hook
@@ -101,13 +117,26 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
     [messages, globalPendingQuestionMap, globalToolResultMap]
   );
 
-  // Load conversation function
-  const loadConversation = async () => {
-    setIsLoading(true);
+  // Load conversation function (initial load with pagination)
+  const loadConversation = async (forceReload = false) => {
+    // Check if already loaded (skip fetch if cached)
+    if (!forceReload && initialLoadDone) {
+      setLocalLoading(false);
+      scroll.scrollToBottomRAF();
+      return;
+    }
+
+    setLocalLoading(true);
+    setContextLoading(agentId, sessionId, true);
     setError(null);
+
     try {
-      const msgs = await GetConversation(agentId, sessionId);
-      setMessages(msgs || []);
+      // Load most recent 50 messages (limit=50, offset=0)
+      const result = await GetConversationPaged(agentId, sessionId, 50, 0);
+      const messageList = result?.messages || [];
+      const totalCount = result?.totalCount || messageList.length;
+      const hasMoreMessages = result?.hasMore || false;
+      setContextMessages(agentId, sessionId, messageList, totalCount, hasMoreMessages);
 
       // Get plan file path from backend
       const planPath = await GetPlanFilePath(agentId, sessionId);
@@ -115,29 +144,54 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
         setLatestPlanFile(planPath);
       }
 
-      // Initialize processedUUIDs with loaded messages
-      if (msgs) {
-        for (const msg of msgs) {
-          if (msg.uuid) {
-            processedUUIDsRef.current.add(msg.uuid);
-          }
-        }
-      }
-
       // Scroll to bottom after initial load
       scroll.scrollToBottomRAF();
     } catch (err) {
       setError(`Failed to load conversation: ${err}`);
     } finally {
-      setIsLoading(false);
+      setLocalLoading(false);
+      setContextLoading(agentId, sessionId, false);
     }
   };
 
-  // Session initialization and event handling
+  // Load more (older) messages
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const handleLoadMore = async () => {
+    if (isLoadingMore || !hasMore) return;
+
+    setIsLoadingMore(true);
+    try {
+      // Calculate offset: skip the messages we already have
+      const currentCount = messages.length;
+      const result = await GetConversationPaged(agentId, sessionId, 50, currentCount);
+      const olderMessages = result?.messages || [];
+      const hasMoreMessages = result?.hasMore || false;
+
+      if (olderMessages.length > 0) {
+        // Capture scroll position before prepending
+        const scrollContainer = scroll.scrollContainerRef.current;
+        const scrollHeightBefore = scrollContainer?.scrollHeight || 0;
+
+        prependContextMessages(agentId, sessionId, olderMessages, hasMoreMessages);
+
+        // Restore scroll position after DOM update
+        requestAnimationFrame(() => {
+          if (scrollContainer) {
+            const scrollHeightAfter = scrollContainer.scrollHeight;
+            scrollContainer.scrollTop = scrollHeightAfter - scrollHeightBefore;
+          }
+        });
+      }
+    } catch (err) {
+      console.error('Failed to load more messages:', err);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
+
+  // Session initialization - event handling is now in WailsEventHub
   useEffect(() => {
     const initSession = async () => {
-      pendingMessagesRef.current.clear();
-      processedUUIDsRef.current.clear();
       SetActiveSession(agentId, sessionId);
 
       try {
@@ -150,98 +204,28 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
     };
 
     initSession();
+  }, [agentId, sessionId]);
 
-    // Handle new messages from watcher
-    const handleSessionMessages = (envelope: { sessionId?: string; payload?: { messages?: Message[] } }) => {
-      if (watcherPausedRef.current) return;
-
-      const data = { sessionId: envelope.sessionId || '', messages: envelope.payload?.messages || [] };
-      if (data.sessionId !== sessionId || !data.messages?.length) return;
-
-      // Debounce rapid fsnotify events
-      pendingEventDataRef.current = data;
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-      }
-      debounceTimerRef.current = setTimeout(() => {
-        const eventData = pendingEventDataRef.current;
-        if (!eventData) return;
-        pendingEventDataRef.current = null;
-        debounceTimerRef.current = null;
-        processNewMessages(eventData);
-      }, 50);
-    };
-
-    const processNewMessages = (data: { sessionId: string; messages: Message[] }) => {
+  // Scroll when messages change (from context updates via WailsEventHub)
+  useEffect(() => {
+    if (messages.length > 0) {
       const wasNearBottom = scroll.isNearBottom();
-      const messagesToAdd: Message[] = [];
-      let sawNonUserMessage = false;
-      let clearedPendingContent: string | null = null;
-
-      for (const msg of data.messages) {
-        if (processedUUIDsRef.current.has(msg.uuid)) continue;
-        processedUUIDsRef.current.add(msg.uuid);
-
-        if (msg.type !== 'user') {
-          sawNonUserMessage = true;
-        }
-
-        // If we see a new user message from watcher (CLI input), activate force scroll
-        if (msg.type === 'user' && !pendingMessagesRef.current.has(msg.content)) {
-          scroll.activateForceScroll();
-        }
-
-        const isPendingMatch = msg.type === 'user' && pendingMessagesRef.current.has(msg.content);
-        if (isPendingMatch) {
-          clearedPendingContent = msg.content;
-          pendingMessagesRef.current.delete(msg.content);
-        }
-
-        messagesToAdd.push(msg as Message);
-      }
-
-      if (messagesToAdd.length === 0 && !sawNonUserMessage) return;
-
-      setMessages(prev => {
-        let updatedMessages = prev;
-        if (clearedPendingContent !== null) {
-          updatedMessages = prev.filter(m => !(m.isPending && m.content === clearedPendingContent));
-        }
-        if (sawNonUserMessage) {
-          updatedMessages = updatedMessages.map(m =>
-            m.isPending ? { ...m, isPending: false } : m
-          );
-        }
-        return [...updatedMessages, ...messagesToAdd];
-      });
-
-      MarkSessionViewed(agentId, sessionId).catch(() => {});
-      GetPlanFilePath(agentId, sessionId).then(planPath => {
-        if (planPath) setLatestPlanFile(planPath);
-      }).catch(() => {});
-
-      // Scroll behavior
       const shouldScroll = wasNearBottom || scroll.forceScrollActiveRef.current;
       if (shouldScroll) {
         scroll.scrollToBottomDoubleRAF();
       }
-    };
 
-    EventsOn('session:messages', handleSessionMessages);
-
-    return () => {
-      EventsOff('session:messages');
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-        debounceTimerRef.current = null;
-      }
-    };
-  }, [agentId, sessionId]);
+      // Update plan file path when messages change
+      GetPlanFilePath(agentId, sessionId).then(planPath => {
+        if (planPath) setLatestPlanFile(planPath);
+      }).catch(() => {});
+    }
+  }, [messages.length, agentId, sessionId]);
 
   // Auto-send initialMessage when provided
   const initialMessageSentRef = useRef(false);
   useEffect(() => {
-    if (initialMessage && !initialMessageSentRef.current && !isLoading) {
+    if (initialMessage && !initialMessageSentRef.current && !isLoading && initialLoadDone) {
       initialMessageSentRef.current = true;
       const sendInitialMessage = async () => {
         setIsSending(true);
@@ -252,29 +236,23 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
           uuid: `pending-${Date.now()}`,
           isPending: true
         };
-        pendingMessagesRef.current.add(initialMessage);
+        addPendingMessage(agentId, sessionId, initialMessage, pendingMessage);
         scroll.activateForceScroll();
-        setMessages(prev => [...prev, pendingMessage]);
         scroll.scrollToBottomRAF();
 
         try {
           await SendMessage(agentId, sessionId, initialMessage, planningMode);
         } catch (err) {
-          pendingMessagesRef.current.delete(initialMessage);
-          setMessages(prev =>
-            prev.map(m =>
-              m.uuid === pendingMessage.uuid
-                ? { ...m, isPending: false, isFailed: true }
-                : m
-            )
-          );
+          // On failure, the message stays in pending state
+          // Context will handle cleanup when confirmed message arrives
+          console.error('Failed to send initial message:', err);
         } finally {
           setIsSending(false);
         }
       };
       sendInitialMessage();
     }
-  }, [initialMessage, isLoading, agentId, sessionId, planningMode]);
+  }, [initialMessage, isLoading, initialLoadDone, agentId, sessionId, planningMode, addPendingMessage]);
 
   // Handle viewing tool details
   const handleViewToolDetails = (toolCall: ContentBlock, result?: ContentBlock) => {
@@ -290,14 +268,10 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
   ) => {
     try {
       watcherPausedRef.current = true;
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-        debounceTimerRef.current = null;
-        pendingEventDataRef.current = null;
-      }
       await AnswerQuestion(agentId, sessionId, toolUseId, questions, answers);
-      processedUUIDsRef.current.clear();
-      await loadConversation();
+      // Clear and reload from context
+      clearContextSession(agentId, sessionId);
+      await loadConversation(true); // Force reload
       watcherPausedRef.current = false;
     } catch (err) {
       console.error('Failed to answer question:', err);
@@ -309,8 +283,9 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
   const handleQuestionSkip = async (toolUseId: string) => {
     try {
       await SendMessage(agentId, sessionId, "I'm skipping this question. Please continue.", planningMode);
-      processedUUIDsRef.current.clear();
-      await loadConversation();
+      // Clear and reload from context
+      clearContextSession(agentId, sessionId);
+      await loadConversation(true); // Force reload
     } catch (err) {
       console.error('Failed to skip question:', err);
     }
@@ -325,7 +300,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
     if (newSessionMode) {
       try {
         setIsCreatingSession(true);
-        setMessages([]);
+        clearContextSession(agentId, sessionId);
         const newSessionId = await NewSession(agentId);
         setNewSessionMode(false);
         setIsCreatingSession(false);
@@ -340,7 +315,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
         setIsSending(false);
         // Restore message to input on failure
         inputAreaRef.current?.setValue(message);
-        loadConversation();
+        loadConversation(true);
         return;
       }
     }
@@ -353,24 +328,16 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
       isPending: true
     };
 
-    pendingMessagesRef.current.add(message);
+    addPendingMessage(agentId, sessionId, message, pendingMessage);
     scroll.activateForceScroll();
-    setMessages(prev => [...prev, pendingMessage]);
     scroll.scrollToBottomRAF();
 
     try {
       await SendMessage(agentId, sessionId, message, planningMode);
     } catch (err) {
       console.error('Failed to send message:', err);
-      pendingMessagesRef.current.delete(message);
-      setMessages(prev =>
-        prev.map(m =>
-          m.uuid === pendingMessage.uuid
-            ? { ...m, isPending: false, isFailed: true }
-            : m
-        )
-      );
-      // Restore message to input on failure
+      // On failure, restore message to input
+      // The pending message will be cleaned up when/if the confirmed message arrives
       inputAreaRef.current?.setValue(message);
     } finally {
       setIsSending(false);
@@ -445,6 +412,9 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
         scrollContainerRef={scroll.scrollContainerRef}
         messagesEndRef={scroll.messagesEndRef}
         showScrollButton={scroll.showScrollButton}
+        hasMore={hasMore}
+        isLoadingMore={isLoadingMore}
+        onLoadMore={handleLoadMore}
         onScrollToBottom={scroll.scrollToBottom}
         onCompactionClick={setCompactionContent}
         onViewToolDetails={handleViewToolDetails}

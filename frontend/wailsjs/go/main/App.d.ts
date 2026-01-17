@@ -45,6 +45,8 @@ export function GetConfigPath():Promise<string>;
 
 export function GetConversation(arg1:string,arg2:string):Promise<Array<types.Message>>;
 
+export function GetConversationPaged(arg1:string,arg2:string,arg3:number,arg4:number):Promise<main.ConversationResult>;
+
 export function GetCurrentWorkspaceID():Promise<string>;
 
 export function GetDefaultMCPToolInstructions():Promise<mcpserver.ToolInstructions>;
