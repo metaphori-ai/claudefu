@@ -87,6 +87,7 @@ func (s *MCPService) Start() error {
 
 	// Register tools with dynamic agent list
 	mcpServer.AddTool(CreateAgentQueryTool(agents), s.handleAgentQuery)
+	mcpServer.AddTool(CreateAgentMessageTool(agents), s.handleAgentMessage)
 	mcpServer.AddTool(CreateAgentBroadcastTool(agents), s.handleAgentBroadcast)
 	mcpServer.AddTool(CreateNotifyUserTool(), s.handleNotifyUser)
 

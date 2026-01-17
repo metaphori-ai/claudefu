@@ -93,7 +93,7 @@ func (s *MCPService) handleAgentQuery(ctx context.Context, req mcp.CallToolReque
 	cmd := exec.CommandContext(ctx, claudePath,
 		"--print",
 		"--mcp-config", s.getMCPConfigJSON(),
-		"--allowed-tools", "mcp__claudefu__AgentBroadcast,mcp__claudefu__AgentQuery,mcp__claudefu__NotifyUser",
+		"--allowed-tools", "mcp__claudefu__AgentQuery,mcp__claudefu__AgentMessage,mcp__claudefu__AgentBroadcast,mcp__claudefu__NotifyUser",
 		"-p", query,
 		"--append-system-prompt", "You are responding to a query from another agent. Respond concisely with facts only. Do NOT offer to make changes or ask follow-up questions.",
 	)
@@ -107,12 +107,12 @@ func (s *MCPService) handleAgentQuery(ctx context.Context, req mcp.CallToolReque
 	return mcp.NewToolResultText(string(output)), nil
 }
 
-// handleAgentBroadcast handles the AgentBroadcast tool call
-// Adds a message to the target agent's inbox
-func (s *MCPService) handleAgentBroadcast(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	targetAgent, err := req.RequireString("target_agent")
+// handleAgentMessage handles the AgentMessage tool call
+// Sends a message to one or more specific agents' inboxes
+func (s *MCPService) handleAgentMessage(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	targetAgents, err := req.RequireString("target_agents")
 	if err != nil {
-		return mcp.NewToolResultError("target_agent is required"), nil
+		return mcp.NewToolResultError("target_agents is required"), nil
 	}
 
 	message, err := req.RequireString("message")
@@ -127,43 +127,86 @@ func (s *MCPService) handleAgentBroadcast(ctx context.Context, req mcp.CallToolR
 		priority = "normal"
 	}
 
-	// Find the target agent(s) in the workspace
+	// Parse comma-separated agent list
+	agentIdentifiers := strings.Split(targetAgents, ",")
+	var sentTo []string
+	var notFound []string
+
+	for _, identifier := range agentIdentifiers {
+		identifier = strings.TrimSpace(identifier)
+		if identifier == "" {
+			continue
+		}
+
+		// Find specific agent (must be MCP-enabled)
+		agent := s.findMCPEnabledAgent(identifier)
+		if agent == nil {
+			notFound = append(notFound, identifier)
+			continue
+		}
+
+		// Add to inbox
+		s.inbox.AddMessage(agent.ID, "", fromAgent, message, priority)
+		s.emitInboxUpdate(agent.ID)
+		sentTo = append(sentTo, agent.GetSlug())
+	}
+
+	// Build response
+	if len(sentTo) == 0 {
+		available := s.getAvailableAgentSlugs()
+		return mcp.NewToolResultError(fmt.Sprintf(
+			"No valid agents found. Requested: %s. Available agents: %s",
+			targetAgents, strings.Join(available, ", "),
+		)), nil
+	}
+
+	response := fmt.Sprintf("Message sent to: %s", strings.Join(sentTo, ", "))
+	if len(notFound) > 0 {
+		response += fmt.Sprintf(" (not found: %s)", strings.Join(notFound, ", "))
+	}
+
+	return mcp.NewToolResultText(response), nil
+}
+
+// handleAgentBroadcast handles the AgentBroadcast tool call
+// Broadcasts a message to ALL agents' inboxes in the workspace
+func (s *MCPService) handleAgentBroadcast(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	message, err := req.RequireString("message")
+	if err != nil {
+		return mcp.NewToolResultError("message is required"), nil
+	}
+
+	// Optional fields
+	fromAgent, _ := req.RequireString("from_agent")
+	priority, _ := req.RequireString("priority")
+	if priority == "" {
+		priority = "normal"
+	}
+
+	// Get workspace
 	ws := s.workspace()
 	if ws == nil {
 		return mcp.NewToolResultError("no workspace loaded"), nil
 	}
 
-	// Handle broadcast to "all" MCP-enabled agents
-	if strings.ToLower(targetAgent) == "all" {
-		count := 0
-		for _, agent := range ws.Agents {
-			if !agent.GetMCPEnabled() {
-				continue // Skip agents with MCP disabled
-			}
-			s.inbox.AddMessage(agent.ID, "", fromAgent, message, priority)
-			s.emitInboxUpdate(agent.ID)
-			count++
+	// Broadcast to ALL MCP-enabled agents
+	count := 0
+	var sentTo []string
+	for _, agent := range ws.Agents {
+		if !agent.GetMCPEnabled() {
+			continue // Skip agents with MCP disabled
 		}
-		return mcp.NewToolResultText(fmt.Sprintf("Broadcast sent to %d agents", count)), nil
+		s.inbox.AddMessage(agent.ID, "", fromAgent, message, priority)
+		s.emitInboxUpdate(agent.ID)
+		sentTo = append(sentTo, agent.GetSlug())
+		count++
 	}
 
-	// Find specific agent (must be MCP-enabled)
-	agent := s.findMCPEnabledAgent(targetAgent)
-	if agent == nil {
-		available := s.getAvailableAgentSlugs()
-		return mcp.NewToolResultError(fmt.Sprintf(
-			"Agent '%s' not found or MCP disabled. Available agents: %s",
-			targetAgent, strings.Join(available, ", "),
-		)), nil
+	if count == 0 {
+		return mcp.NewToolResultError("No MCP-enabled agents found in workspace"), nil
 	}
 
-	// Add to inbox
-	msg := s.inbox.AddMessage(agent.ID, "", fromAgent, message, priority)
-
-	// Emit event to update UI
-	s.emitInboxUpdate(agent.ID)
-
-	return mcp.NewToolResultText(fmt.Sprintf("Message sent to %s (id: %s)", agent.Name, msg.ID)), nil
+	return mcp.NewToolResultText(fmt.Sprintf("Broadcast sent to %d agents: %s", count, strings.Join(sentTo, ", "))), nil
 }
 
 // handleNotifyUser handles the NotifyUser tool call
@@ -185,16 +228,18 @@ func (s *MCPService) handleNotifyUser(ctx context.Context, req mcp.CallToolReque
 		return mcp.NewToolResultError("type must be one of: info, success, warning, question"), nil
 	}
 
-	// Optional title
+	// Optional fields
 	title, _ := req.RequireString("title")
+	fromAgent, _ := req.RequireString("from_agent")
 
 	// Emit notification event
 	s.emitFunc(types.EventEnvelope{
 		EventType: "mcp:notification",
 		Payload: map[string]any{
-			"type":    notifType,
-			"message": message,
-			"title":   title,
+			"type":       notifType,
+			"message":    message,
+			"title":      title,
+			"from_agent": fromAgent,
 		},
 	})
 
