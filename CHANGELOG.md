@@ -5,6 +5,22 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.3.1] - 2025-01-17
+
+### Added
+- **CMD-S Save Shortcut for Dialogs** - New `useSaveShortcut` hook
+  - Press CMD-S (or Ctrl-S) to save when dialogs/panes are open
+  - Supported in: ClaudeSettingsDialog, PermissionsDialog, MCPSettingsPane, InputDialog
+  - Reusable hook pattern for consistent keyboard shortcuts
+
+### Changed
+- **Removed global CMD-S shortcut** - Workspace rename shortcut removed to prevent conflicts with dialog save shortcuts (rename still available via dropdown menu)
+
+### Technical
+- Vite dev server port set to 9316 (above MCP port 9315 to avoid increment clashes)
+
 ## [0.3.0] - 2025-01-17
 
 ### Added
@@ -44,18 +60,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **New Scroll Management Hook**
   - `hooks/useScrollManagement.ts` - Encapsulates scroll state, userHasScrolled tracking, auto-scroll logic
 
-- **CMD-S Save Shortcut for Dialogs** - New `useSaveShortcut` hook
-  - Press CMD-S (or Ctrl-S) to save when dialogs/panes are open
-  - Supported in: ClaudeSettingsDialog, PermissionsDialog, MCPSettingsPane, InputDialog
-  - Reusable hook pattern for consistent keyboard shortcuts
-
 ### Changed
 - **MCP Settings Pane** - Wider panel (700px) with tabbed interface
   - "Configuration" tab for workspace-level MCP settings
   - "Tool Instructions" tab for customizing tool prompts
   - Fixed Save button at bottom with border separator
 - **All MCP tools pre-approved** - AgentMessage added to `--allowed-tools` in both main session spawner and AgentQuery subprocess
-- **Removed global CMD-S shortcut** - Workspace rename shortcut removed to prevent conflicts with dialog save shortcuts (rename still available via dropdown menu)
 
 ### Fixed
 - **AgentMessage permission prompt** - Tool was missing from `--allowed-tools` in `internal/providers/claudecode.go`, causing permission prompts when agents tried to use it
@@ -64,7 +74,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Backend follows "one domain per file" pattern with all methods on `*App` receiver
 - Frontend follows component extraction pattern for maintainability
 - Tool instructions manager handles backward compatibility for new fields
-- Vite dev server port set to 9316 (above MCP port 9315 to avoid increment clashes)
 - MCP server restart on instruction changes ensures tools use latest prompts
 
 ## [0.2.9] - 2025-01-16
