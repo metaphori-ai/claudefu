@@ -7,11 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] - 2025-01-17
+
+### Added
+- **Centralized Messages Context** - Messages now stored in React Context for instant session switching
+  - New `MessagesContext` stores messages by agentId → sessionId
+  - Cached messages persist when switching between agents/sessions
+  - Background message accumulation (messages arrive even when not viewing)
+- **Load More Messages** - Pagination support for long conversations
+  - Initial load fetches 50 most recent messages
+  - "Load older messages" button at top of chat when more available
+  - Scroll position preserved when loading older messages
+- **Backend Pagination** - New `GetConversationPaged` bound method
+  - Returns `ConversationResult` with messages, totalCount, hasMore
+  - Supports limit/offset for efficient pagination
+
+### Changed
+- **Event Handling Centralized** - `session:messages` events now handled in `WailsEventHub`
+  - Single subscription point for all message events
+  - Deduplication logic moved from ChatView to central hub
+  - 50ms debounce for rapid file watcher events
+
 ### Fixed
 - **Input Typing Performance** - Decoupled input state from ChatView render cycle
   - `InputArea` now owns its own state (isolated from parent re-renders)
   - Typing no longer triggers expensive message list reconciliation
-  - Exposes `InputAreaHandle` via `useImperativeHandle` for future injection features (setValue, getValue, focus)
+  - Exposes `InputAreaHandle` via `useImperativeHandle` for future injection features
+
+### Technical
+- New `MessagesContext.tsx` with reducer pattern matching existing contexts
+- New `useMessages.ts` hook with memoized action creators
+- `ChatView.tsx` refactored to consume from context (no local message state)
+- `MessageList.tsx` updated with Load More button UI
 
 ## [0.3.2] - 2025-01-17
 

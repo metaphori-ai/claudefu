@@ -78,6 +78,10 @@ export function GetConversation(arg1, arg2) {
   return window['go']['main']['App']['GetConversation'](arg1, arg2);
 }
 
+export function GetConversationPaged(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['GetConversationPaged'](arg1, arg2, arg3, arg4);
+}
+
 export function GetCurrentWorkspaceID() {
   return window['go']['main']['App']['GetCurrentWorkspaceID']();
 }

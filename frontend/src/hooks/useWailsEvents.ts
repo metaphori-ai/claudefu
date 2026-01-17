@@ -1,9 +1,11 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { EventsOn, EventsOff } from '../../wailsjs/runtime/runtime';
 import { useWorkspace } from './useWorkspace';
 import { useSession } from './useSession';
+import { useMessages } from './useMessages';
 import { GetInboxTotalCount } from '../../wailsjs/go/main/App';
 import { types } from '../../wailsjs/go/models';
+import { Message } from '../components/chat/types';
 
 type Session = types.Session;
 
@@ -15,6 +17,15 @@ type Session = types.Session;
 export function useWailsEvents() {
   const { addDiscoveredSession } = useWorkspace();
   const { setUnreadTotal, setInboxCounts } = useSession();
+  const {
+    appendMessages,
+    isMessageProcessed,
+    getSessionMessages
+  } = useMessages();
+
+  // Debounce timer for session:messages events
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingEventDataRef = useRef<{ agentId: string; sessionId: string; messages: Message[] } | null>(null);
 
   // Subscribe to unread:changed events
   useEffect(() => {
@@ -78,6 +89,90 @@ export function useWailsEvents() {
       EventsOff('mcp:inbox');
     };
   }, [setInboxCounts]);
+
+  // Subscribe to session:messages events
+  useEffect(() => {
+    const processMessages = (agentId: string, sessionId: string, messages: Message[]) => {
+      // Check if this session has done initial load (if not, ignore - ChatView will handle it)
+      const sessionData = getSessionMessages(agentId, sessionId);
+      if (!sessionData?.initialLoadDone) {
+        return;
+      }
+
+      // Pre-filter messages that are already processed (use state-based check)
+      // Note: The APPEND_MESSAGES reducer handles final deduplication and marking as processed
+      const uniqueMessages: Message[] = [];
+      for (const msg of messages) {
+        // Skip if already processed (pre-filter to reduce unnecessary dispatch)
+        if (msg.uuid && isMessageProcessed(agentId, sessionId, msg.uuid)) {
+          continue;
+        }
+        uniqueMessages.push(msg);
+      }
+
+      if (uniqueMessages.length > 0) {
+        // appendMessages handles: deduplication, marking as processed, and pending message cleanup
+        appendMessages(agentId, sessionId, uniqueMessages);
+      }
+    };
+
+    const handleSessionMessages = (envelope: {
+      agentId?: string;
+      sessionId?: string;
+      payload?: { messages?: Message[] };
+    }) => {
+      if (!envelope?.agentId || !envelope?.sessionId || !envelope?.payload?.messages) {
+        return;
+      }
+
+      const { agentId, sessionId } = envelope;
+      const messages = envelope.payload.messages;
+
+      // Debounce rapid events (50ms)
+      if (debounceTimerRef.current) {
+        // Accumulate messages
+        if (pendingEventDataRef.current &&
+            pendingEventDataRef.current.agentId === agentId &&
+            pendingEventDataRef.current.sessionId === sessionId) {
+          pendingEventDataRef.current.messages.push(...messages);
+        } else {
+          // Different session, process immediately
+          if (pendingEventDataRef.current) {
+            processMessages(
+              pendingEventDataRef.current.agentId,
+              pendingEventDataRef.current.sessionId,
+              pendingEventDataRef.current.messages
+            );
+          }
+          pendingEventDataRef.current = { agentId, sessionId, messages: [...messages] };
+        }
+        return;
+      }
+
+      // Start new debounce window
+      pendingEventDataRef.current = { agentId, sessionId, messages: [...messages] };
+      debounceTimerRef.current = setTimeout(() => {
+        debounceTimerRef.current = null;
+        if (pendingEventDataRef.current) {
+          processMessages(
+            pendingEventDataRef.current.agentId,
+            pendingEventDataRef.current.sessionId,
+            pendingEventDataRef.current.messages
+          );
+          pendingEventDataRef.current = null;
+        }
+      }, 50);
+    };
+
+    EventsOn('session:messages', handleSessionMessages);
+    return () => {
+      EventsOff('session:messages');
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = null;
+      }
+    };
+  }, [appendMessages, isMessageProcessed, getSessionMessages]);
 }
 
 /**
