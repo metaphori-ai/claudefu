@@ -64,6 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Backend follows "one domain per file" pattern with all methods on `*App` receiver
 - Frontend follows component extraction pattern for maintainability
 - Tool instructions manager handles backward compatibility for new fields
+- Vite dev server port set to 9316 (above MCP port 9315 to avoid increment clashes)
 - MCP server restart on instruction changes ensures tools use latest prompts
 
 ## [0.2.9] - 2025-01-16
