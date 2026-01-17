@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { DialogBase } from './DialogBase';
 import { GetClaudePermissions, SaveClaudePermissions } from '../../wailsjs/go/main/App';
+import { useSaveShortcut } from '../hooks';
 
 interface PermissionsDialogProps {
   isOpen: boolean;
@@ -89,7 +90,7 @@ export function PermissionsDialog({
     }
   };
 
-  const handleSave = async () => {
+  const handleSave = useCallback(async () => {
     setSaving(true);
     setError(null);
     try {
@@ -108,7 +109,10 @@ export function PermissionsDialog({
     } finally {
       setSaving(false);
     }
-  };
+  }, [folder, allowList, denyList, additionalDirs]);
+
+  // CMD-S to save
+  useSaveShortcut(isOpen, handleSave);
 
   // Toggle a core tool
   const toggleCoreTool = (toolId: string) => {

@@ -221,11 +221,8 @@ function AppContent() {
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
-        e.preventDefault();
-        setSaveDialogOpen(true);
-        return;
-      }
+      // Note: CMD-S is handled by individual dialogs/panes when open
+      // No global CMD-S handler here to avoid conflicts
 
       if ((e.metaKey || e.ctrlKey) && e.key === 'n') {
         e.preventDefault();

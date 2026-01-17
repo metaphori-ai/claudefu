@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { SlideInPane } from './SlideInPane';
 import { workspace, mcpserver } from '../../wailsjs/go/models';
 import { GetMCPToolInstructions, SaveMCPToolInstructions, GetDefaultMCPToolInstructions } from '../../wailsjs/go/main/App';
+import { useSaveShortcut } from '../hooks';
 
 interface MCPSettingsPaneProps {
   isOpen: boolean;
@@ -78,7 +79,7 @@ export function MCPSettingsPane({
     }
   }, [isOpen]);
 
-  const handleSave = async () => {
+  const handleSave = useCallback(async () => {
     // Save tool instructions if modified
     if (toolInstructions) {
       try {
@@ -107,7 +108,10 @@ export function MCPSettingsPane({
 
     onSave(newConfig, updatedAgents);
     onClose();
-  };
+  }, [toolInstructions, enabled, port, agents, agentSettings, onSave, onClose]);
+
+  // CMD-S to save
+  useSaveShortcut(isOpen, handleSave);
 
   const handleResetInstructions = async () => {
     try {

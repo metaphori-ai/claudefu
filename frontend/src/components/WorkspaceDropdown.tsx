@@ -181,7 +181,6 @@ export function WorkspaceDropdown({
               </svg>
               Rename Workspace
             </span>
-            <span style={{ fontSize: '0.7rem', color: '#666' }}>⌘S</span>
           </button>
 
           {/* New Workspace */}
