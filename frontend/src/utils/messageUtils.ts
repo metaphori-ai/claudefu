@@ -134,3 +134,99 @@ export function filterMessagesToRender(
 
   return filtered;
 }
+
+/**
+ * Extract text content from a single message's content blocks.
+ * Only includes text blocks, excludes tool_use, tool_result, thinking, etc.
+ */
+export function getMessageText(message: Message): string {
+  const textParts: string[] = [];
+  for (const block of message.contentBlocks || []) {
+    if (block.type === 'text' && block.text) {
+      textParts.push(block.text);
+    }
+  }
+  return textParts.join('\n\n') || message.content;
+}
+
+/**
+ * Get aggregated text from all assistant messages in a response group.
+ * A response group is all consecutive assistant messages between user messages.
+ * Excludes tool_use, tool_result, and thinking blocks.
+ */
+export function getFullResponseText(
+  messages: Message[],
+  startIndex: number
+): string {
+  const textParts: string[] = [];
+
+  for (let i = startIndex; i < messages.length; i++) {
+    const msg = messages[i];
+
+    // Stop at next user message
+    if (msg.type === 'user') break;
+
+    // Skip non-assistant messages
+    if (msg.type !== 'assistant') continue;
+
+    // Extract text blocks only
+    for (const block of msg.contentBlocks || []) {
+      if (block.type === 'text' && block.text) {
+        textParts.push(block.text);
+      }
+    }
+  }
+
+  return textParts.join('\n\n');
+}
+
+/**
+ * Check if this message is the last assistant message before a user message (or end of array).
+ * Used to determine where to show the "copy full response" button.
+ */
+export function isLastAssistantInResponse(
+  messages: Message[],
+  index: number
+): boolean {
+  const msg = messages[index];
+  if (msg.type !== 'assistant') return false;
+
+  // Look ahead for next message
+  for (let i = index + 1; i < messages.length; i++) {
+    const nextMsg = messages[i];
+    if (nextMsg.type === 'user') return true;  // User next = we're last assistant
+    if (nextMsg.type === 'assistant') return false;  // Another assistant = not last
+    // Skip tool_result_carrier and other types
+  }
+
+  return true;  // End of array = we're last
+}
+
+/**
+ * Find the start index of a response group (first assistant message after the previous user message).
+ */
+export function findResponseGroupStart(
+  messages: Message[],
+  lastAssistantIndex: number
+): number {
+  let startIdx = lastAssistantIndex;
+
+  // Walk backwards to find the first assistant message in this group
+  while (startIdx > 0) {
+    const prevMsg = messages[startIdx - 1];
+    if (prevMsg.type === 'user') break;  // Found previous user message
+    if (prevMsg.type === 'assistant') {
+      startIdx--;  // Include this assistant message in the group
+    } else {
+      // Skip tool_result_carrier and other types, keep looking
+      startIdx--;
+    }
+  }
+
+  // Now find the first actual assistant message from startIdx
+  while (startIdx <= lastAssistantIndex && messages[startIdx].type !== 'assistant') {
+    startIdx++;
+  }
+
+  return startIdx;
+}
