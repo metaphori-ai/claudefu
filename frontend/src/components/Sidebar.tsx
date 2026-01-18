@@ -648,7 +648,8 @@ function AgentRow({
             }}>
               {agent.selectedSessionId ? sessionDisplayName : 'No session'}
             </span>
-            {sessionUnread > 0 && (
+            {/* Only show badge for non-selected agents (you're not looking at it) */}
+            {!isSelected && sessionUnread > 0 && (
               <span style={{
                 marginLeft: '0.35rem',
                 background: '#d97757',

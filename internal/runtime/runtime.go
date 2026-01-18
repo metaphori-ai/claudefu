@@ -65,6 +65,7 @@ type SessionState struct {
 	UnreadCount     int       // Derived: len(Messages) - ViewedIndex
 	Preview         string    // First user message preview
 	PlanFilePath    string    // Path to active plan file (if any)
+	LastSendTime    time.Time // Time when user sent last message (for timestamp-based filtering)
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }
@@ -170,6 +171,7 @@ func (rt *WorkspaceRuntime) GetOrCreateSessionState(agentID, sessionID string) *
 
 	session, exists := agentState.Sessions[sessionID]
 	if !exists {
+		fmt.Printf("[DEBUG] GetOrCreateSessionState: CREATING NEW session=%s agent=%s (FilePosition will be 0!)\n", sessionID[:8], agentID[:8])
 		session = &SessionState{
 			SessionID:   sessionID,
 			AgentID:     agentID,
@@ -180,6 +182,9 @@ func (rt *WorkspaceRuntime) GetOrCreateSessionState(agentID, sessionID string) *
 			UnreadCount: 0,
 		}
 		agentState.Sessions[sessionID] = session
+	} else {
+		fmt.Printf("[DEBUG] GetOrCreateSessionState: FOUND EXISTING session=%s filePos=%d msgCount=%d initialLoadDone=%v\n",
+			sessionID[:8], session.FilePosition, len(session.Messages), session.InitialLoadDone)
 	}
 	return session
 }
@@ -277,33 +282,59 @@ func (rt *WorkspaceRuntime) IsActiveSession(agentID, sessionID string) bool {
 // =============================================================================
 
 // AppendMessages adds new messages to a session and updates unread counts.
-// Returns the number of new messages added.
-func (rt *WorkspaceRuntime) AppendMessages(agentID, sessionID string, messages []types.Message) int {
+// Returns the slice of actually added messages (after deduplication).
+func (rt *WorkspaceRuntime) AppendMessages(agentID, sessionID string, messages []types.Message) []types.Message {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
 
 	agentState, ok := rt.agentStates[agentID]
 	if !ok {
 		fmt.Printf("[DEBUG] AppendMessages: agent %s not found\n", agentID)
-		return 0
+		return nil
 	}
 
 	session, ok := agentState.Sessions[sessionID]
 	if !ok {
 		fmt.Printf("[DEBUG] AppendMessages: session %s not found for agent %s\n", sessionID, agentID)
-		return 0
+		return nil
+	}
+
+	// Build set of existing UUIDs for deduplication
+	existingUUIDs := make(map[string]bool, len(session.Messages))
+	for _, msg := range session.Messages {
+		if msg.UUID != "" {
+			existingUUIDs[msg.UUID] = true
+		}
+	}
+
+	// Filter out duplicates
+	var newMessages []types.Message
+	duplicateCount := 0
+	for _, msg := range messages {
+		if msg.UUID != "" && existingUUIDs[msg.UUID] {
+			duplicateCount++
+			continue
+		}
+		newMessages = append(newMessages, msg)
+		if msg.UUID != "" {
+			existingUUIDs[msg.UUID] = true // Prevent duplicates within the batch too
+		}
 	}
 
 	// Debug: count message types
 	typeCounts := make(map[string]int)
-	for _, msg := range messages {
+	for _, msg := range newMessages {
 		typeCounts[msg.Type]++
 	}
-	fmt.Printf("[DEBUG] AppendMessages: agent=%s session=%s adding %d messages (types: %v) prevCount=%d\n",
-		agentID[:8], sessionID[:8], len(messages), typeCounts, len(session.Messages))
+	fmt.Printf("[DEBUG] AppendMessages: agent=%s session=%s incoming=%d duplicates=%d adding=%d (types: %v) prevCount=%d\n",
+		agentID[:8], sessionID[:8], len(messages), duplicateCount, len(newMessages), typeCounts, len(session.Messages))
+
+	if len(newMessages) == 0 {
+		return nil
+	}
 
 	prevCount := len(session.Messages)
-	session.Messages = append(session.Messages, messages...)
+	session.Messages = append(session.Messages, newMessages...)
 
 	// Enforce FIFO buffer limit - trim oldest messages if over limit
 	if len(session.Messages) > MaxBufferSize {
@@ -351,7 +382,7 @@ func (rt *WorkspaceRuntime) AppendMessages(agentID, sessionID string, messages [
 	// Update agent total unread
 	rt.recalculateAgentUnread(agentState)
 
-	return len(session.Messages) - prevCount
+	return newMessages
 }
 
 // GetMessages returns all messages for a session.
@@ -553,9 +584,13 @@ func (rt *WorkspaceRuntime) GetAllUnreadCounts(agentID string) map[string]int {
 // Must be called with lock held.
 func (rt *WorkspaceRuntime) recalculateAgentUnread(agentState *AgentState) {
 	total := 0
-	for _, session := range agentState.Sessions {
+	for sessionID, session := range agentState.Sessions {
+		if session.UnreadCount > 0 {
+			fmt.Printf("[DEBUG] recalculateAgentUnread: session=%s unread=%d\n", sessionID[:8], session.UnreadCount)
+		}
 		total += session.UnreadCount
 	}
+	fmt.Printf("[DEBUG] recalculateAgentUnread: agentTotal=%d\n", total)
 	agentState.TotalUnread = total
 }
 
@@ -588,15 +623,65 @@ func (rt *WorkspaceRuntime) SetFilePosition(agentID, sessionID string, pos int64
 
 	agentState, ok := rt.agentStates[agentID]
 	if !ok {
+		fmt.Printf("[DEBUG] SetFilePosition: agent not found agentID=%s\n", agentID[:8])
 		return
 	}
 
 	session, ok := agentState.Sessions[sessionID]
 	if !ok {
+		fmt.Printf("[DEBUG] SetFilePosition: session not found sessionID=%s\n", sessionID[:8])
 		return
 	}
 
+	oldPos := session.FilePosition
 	session.FilePosition = pos
+	fmt.Printf("[DEBUG] SetFilePosition: session=%s oldPos=%d newPos=%d delta=%d\n",
+		sessionID[:8], oldPos, pos, pos-oldPos)
+}
+
+// =============================================================================
+// SEND TIME TRACKING (for timestamp-based message filtering)
+// =============================================================================
+
+// SetLastSendTime records when the user sent a message.
+// This is used to filter out historical context that Claude Code writes when resuming.
+func (rt *WorkspaceRuntime) SetLastSendTime(agentID, sessionID string, t time.Time) {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+
+	agentState, ok := rt.agentStates[agentID]
+	if !ok {
+		fmt.Printf("[DEBUG] SetLastSendTime: agent not found agentID=%s\n", agentID[:8])
+		return
+	}
+
+	session, ok := agentState.Sessions[sessionID]
+	if !ok {
+		fmt.Printf("[DEBUG] SetLastSendTime: session not found sessionID=%s\n", sessionID[:8])
+		return
+	}
+
+	session.LastSendTime = t
+	fmt.Printf("[DEBUG] SetLastSendTime: session=%s time=%v\n", sessionID[:8], t.Format(time.RFC3339))
+}
+
+// GetLastSendTime returns the time when the user last sent a message.
+// Returns zero time if not set.
+func (rt *WorkspaceRuntime) GetLastSendTime(agentID, sessionID string) time.Time {
+	rt.mu.RLock()
+	defer rt.mu.RUnlock()
+
+	agentState, ok := rt.agentStates[agentID]
+	if !ok {
+		return time.Time{}
+	}
+
+	session, ok := agentState.Sessions[sessionID]
+	if !ok {
+		return time.Time{}
+	}
+
+	return session.LastSendTime
 }
 
 // =============================================================================
@@ -632,6 +717,8 @@ func (rt *WorkspaceRuntime) EmitUnreadChanged(agentID, sessionID string) {
 		}
 	}
 	rt.mu.RUnlock()
+
+	fmt.Printf("[DEBUG] EmitUnreadChanged: session=%s unread=%d agentTotal=%d\n", sessionID[:8], unread, agentTotal)
 
 	rt.Emit("unread:changed", agentID, sessionID, map[string]int{
 		"unread":     unread,
@@ -803,8 +890,9 @@ func DetectPendingQuestions(messages []types.Message) []types.Message {
 	}
 
 	// Third pass: determine which failed questions are truly "pending" vs "skipped"
-	// A question is pending ONLY if there's no meaningful content after it
-	// (no assistant messages, no user messages with actual content)
+	// A question is pending ONLY if:
+	// 1. It's the last failed question with no meaningful content after it
+	// 2. It's recent (within 2 hours) - stale questions should just show as failed
 	for idx, fq := range failedQuestions {
 		isLast := idx == len(failedQuestions)-1
 		isPending := false
@@ -826,6 +914,17 @@ func DetectPendingQuestions(messages []types.Message) []types.Message {
 				}
 			}
 			isPending = !hasContentAfter
+
+			// Only show as pending if it's recent (within 2 hours)
+			// Stale questions from hours/days ago should just show as failed
+			if isPending {
+				msgTime := parseTimestampToTime(messages[fq.messageIndex].Timestamp)
+				if !msgTime.IsZero() && time.Since(msgTime) > 2*time.Hour {
+					isPending = false
+					fmt.Printf("[DEBUG] DetectPendingQuestions: question %s is stale (%.1f hours old), marking as failed\n",
+						fq.toolUseID[:8], time.Since(msgTime).Hours())
+				}
+			}
 		}
 
 		if isPending {

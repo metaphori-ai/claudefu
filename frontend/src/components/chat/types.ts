@@ -7,6 +7,24 @@ export interface ImageSource {
   data: string;       // Base64 data, file path, or URL
 }
 
+// Attachment for images sent with messages (frontend-specific with preview data)
+export interface Attachment {
+  id: string;           // Unique ID for React keys
+  type: 'image';        // Currently only images supported
+  mediaType: string;    // "image/png", "image/jpeg", "image/gif", "image/webp"
+  data: string;         // Base64 data (no data: prefix)
+  previewUrl: string;   // Data URL for preview display (data:image/png;base64,...)
+  fileName?: string;    // Original filename if from file upload
+  size: number;         // File size in bytes
+}
+
+// Constants for attachment validation
+export const ATTACHMENT_LIMITS = {
+  MAX_IMAGES: 100,
+  MAX_TOTAL_SIZE: 32 * 1024 * 1024, // 32MB
+  SUPPORTED_TYPES: ['image/png', 'image/jpeg', 'image/gif', 'image/webp'] as const,
+};
+
 // Content block type matches the Go types.ContentBlock
 export interface ContentBlock {
   type: string;

@@ -10,6 +10,10 @@ export function AlertDialog(arg1, arg2) {
   return window['go']['main']['App']['AlertDialog'](arg1, arg2);
 }
 
+export function AnswerMCPQuestion(arg1, arg2) {
+  return window['go']['main']['App']['AnswerMCPQuestion'](arg1, arg2);
+}
+
 export function AnswerQuestion(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['main']['App']['AnswerQuestion'](arg1, arg2, arg3, arg4, arg5);
 }
@@ -82,8 +86,16 @@ export function GetConversationPaged(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['GetConversationPaged'](arg1, arg2, arg3, arg4);
 }
 
+export function GetCurrentWorkspace() {
+  return window['go']['main']['App']['GetCurrentWorkspace']();
+}
+
 export function GetCurrentWorkspaceID() {
   return window['go']['main']['App']['GetCurrentWorkspaceID']();
+}
+
+export function GetDefaultMCPToolAvailability() {
+  return window['go']['main']['App']['GetDefaultMCPToolAvailability']();
 }
 
 export function GetDefaultMCPToolInstructions() {
@@ -106,8 +118,16 @@ export function GetMCPServerPort() {
   return window['go']['main']['App']['GetMCPServerPort']();
 }
 
+export function GetMCPToolAvailability() {
+  return window['go']['main']['App']['GetMCPToolAvailability']();
+}
+
 export function GetMCPToolInstructions() {
   return window['go']['main']['App']['GetMCPToolInstructions']();
+}
+
+export function GetPendingMCPQuestions() {
+  return window['go']['main']['App']['GetPendingMCPQuestions']();
 }
 
 export function GetPlanFilePath(arg1, arg2) {
@@ -194,6 +214,10 @@ export function SaveFile(arg1) {
   return window['go']['main']['App']['SaveFile'](arg1);
 }
 
+export function SaveMCPToolAvailability(arg1) {
+  return window['go']['main']['App']['SaveMCPToolAvailability'](arg1);
+}
+
 export function SaveMCPToolInstructions(arg1) {
   return window['go']['main']['App']['SaveMCPToolInstructions'](arg1);
 }
@@ -222,8 +246,8 @@ export function SelectWorkspaceFolder() {
   return window['go']['main']['App']['SelectWorkspaceFolder']();
 }
 
-export function SendMessage(arg1, arg2, arg3, arg4) {
-  return window['go']['main']['App']['SendMessage'](arg1, arg2, arg3, arg4);
+export function SendMessage(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['main']['App']['SendMessage'](arg1, arg2, arg3, arg4, arg5);
 }
 
 export function SetAPIKey(arg1) {
@@ -236,6 +260,10 @@ export function SetActiveSession(arg1, arg2) {
 
 export function SetSessionName(arg1, arg2, arg3) {
   return window['go']['main']['App']['SetSessionName'](arg1, arg2, arg3);
+}
+
+export function SkipMCPQuestion(arg1) {
+  return window['go']['main']['App']['SkipMCPQuestion'](arg1);
 }
 
 export function StartHyperLogin() {

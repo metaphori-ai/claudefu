@@ -19,6 +19,7 @@ type Settings struct {
 	Theme               string `json:"theme"`               // "dark", "light", "system"
 	EnterBehavior       string `json:"enterBehavior"`       // "send", "newline"
 	DefaultWorkingDir   string `json:"defaultWorkingDir"`   // default working directory for agents
+	DebugLogging        bool   `json:"debugLogging"`        // enable aggregated debug logging on frontend
 }
 
 // AuthConfig holds authentication configuration

@@ -127,8 +127,24 @@ func (a *App) loadCurrentWorkspace() {
 		return
 	}
 
+	// DEBUG: Check if selectedSession was loaded
+	if ws.SelectedSession != nil {
+		fmt.Printf("[DEBUG] loadCurrentWorkspace: LOADED selectedSession agentId=%s sessionId=%s folder=%s\n",
+			ws.SelectedSession.AgentID, ws.SelectedSession.SessionID, ws.SelectedSession.Folder)
+	} else {
+		fmt.Printf("[DEBUG] loadCurrentWorkspace: selectedSession is nil after LoadWorkspace\n")
+	}
+
 	// Migrate workspace to latest version (adds UUIDs to agents)
 	ws = a.workspace.MigrateWorkspace(ws)
+
+	// DEBUG: Check after migration
+	if ws.SelectedSession != nil {
+		fmt.Printf("[DEBUG] loadCurrentWorkspace: AFTER MIGRATE selectedSession agentId=%s sessionId=%s\n",
+			ws.SelectedSession.AgentID, ws.SelectedSession.SessionID)
+	} else {
+		fmt.Printf("[DEBUG] loadCurrentWorkspace: selectedSession is nil AFTER MigrateWorkspace\n")
+	}
 
 	// Save migrated workspace
 	if err := a.workspace.SaveWorkspace(ws); err != nil {

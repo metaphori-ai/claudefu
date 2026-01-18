@@ -89,7 +89,7 @@ func (a *App) InjectInboxMessage(agentID, sessionID, messageID string) error {
 	formattedMsg := fmt.Sprintf("[Message from %s]\n\n%s", msg.FromAgentName, msg.Message)
 
 	// Send to Claude session
-	if err := a.claude.SendMessage(agent.Folder, sessionID, formattedMsg, false); err != nil {
+	if err := a.claude.SendMessage(agent.Folder, sessionID, formattedMsg, nil, false); err != nil {
 		return err
 	}
 

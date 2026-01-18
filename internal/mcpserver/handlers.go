@@ -2,14 +2,18 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os/exec"
 	"strings"
+	"time"
 
 	"claudefu/internal/providers"
 	"claudefu/internal/types"
 	"claudefu/internal/workspace"
 
+	"github.com/gorilla/websocket"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
@@ -60,6 +64,11 @@ func (s *MCPService) getMCPConfigJSON() string {
 // handleAgentQuery handles the AgentQuery tool call
 // Spawns a stateless claude --print query in the target agent's folder
 func (s *MCPService) handleAgentQuery(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// Check tool availability
+	if !s.toolAvailability.IsEnabled("AgentQuery") {
+		return mcp.NewToolResultError("AgentQuery tool is disabled. Enable in MCP Settings > Tool Availability."), nil
+	}
+
 	targetAgent, err := req.RequireString("target_agent")
 	if err != nil {
 		return mcp.NewToolResultError("target_agent is required"), nil
@@ -95,7 +104,8 @@ func (s *MCPService) handleAgentQuery(ctx context.Context, req mcp.CallToolReque
 	args := []string{
 		"--print",
 		"--mcp-config", s.getMCPConfigJSON(),
-		"--allowed-tools", "mcp__claudefu__AgentQuery,mcp__claudefu__AgentMessage,mcp__claudefu__AgentBroadcast,mcp__claudefu__NotifyUser",
+		"--allowed-tools", "mcp__claudefu__AgentQuery,mcp__claudefu__AgentMessage,mcp__claudefu__AgentBroadcast,mcp__claudefu__NotifyUser,mcp__claudefu__AskUserQuestion,mcp__claudefu__SelfQuery",
+		"--disallowed-tools", "AskUserQuestion",
 		"-p", query,
 	}
 
@@ -115,9 +125,78 @@ func (s *MCPService) handleAgentQuery(ctx context.Context, req mcp.CallToolReque
 	return mcp.NewToolResultText(string(output)), nil
 }
 
+// handleSelfQuery handles the SelfQuery tool call
+// Spawns a stateless claude --print query in the caller's OWN folder (not a target's)
+// This gives the spawned Claude access to CLAUDE.md and all includes (TDAs, SVML)
+func (s *MCPService) handleSelfQuery(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// Check tool availability
+	if !s.toolAvailability.IsEnabled("SelfQuery") {
+		return mcp.NewToolResultError("SelfQuery tool is disabled. Enable in MCP Settings > Tool Availability."), nil
+	}
+
+	// from_agent is REQUIRED for SelfQuery - we need it to identify the caller's folder
+	fromAgent, err := req.RequireString("from_agent")
+	if err != nil {
+		return mcp.NewToolResultError("from_agent is required - tell me your agent slug"), nil
+	}
+
+	query, err := req.RequireString("query")
+	if err != nil {
+		return mcp.NewToolResultError("query is required"), nil
+	}
+
+	// Find the caller's agent (must be MCP-enabled)
+	agent := s.findMCPEnabledAgent(fromAgent)
+	if agent == nil {
+		available := s.getAvailableAgentSlugs()
+		return mcp.NewToolResultError(fmt.Sprintf(
+			"Agent '%s' not found or MCP disabled. Available agents: %s",
+			fromAgent, strings.Join(available, ", "),
+		)), nil
+	}
+
+	// Get claude binary path
+	claudePath := providers.GetClaudePath()
+	if claudePath == "" {
+		return mcp.NewToolResultError("claude CLI not found"), nil
+	}
+
+	// Get system prompt from configurable instructions (SelfQuery has its own)
+	systemPrompt := s.toolInstructions.GetInstructions().SelfQuerySystemPrompt
+
+	// Build command args - same as AgentQuery but runs in caller's own folder
+	args := []string{
+		"--print",
+		"--mcp-config", s.getMCPConfigJSON(),
+		"--allowed-tools", "mcp__claudefu__AgentQuery,mcp__claudefu__AgentMessage,mcp__claudefu__AgentBroadcast,mcp__claudefu__NotifyUser,mcp__claudefu__AskUserQuestion,mcp__claudefu__SelfQuery",
+		"--disallowed-tools", "AskUserQuestion",
+		"-p", query,
+	}
+
+	// Only append system prompt if configured
+	if systemPrompt != "" {
+		args = append(args, "--append-system-prompt", systemPrompt)
+	}
+
+	cmd := exec.CommandContext(ctx, claudePath, args...)
+	cmd.Dir = agent.Folder // Run in CALLER'S folder (key difference from AgentQuery)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("SelfQuery failed: %v\nOutput: %s", err, string(output))), nil
+	}
+
+	return mcp.NewToolResultText(string(output)), nil
+}
+
 // handleAgentMessage handles the AgentMessage tool call
 // Sends a message to one or more specific agents' inboxes
 func (s *MCPService) handleAgentMessage(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// Check tool availability
+	if !s.toolAvailability.IsEnabled("AgentMessage") {
+		return mcp.NewToolResultError("AgentMessage tool is disabled. Enable in MCP Settings > Tool Availability."), nil
+	}
+
 	targetAgents, err := req.RequireString("target_agents")
 	if err != nil {
 		return mcp.NewToolResultError("target_agents is required"), nil
@@ -179,6 +258,11 @@ func (s *MCPService) handleAgentMessage(ctx context.Context, req mcp.CallToolReq
 // handleAgentBroadcast handles the AgentBroadcast tool call
 // Broadcasts a message to ALL agents' inboxes in the workspace
 func (s *MCPService) handleAgentBroadcast(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// Check tool availability
+	if !s.toolAvailability.IsEnabled("AgentBroadcast") {
+		return mcp.NewToolResultError("AgentBroadcast tool is disabled. Enable in MCP Settings > Tool Availability."), nil
+	}
+
 	message, err := req.RequireString("message")
 	if err != nil {
 		return mcp.NewToolResultError("message is required"), nil
@@ -220,6 +304,11 @@ func (s *MCPService) handleAgentBroadcast(ctx context.Context, req mcp.CallToolR
 // handleNotifyUser handles the NotifyUser tool call
 // Emits an event to show a notification in the ClaudeFu UI
 func (s *MCPService) handleNotifyUser(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// Check tool availability
+	if !s.toolAvailability.IsEnabled("NotifyUser") {
+		return mcp.NewToolResultError("NotifyUser tool is disabled. Enable in MCP Settings > Tool Availability."), nil
+	}
+
 	message, err := req.RequireString("message")
 	if err != nil {
 		return mcp.NewToolResultError("message is required"), nil
@@ -263,4 +352,207 @@ func (s *MCPService) emitInboxUpdate(agentID string) {
 			"unreadCount": s.inbox.GetUnreadCount(agentID),
 		},
 	})
+}
+
+// handleAskUserQuestion handles the AskUserQuestion tool call
+// This blocks until the user answers or skips the question
+func (s *MCPService) handleAskUserQuestion(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// Check tool availability
+	if !s.toolAvailability.IsEnabled("AskUserQuestion") {
+		return mcp.NewToolResultError("AskUserQuestion tool is disabled. Enable in MCP Settings > Tool Availability."), nil
+	}
+
+	// Get the raw arguments - they come as a map[string]any
+	args, ok := req.Params.Arguments.(map[string]any)
+	if !ok {
+		return mcp.NewToolResultError("invalid arguments format"), nil
+	}
+
+	// Extract questions array
+	questionsRaw, exists := args["questions"]
+	if !exists || questionsRaw == nil {
+		return mcp.NewToolResultError("questions parameter is required"), nil
+	}
+
+	// Convert to []map[string]any via JSON round-trip for safety
+	var questions []map[string]any
+	questionsJSON, err := json.Marshal(questionsRaw)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("invalid questions format: %v", err)), nil
+	}
+	if err := json.Unmarshal(questionsJSON, &questions); err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("invalid questions format: %v", err)), nil
+	}
+
+	if len(questions) == 0 {
+		return mcp.NewToolResultError("at least one question is required"), nil
+	}
+
+	// Optional: get from_agent for logging
+	fromAgent, _ := args["from_agent"].(string)
+	if fromAgent == "" {
+		fromAgent = "unknown"
+	}
+
+	fmt.Printf("[MCP:AskUser] Received question from agent %s with %d questions\n", fromAgent, len(questions))
+
+	// Create pending question with response channel
+	pq := s.pendingQuestions.Create(fromAgent, questions)
+
+	// Emit event to frontend to show dialog
+	s.emitFunc(types.EventEnvelope{
+		EventType: "mcp:askuser",
+		Payload: map[string]any{
+			"id":        pq.ID,
+			"agentSlug": pq.AgentSlug,
+			"questions": pq.Questions,
+			"createdAt": pq.CreatedAt.Format(time.RFC3339),
+		},
+	})
+
+	// Block waiting for response, timeout, or context cancellation
+	timeout := s.pendingQuestions.GetTimeout()
+	select {
+	case answer, ok := <-pq.ResponseCh:
+		if !ok {
+			// Channel was closed (cancelled)
+			return mcp.NewToolResultError("Question was cancelled"), nil
+		}
+		if answer.Skipped {
+			return mcp.NewToolResultError("User skipped the question"), nil
+		}
+		// Return answer as JSON
+		result := map[string]any{
+			"questions": questions,
+			"answers":   answer.Answers,
+		}
+		resultJSON, _ := json.Marshal(result)
+		fmt.Printf("[MCP:AskUser] Returning answer for question %s\n", pq.ID[:8])
+		return mcp.NewToolResultText(string(resultJSON)), nil
+
+	case <-ctx.Done():
+		// Context cancelled (e.g., Claude disconnected)
+		s.pendingQuestions.Cancel(pq.ID)
+		return mcp.NewToolResultError("Request cancelled"), nil
+
+	case <-s.ctx.Done():
+		// Server shutting down
+		s.pendingQuestions.Cancel(pq.ID)
+		return mcp.NewToolResultError("Server shutting down"), nil
+
+	case <-time.After(timeout):
+		// Timeout
+		s.pendingQuestions.Cancel(pq.ID)
+		return mcp.NewToolResultError(fmt.Sprintf("Question timed out after %v", timeout)), nil
+	}
+}
+
+// handleBrowserAgent handles the BrowserAgent tool call
+// Connects to Claude in Browser via a WebSocket bridge for visual/DOM/CSS investigation
+func (s *MCPService) handleBrowserAgent(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// Check tool availability
+	if !s.toolAvailability.IsEnabled("BrowserAgent") {
+		return mcp.NewToolResultError("BrowserAgent is disabled. Enable in MCP Settings > Tool Availability (requires password)."), nil
+	}
+
+	// Get the raw arguments
+	args, ok := req.Params.Arguments.(map[string]any)
+	if !ok {
+		return mcp.NewToolResultError("invalid arguments format"), nil
+	}
+
+	// Parse required prompt parameter
+	prompt, ok := args["prompt"].(string)
+	if !ok || prompt == "" {
+		return mcp.NewToolResultError("prompt is required"), nil
+	}
+
+	// Parse optional timeout (default: 600 seconds = 10 minutes)
+	timeout := 600
+	if t, ok := args["timeout"].(float64); ok && t > 0 {
+		timeout = int(t)
+	}
+
+	// Optional from_agent for logging
+	fromAgent := "unknown"
+	if fa, ok := args["from_agent"].(string); ok && fa != "" {
+		fromAgent = fa
+	}
+
+	fmt.Printf("[MCP:BrowserAgent] Request from %s, timeout: %ds\n", fromAgent, timeout)
+
+	// Check bridge health
+	healthClient := &http.Client{Timeout: 5 * time.Second}
+	resp, err := healthClient.Get("http://localhost:9320/health")
+	if err != nil {
+		return mcp.NewToolResultError("Browser bridge not available. Ensure Chrome extension bridge is running on localhost:9320."), nil
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return mcp.NewToolResultError(fmt.Sprintf("Browser bridge health check failed: %d", resp.StatusCode)), nil
+	}
+
+	// Connect to WebSocket
+	dialer := websocket.Dialer{
+		HandshakeTimeout: 10 * time.Second,
+	}
+	conn, _, err := dialer.DialContext(ctx, "ws://localhost:9320/ws", nil)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to connect to browser bridge: %v", err)), nil
+	}
+	defer conn.Close()
+
+	// Generate unique request ID
+	requestID := fmt.Sprintf("claudefu-%d", time.Now().UnixNano())
+
+	// Build report instructions that tell Claude in Browser where to submit findings
+	reportURL := fmt.Sprintf("http://localhost:9320/report/%s", requestID)
+	reportInstructions := fmt.Sprintf(`
+
+---
+When you've completed your investigation:
+Navigate to %s and submit your findings in the form.
+---`, reportURL)
+
+	// Send request to bridge
+	request := map[string]any{
+		"type":       "tool_request",
+		"request_id": requestID,
+		"tool":       "ask_browser_claude",
+		"args": map[string]any{
+			"prompt":  prompt + reportInstructions,
+			"timeout": timeout,
+		},
+	}
+
+	if err := conn.WriteJSON(request); err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to send request to bridge: %v", err)), nil
+	}
+
+	fmt.Printf("[MCP:BrowserAgent] Request %s sent, waiting for response...\n", requestID[:16])
+
+	// Wait for response with timeout (+30 seconds buffer for response transmission)
+	conn.SetReadDeadline(time.Now().Add(time.Duration(timeout+30) * time.Second))
+
+	var response struct {
+		Type      string `json:"type"`
+		RequestID string `json:"request_id"`
+		Content   string `json:"content"`
+		IsError   bool   `json:"is_error"`
+	}
+
+	if err := conn.ReadJSON(&response); err != nil {
+		if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+			return mcp.NewToolResultError("Browser bridge connection closed"), nil
+		}
+		return mcp.NewToolResultError(fmt.Sprintf("Timeout waiting for browser findings (waited %ds)", timeout)), nil
+	}
+
+	fmt.Printf("[MCP:BrowserAgent] Received response for %s (is_error: %v)\n", requestID[:16], response.IsError)
+
+	if response.IsError {
+		return mcp.NewToolResultError(response.Content), nil
+	}
+
+	return mcp.NewToolResultText(response.Content), nil
 }

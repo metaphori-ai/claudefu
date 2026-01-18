@@ -1,8 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import { SlideInPane } from './SlideInPane';
 import { workspace, mcpserver } from '../../wailsjs/go/models';
-import { GetMCPToolInstructions, SaveMCPToolInstructions, GetDefaultMCPToolInstructions } from '../../wailsjs/go/main/App';
+import {
+  GetMCPToolInstructions, SaveMCPToolInstructions, GetDefaultMCPToolInstructions,
+  GetMCPToolAvailability, SaveMCPToolAvailability, GetDefaultMCPToolAvailability,
+} from '../../wailsjs/go/main/App';
 import { useSaveShortcut } from '../hooks';
+
+// Password required to enable BrowserAgent (experimental tool)
+const BROWSER_AGENT_PASSWORD = 'claudefu';
 
 interface MCPSettingsPaneProps {
   isOpen: boolean;
@@ -40,8 +46,17 @@ export function MCPSettingsPane({
   const [toolInstructions, setToolInstructions] = useState<mcpserver.ToolInstructions | null>(null);
   const [instructionsLoading, setInstructionsLoading] = useState(false);
 
+  // Tool availability state
+  const [toolAvailability, setToolAvailability] = useState<mcpserver.ToolAvailability | null>(null);
+  const [availabilityLoading, setAvailabilityLoading] = useState(false);
+
+  // Password dialog state for BrowserAgent
+  const [showPasswordDialog, setShowPasswordDialog] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+
   // Tab state
-  const [activeTab, setActiveTab] = useState<'config' | 'instructions'>('config');
+  const [activeTab, setActiveTab] = useState<'config' | 'availability' | 'instructions'>('config');
 
   // Initialize agent settings when pane opens or agents change
   useEffect(() => {
@@ -79,6 +94,23 @@ export function MCPSettingsPane({
     }
   }, [isOpen]);
 
+  // Load tool availability when pane opens
+  useEffect(() => {
+    if (isOpen) {
+      setAvailabilityLoading(true);
+      GetMCPToolAvailability()
+        .then((availability) => {
+          setToolAvailability(availability);
+        })
+        .catch((err) => {
+          console.error('Failed to load tool availability:', err);
+        })
+        .finally(() => {
+          setAvailabilityLoading(false);
+        });
+    }
+  }, [isOpen]);
+
   const handleSave = useCallback(async () => {
     // Save tool instructions if modified
     if (toolInstructions) {
@@ -86,6 +118,15 @@ export function MCPSettingsPane({
         await SaveMCPToolInstructions(toolInstructions);
       } catch (err) {
         console.error('Failed to save tool instructions:', err);
+      }
+    }
+
+    // Save tool availability if modified
+    if (toolAvailability) {
+      try {
+        await SaveMCPToolAvailability(toolAvailability);
+      } catch (err) {
+        console.error('Failed to save tool availability:', err);
       }
     }
 
@@ -108,7 +149,7 @@ export function MCPSettingsPane({
 
     onSave(newConfig, updatedAgents);
     onClose();
-  }, [toolInstructions, enabled, port, agents, agentSettings, onSave, onClose]);
+  }, [toolInstructions, toolAvailability, enabled, port, agents, agentSettings, onSave, onClose]);
 
   // CMD-S to save
   useSaveShortcut(isOpen, handleSave);
@@ -148,7 +189,41 @@ export function MCPSettingsPane({
     return settings?.mcpSlug || slugify(agent.name);
   };
 
-  const tabStyle = (tab: 'config' | 'instructions') => ({
+  // Update tool availability
+  const updateAvailability = (field: keyof mcpserver.ToolAvailability, value: boolean) => {
+    if (!toolAvailability) return;
+    setToolAvailability({
+      ...toolAvailability,
+      [field]: value,
+    });
+  };
+
+  // Handle BrowserAgent toggle with password protection
+  const handleBrowserAgentToggle = () => {
+    if (toolAvailability?.browserAgent) {
+      // Disabling doesn't need password
+      updateAvailability('browserAgent', false);
+    } else {
+      // Enabling requires password
+      setPasswordInput('');
+      setPasswordError('');
+      setShowPasswordDialog(true);
+    }
+  };
+
+  // Verify password and enable BrowserAgent
+  const handlePasswordSubmit = () => {
+    if (passwordInput === BROWSER_AGENT_PASSWORD) {
+      updateAvailability('browserAgent', true);
+      setShowPasswordDialog(false);
+      setPasswordInput('');
+      setPasswordError('');
+    } else {
+      setPasswordError('Incorrect password');
+    }
+  };
+
+  const tabStyle = (tab: 'config' | 'availability' | 'instructions') => ({
     padding: '0.6rem 1.25rem',
     borderRadius: '6px 6px 0 0',
     border: 'none',
@@ -190,6 +265,9 @@ export function MCPSettingsPane({
         }}>
           <button style={tabStyle('config')} onClick={() => setActiveTab('config')}>
             Configuration
+          </button>
+          <button style={tabStyle('availability')} onClick={() => setActiveTab('availability')}>
+            Tool Availability
           </button>
           <button style={tabStyle('instructions')} onClick={() => setActiveTab('instructions')}>
             Tool Instructions
@@ -406,6 +484,166 @@ export function MCPSettingsPane({
             </div>
           )}
 
+          {activeTab === 'availability' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+              {availabilityLoading ? (
+                <div style={{ color: '#666', textAlign: 'center', padding: '2rem' }}>
+                  Loading tool availability...
+                </div>
+              ) : toolAvailability ? (
+                <>
+                  <p style={{ color: '#888', fontSize: '0.85rem', margin: 0 }}>
+                    Configure which MCP tools are available to agents.
+                  </p>
+
+                  {/* Standard Tools */}
+                  <section>
+                    <h3 style={{ color: '#888', fontSize: '0.75rem', textTransform: 'uppercase', marginBottom: '0.75rem' }}>
+                      Standard Tools
+                    </h3>
+                    <div style={{
+                      background: '#1a1a1a',
+                      borderRadius: '8px',
+                      padding: '1rem',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.75rem',
+                    }}>
+                      {/* AgentQuery */}
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={toolAvailability.agentQuery}
+                          onChange={(e) => updateAvailability('agentQuery', e.target.checked)}
+                          style={{ width: '18px', height: '18px', accentColor: '#8b5cf6' }}
+                        />
+                        <div>
+                          <span style={{ color: '#fff' }}>AgentQuery</span>
+                          <span style={{ color: '#666', marginLeft: '0.75rem', fontSize: '0.85rem' }}>Query other agents</span>
+                        </div>
+                      </label>
+
+                      {/* AgentMessage */}
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={toolAvailability.agentMessage}
+                          onChange={(e) => updateAvailability('agentMessage', e.target.checked)}
+                          style={{ width: '18px', height: '18px', accentColor: '#8b5cf6' }}
+                        />
+                        <div>
+                          <span style={{ color: '#fff' }}>AgentMessage</span>
+                          <span style={{ color: '#666', marginLeft: '0.75rem', fontSize: '0.85rem' }}>Send messages to inbox</span>
+                        </div>
+                      </label>
+
+                      {/* AgentBroadcast */}
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={toolAvailability.agentBroadcast}
+                          onChange={(e) => updateAvailability('agentBroadcast', e.target.checked)}
+                          style={{ width: '18px', height: '18px', accentColor: '#8b5cf6' }}
+                        />
+                        <div>
+                          <span style={{ color: '#fff' }}>AgentBroadcast</span>
+                          <span style={{ color: '#666', marginLeft: '0.75rem', fontSize: '0.85rem' }}>Broadcast to all agents</span>
+                        </div>
+                      </label>
+
+                      {/* NotifyUser */}
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={toolAvailability.notifyUser}
+                          onChange={(e) => updateAvailability('notifyUser', e.target.checked)}
+                          style={{ width: '18px', height: '18px', accentColor: '#8b5cf6' }}
+                        />
+                        <div>
+                          <span style={{ color: '#fff' }}>NotifyUser</span>
+                          <span style={{ color: '#666', marginLeft: '0.75rem', fontSize: '0.85rem' }}>Show notifications</span>
+                        </div>
+                      </label>
+
+                      {/* AskUserQuestion */}
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={toolAvailability.askUserQuestion}
+                          onChange={(e) => updateAvailability('askUserQuestion', e.target.checked)}
+                          style={{ width: '18px', height: '18px', accentColor: '#8b5cf6' }}
+                        />
+                        <div>
+                          <span style={{ color: '#fff' }}>AskUserQuestion</span>
+                          <span style={{ color: '#666', marginLeft: '0.75rem', fontSize: '0.85rem' }}>Ask user questions</span>
+                        </div>
+                      </label>
+
+                      {/* SelfQuery */}
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={toolAvailability.selfQuery}
+                          onChange={(e) => updateAvailability('selfQuery', e.target.checked)}
+                          style={{ width: '18px', height: '18px', accentColor: '#8b5cf6' }}
+                        />
+                        <div>
+                          <span style={{ color: '#fff' }}>SelfQuery</span>
+                          <span style={{ color: '#666', marginLeft: '0.75rem', fontSize: '0.85rem' }}>Query own codebase</span>
+                        </div>
+                      </label>
+                    </div>
+                  </section>
+
+                  {/* Experimental Tools */}
+                  <section>
+                    <h3 style={{ color: '#888', fontSize: '0.75rem', textTransform: 'uppercase', marginBottom: '0.75rem' }}>
+                      Experimental Tools
+                    </h3>
+                    <div style={{
+                      background: '#1a1a1a',
+                      borderRadius: '8px',
+                      padding: '1rem',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.75rem',
+                    }}>
+                      {/* BrowserAgent - with lock icon and password protection */}
+                      <div>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={toolAvailability.browserAgent}
+                            onChange={handleBrowserAgentToggle}
+                            style={{ width: '18px', height: '18px', accentColor: '#d97757' }}
+                          />
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <span style={{ color: toolAvailability.browserAgent ? '#d97757' : '#fff' }}>BrowserAgent</span>
+                            <span style={{ fontSize: '1rem' }}>
+                              {toolAvailability.browserAgent ? '' : '🔒'}
+                            </span>
+                          </div>
+                        </label>
+                        <div style={{ marginLeft: '2.25rem', marginTop: '0.5rem' }}>
+                          <p style={{ color: '#666', fontSize: '0.85rem', margin: 0 }}>
+                            Delegate to Claude in Browser via Chrome extension
+                          </p>
+                          <p style={{ color: '#d97757', fontSize: '0.8rem', margin: '0.25rem 0 0 0' }}>
+                            Requires custom Chrome extension bridge
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+                </>
+              ) : (
+                <div style={{ color: '#666', textAlign: 'center', padding: '2rem' }}>
+                  Failed to load tool availability
+                </div>
+              )}
+            </div>
+          )}
+
           {activeTab === 'instructions' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               {instructionsLoading ? (
@@ -465,6 +703,72 @@ export function MCPSettingsPane({
                     <textarea
                       value={toolInstructions.agentQuerySystemPrompt}
                       onChange={(e) => updateInstruction('agentQuerySystemPrompt', e.target.value)}
+                      rows={3}
+                      style={{
+                        width: '100%',
+                        padding: '0.6rem',
+                        borderRadius: '4px',
+                        border: '1px solid #333',
+                        background: '#0a0a0a',
+                        color: '#fff',
+                        fontSize: '0.8rem',
+                        fontFamily: 'monospace',
+                        resize: 'vertical',
+                        lineHeight: '1.4',
+                      }}
+                    />
+                  </div>
+
+                  {/* SelfQuery */}
+                  <div>
+                    <label style={{
+                      display: 'block',
+                      color: '#d97757',
+                      fontSize: '0.8rem',
+                      fontWeight: 500,
+                      marginBottom: '0.5rem',
+                    }}>
+                      SelfQuery
+                      <span style={{ color: '#666', fontWeight: 400, marginLeft: '0.5rem' }}>
+                        (query your own codebase with CLAUDE.md context)
+                      </span>
+                    </label>
+                    <textarea
+                      value={toolInstructions.selfQuery || ''}
+                      onChange={(e) => updateInstruction('selfQuery', e.target.value)}
+                      rows={6}
+                      style={{
+                        width: '100%',
+                        padding: '0.6rem',
+                        borderRadius: '4px',
+                        border: '1px solid #333',
+                        background: '#0a0a0a',
+                        color: '#fff',
+                        fontSize: '0.8rem',
+                        fontFamily: 'monospace',
+                        resize: 'vertical',
+                        lineHeight: '1.4',
+                      }}
+                    />
+                  </div>
+
+                  {/* SelfQuery System Prompt */}
+                  <div>
+                    <label style={{
+                      display: 'block',
+                      color: '#d97757',
+                      fontSize: '0.8rem',
+                      fontWeight: 500,
+                      marginBottom: '0.5rem',
+                    }}>
+                      SelfQuery System Prompt
+                      <span style={{ color: '#666', fontWeight: 400, marginLeft: '0.5rem' }}>
+                        (appended to self-query)
+                      </span>
+                    </label>
+                    <textarea
+                      value={toolInstructions.selfQuerySystemPrompt || ''}
+                      onChange={(e) => updateInstruction('selfQuerySystemPrompt', e.target.value)}
                       rows={3}
                       style={{
                         width: '100%',
@@ -571,6 +875,69 @@ export function MCPSettingsPane({
                     />
                   </div>
 
+                  {/* AskUserQuestion */}
+                  <div>
+                    <label style={{
+                      display: 'block',
+                      color: '#8b5cf6',
+                      fontSize: '0.8rem',
+                      fontWeight: 500,
+                      marginBottom: '0.5rem',
+                    }}>
+                      AskUserQuestion
+                    </label>
+                    <textarea
+                      value={toolInstructions.askUserQuestion}
+                      onChange={(e) => updateInstruction('askUserQuestion', e.target.value)}
+                      rows={5}
+                      style={{
+                        width: '100%',
+                        padding: '0.6rem',
+                        borderRadius: '4px',
+                        border: '1px solid #333',
+                        background: '#0a0a0a',
+                        color: '#fff',
+                        fontSize: '0.8rem',
+                        fontFamily: 'monospace',
+                        resize: 'vertical',
+                        lineHeight: '1.4',
+                      }}
+                    />
+                  </div>
+
+                  {/* BrowserAgent */}
+                  <div>
+                    <label style={{
+                      display: 'block',
+                      color: '#d97757',
+                      fontSize: '0.8rem',
+                      fontWeight: 500,
+                      marginBottom: '0.5rem',
+                    }}>
+                      BrowserAgent
+                      <span style={{ color: '#666', fontWeight: 400, marginLeft: '0.5rem' }}>
+                        (experimental - requires Chrome extension bridge)
+                      </span>
+                    </label>
+                    <textarea
+                      value={toolInstructions.browserAgent || ''}
+                      onChange={(e) => updateInstruction('browserAgent', e.target.value)}
+                      rows={6}
+                      style={{
+                        width: '100%',
+                        padding: '0.6rem',
+                        borderRadius: '4px',
+                        border: '1px solid #333',
+                        background: '#0a0a0a',
+                        color: '#fff',
+                        fontSize: '0.8rem',
+                        fontFamily: 'monospace',
+                        resize: 'vertical',
+                        lineHeight: '1.4',
+                      }}
+                    />
+                  </div>
+
                   {/* Reset to Defaults Button */}
                   <button
                     onClick={handleResetInstructions}
@@ -637,6 +1004,110 @@ export function MCPSettingsPane({
           </button>
         </div>
       </div>
+
+      {/* Password Dialog for BrowserAgent */}
+      {showPasswordDialog && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.7)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+          onClick={() => setShowPasswordDialog(false)}
+        >
+          <div
+            style={{
+              background: '#1a1a1a',
+              borderRadius: '12px',
+              padding: '1.5rem',
+              width: '360px',
+              maxWidth: '90vw',
+              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ color: '#d97757', margin: '0 0 1rem 0', fontSize: '1.1rem' }}>
+              Enable BrowserAgent
+            </h3>
+
+            <p style={{ color: '#888', fontSize: '0.85rem', margin: '0 0 1rem 0' }}>
+              ⚠️ This tool requires a custom Chrome extension bridge that is not publicly available.
+            </p>
+
+            <label style={{ display: 'block', color: '#888', fontSize: '0.85rem', marginBottom: '0.5rem' }}>
+              Enter password to enable:
+            </label>
+            <input
+              type="password"
+              value={passwordInput}
+              onChange={(e) => {
+                setPasswordInput(e.target.value);
+                setPasswordError('');
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handlePasswordSubmit();
+                } else if (e.key === 'Escape') {
+                  setShowPasswordDialog(false);
+                }
+              }}
+              autoFocus
+              style={{
+                width: '100%',
+                padding: '0.6rem',
+                borderRadius: '6px',
+                border: passwordError ? '1px solid #ef4444' : '1px solid #333',
+                background: '#0a0a0a',
+                color: '#fff',
+                fontSize: '0.9rem',
+                marginBottom: '0.5rem',
+              }}
+            />
+
+            {passwordError && (
+              <p style={{ color: '#ef4444', fontSize: '0.8rem', margin: '0 0 0.75rem 0' }}>
+                {passwordError}
+              </p>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1rem' }}>
+              <button
+                onClick={() => setShowPasswordDialog(false)}
+                style={{
+                  padding: '0.5rem 1rem',
+                  borderRadius: '6px',
+                  border: '1px solid #333',
+                  background: 'transparent',
+                  color: '#888',
+                  cursor: 'pointer',
+                  fontSize: '0.85rem',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handlePasswordSubmit}
+                style={{
+                  padding: '0.5rem 1rem',
+                  borderRadius: '6px',
+                  border: 'none',
+                  background: '#d97757',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  fontWeight: 500,
+                  fontSize: '0.85rem',
+                }}
+              >
+                Enable
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </SlideInPane>
   );
 }

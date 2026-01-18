@@ -88,7 +88,7 @@ func (a *App) RemoveAgent(agentID string) error {
 
 	// Stop watching the agent
 	if a.watcher != nil {
-		a.watcher.StopWatchingAgent(folder)
+		a.watcher.StopWatchingAgent(agentID, folder)
 	}
 
 	// Emit agent:removed event

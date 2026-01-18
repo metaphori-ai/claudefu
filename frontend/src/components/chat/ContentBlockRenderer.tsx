@@ -65,8 +65,8 @@ const markdownComponents = {
     );
   },
   // Code blocks
-  code({ node, className, children, ...props }: any) {
-    const isInline = !className;
+  code({ node, className, children, inline, ...props }: any) {
+    const isInline = inline || !className;
     if (isInline) {
       return (
         <code

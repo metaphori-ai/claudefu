@@ -1,5 +1,5 @@
 import { useContext, useCallback } from 'react';
-import { SessionContext, SessionAction } from '../context/SessionContext';
+import { SessionContext, SessionAction, MCPPendingQuestion } from '../context/SessionContext';
 import { mcpserver } from '../../wailsjs/go/models';
 
 type InboxMessage = mcpserver.InboxMessage;
@@ -65,6 +65,10 @@ export function useSession() {
     dispatch({ type: 'REMOVE_INBOX_MESSAGE', payload: messageId });
   }, [dispatch]);
 
+  const setMCPPendingQuestion = useCallback((question: MCPPendingQuestion | null) => {
+    dispatch({ type: 'SET_MCP_PENDING_QUESTION', payload: question });
+  }, [dispatch]);
+
   const reset = useCallback(() => {
     dispatch({ type: 'RESET' });
   }, [dispatch]);
@@ -78,6 +82,7 @@ export function useSession() {
     inboxTotalCounts: state.inboxTotalCounts,
     inboxMessages: state.inboxMessages,
     inboxDialogAgentId: state.inboxDialogAgentId,
+    mcpPendingQuestion: state.mcpPendingQuestion,
 
     // Actions
     selectSession,
@@ -93,6 +98,7 @@ export function useSession() {
     setInboxMessages,
     updateInboxMessage,
     removeInboxMessage,
+    setMCPPendingQuestion,
     reset,
 
     // Raw dispatch for advanced usage

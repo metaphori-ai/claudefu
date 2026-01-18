@@ -64,6 +64,19 @@ type ImageSource struct {
 }
 
 // =============================================================================
+// INPUT TYPES (for sending messages with attachments)
+// =============================================================================
+
+// Attachment represents an image attachment sent with a user message.
+// Frontend base64-encodes images and passes them to SendMessage.
+// Supported media types: image/png, image/jpeg, image/gif, image/webp
+type Attachment struct {
+	Type      string `json:"type"`       // Always "image"
+	MediaType string `json:"media_type"` // MIME type: image/png, image/jpeg, image/gif, image/webp
+	Data      string `json:"data"`       // Base64-encoded image data (no data: prefix)
+}
+
+// =============================================================================
 // EVENT TYPES (for frontend communication)
 // =============================================================================
 

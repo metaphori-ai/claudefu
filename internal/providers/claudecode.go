@@ -2,7 +2,9 @@ package providers
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -96,30 +98,32 @@ func (s *ClaudeCodeService) ClearMCPConfig() {
 	s.mcpConfig = ""
 }
 
-// getMCPArgs returns the --mcp-config and --allowed-tools args if MCP is configured
+// getMCPArgs returns the --mcp-config, --allowed-tools, and --disallowed-tools args if MCP is configured
 func (s *ClaudeCodeService) getMCPArgs() []string {
 	if s.mcpConfig == "" {
 		return nil
 	}
 	return []string{
 		"--mcp-config", s.mcpConfig,
-		"--allowed-tools", "mcp__claudefu__AgentBroadcast,mcp__claudefu__AgentMessage,mcp__claudefu__AgentQuery,mcp__claudefu__NotifyUser",
+		"--allowed-tools", "mcp__claudefu__AgentBroadcast,mcp__claudefu__AgentMessage,mcp__claudefu__AgentQuery,mcp__claudefu__NotifyUser,mcp__claudefu__AskUserQuestion,mcp__claudefu__SelfQuery",
+		"--disallowed-tools", "AskUserQuestion", // Force Claude to use MCP version instead of built-in
 	}
 }
 
-// SendMessage sends a message to Claude Code in the specified folder/session
-// It uses --resume to continue an existing session
-// If planMode is true, adds --permission-mode plan to force planning mode
-// Returns when the command completes (Claude writes to session file, watcher picks it up)
-func (s *ClaudeCodeService) SendMessage(folder, sessionId, message string, planMode bool) error {
+// SendMessage sends a message to Claude Code in the specified folder/session.
+// It uses --resume to continue an existing session.
+// If attachments are provided, uses stdin with --input-format stream-json.
+// If planMode is true, adds --permission-mode plan to force planning mode.
+// Returns when the command completes (Claude writes to session file, watcher picks it up).
+func (s *ClaudeCodeService) SendMessage(folder, sessionId, message string, attachments []types.Attachment, planMode bool) error {
 	if folder == "" {
 		return fmt.Errorf("folder is required")
 	}
 	if sessionId == "" {
 		return fmt.Errorf("sessionId is required")
 	}
-	if message == "" {
-		return fmt.Errorf("message is required")
+	if message == "" && len(attachments) == 0 {
+		return fmt.Errorf("message or attachments required")
 	}
 
 	// Get claude binary path
@@ -128,14 +132,18 @@ func (s *ClaudeCodeService) SendMessage(folder, sessionId, message string, planM
 		return fmt.Errorf("claude CLI not found in PATH or common locations")
 	}
 
-	// Build command args
-	// Use acceptEdits by default to auto-approve file edits in non-interactive mode
-	// Plan mode overrides this to restrict Claude to read-only operations
+	// Determine permission mode
 	permissionMode := "acceptEdits"
 	if planMode {
 		permissionMode = "plan"
 	}
 
+	// If attachments provided, use stream-json input via stdin
+	if len(attachments) > 0 {
+		return s.sendWithAttachments(path, folder, sessionId, message, attachments, permissionMode)
+	}
+
+	// No attachments: use existing simpler -p approach
 	args := []string{
 		"--print",
 		"--permission-mode", permissionMode,
@@ -156,6 +164,87 @@ func (s *ClaudeCodeService) SendMessage(folder, sessionId, message string, planM
 		return fmt.Errorf("claude command failed: %w, output: %s", err, string(output))
 	}
 
+	return nil
+}
+
+// sendWithAttachments sends a message with images via stdin using stream-json format.
+// Required flags: --input-format stream-json, --output-format stream-json, --verbose
+func (s *ClaudeCodeService) sendWithAttachments(claudePath, folder, sessionId, message string, attachments []types.Attachment, permissionMode string) error {
+	fmt.Printf("[DEBUG] sendWithAttachments: folder=%s sessionId=%s message=%q attachments=%d\n", folder, sessionId, message, len(attachments))
+
+	// Build content blocks array
+	contentBlocks := make([]map[string]any, 0, len(attachments)+1)
+
+	// Add text block if message is not empty
+	if message != "" {
+		contentBlocks = append(contentBlocks, map[string]any{
+			"type": "text",
+			"text": message,
+		})
+	}
+
+	// Add image blocks
+	for i, att := range attachments {
+		fmt.Printf("[DEBUG] sendWithAttachments: attachment[%d] type=%s mediaType=%s dataLen=%d\n", i, att.Type, att.MediaType, len(att.Data))
+		contentBlocks = append(contentBlocks, map[string]any{
+			"type": "image",
+			"source": map[string]any{
+				"type":       "base64",
+				"media_type": att.MediaType,
+				"data":       att.Data,
+			},
+		})
+	}
+
+	// Build the user message payload (stream-json input format)
+	payload := map[string]any{
+		"type": "user",
+		"message": map[string]any{
+			"role":    "user",
+			"content": contentBlocks,
+		},
+	}
+
+	jsonBytes, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
+	// Log first 500 chars of JSON for debugging (don't log full base64)
+	jsonPreview := string(jsonBytes)
+	if len(jsonPreview) > 500 {
+		jsonPreview = jsonPreview[:500] + "..."
+	}
+	fmt.Printf("[DEBUG] sendWithAttachments: JSON payload preview: %s\n", jsonPreview)
+	fmt.Printf("[DEBUG] sendWithAttachments: JSON payload total length: %d bytes\n", len(jsonBytes))
+
+	// Build command args - stream-json input requires these flags
+	args := []string{
+		"--print",
+		"--verbose",
+		"--input-format", "stream-json",
+		"--output-format", "stream-json",
+		"--permission-mode", permissionMode,
+		"--resume", sessionId,
+	}
+	args = append(args, s.getMCPArgs()...)
+
+	fmt.Printf("[DEBUG] sendWithAttachments: running command: %s %v\n", claudePath, args)
+
+	cmd := exec.CommandContext(s.ctx, claudePath, args...)
+	cmd.Dir = folder
+	cmd.Stdin = bytes.NewReader(jsonBytes)
+
+	fmt.Printf("[DEBUG] sendWithAttachments: executing command...\n")
+	output, err := cmd.CombinedOutput()
+	fmt.Printf("[DEBUG] sendWithAttachments: command completed, err=%v outputLen=%d\n", err, len(output))
+
+	if err != nil {
+		fmt.Printf("[DEBUG] sendWithAttachments: ERROR output: %s\n", string(output))
+		return fmt.Errorf("claude command failed: %w, output: %s", err, string(output))
+	}
+
+	fmt.Printf("[DEBUG] sendWithAttachments: SUCCESS\n")
 	return nil
 }
 

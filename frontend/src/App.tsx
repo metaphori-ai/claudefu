@@ -6,11 +6,14 @@ import { InputDialog } from './components/InputDialog';
 import { WorkspaceDropdown } from './components/WorkspaceDropdown';
 import { MCPSettingsPane } from './components/MCPSettingsPane';
 import { DialogBase } from './components/DialogBase';
+import { MCPQuestionDialog } from './components/MCPQuestionDialog';
 import { WorkspaceProvider, SessionProvider, MessagesProvider } from './context';
 import { useWorkspace, useSession, useSelectedAgent, WailsEventHub } from './hooks';
+import { debugLogger } from './utils/debugLogger';
 import {
   GetAuthStatus,
   GetSettings,
+  SaveSettings,
   SetAPIKey,
   GetConfigPath,
   StartHyperLogin,
@@ -20,11 +23,13 @@ import {
   CreateWorkspace,
   GetAllWorkspaces,
   GetCurrentWorkspaceID,
+  GetCurrentWorkspace,
   SwitchWorkspace,
   GetSessions,
   AddAgent,
   GetVersion
 } from "../wailsjs/go/main/App";
+import { settings as settingsModel } from "../wailsjs/go/models";
 import { EventsOn, BrowserOpenURL } from "../wailsjs/runtime/runtime";
 import { workspace } from "../wailsjs/go/models";
 
@@ -250,11 +255,27 @@ function AppContent() {
           }
         }
       }
+
+      // Ctrl+Shift+D to toggle debug logging
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        const newEnabled = !debugLogger.isEnabled();
+        debugLogger.setEnabled(newEnabled);
+        // Save to settings
+        const newSettings = settingsModel.Settings.createFrom({
+          ...settings,
+          debugLogging: newEnabled
+        });
+        SaveSettings(newSettings).then(() => {
+          setSettings(newSettings);
+          console.log(`[ClaudeFu] Debug logging ${newEnabled ? 'ENABLED' : 'DISABLED'} (Ctrl+Shift+D to toggle)`);
+        });
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [agents, selectedAgentId, selectAgent, selectSession, clearSelection]);
+  }, [agents, selectedAgentId, selectAgent, selectSession, clearSelection, settings]);
 
   // Auto-save workspace when state changes
   useEffect(() => {
@@ -277,6 +298,12 @@ function AppContent() {
       ]);
       setAuthStatus(auth);
       setSettings(sett);
+      // Initialize debug logger from settings
+      const debugEnabled = sett?.debugLogging ?? false;
+      debugLogger.setEnabled(debugEnabled);
+      if (debugEnabled) {
+        console.log('[ClaudeFu] Debug logging ENABLED (Ctrl+Shift+D to toggle)');
+      }
       setConfigPath(path);
       setVersion(ver);
 
@@ -294,7 +321,15 @@ function AppContent() {
 
       if (currentId) {
         try {
-          const ws = await SwitchWorkspace(currentId);
+          // Use GetCurrentWorkspace on startup - backend already initialized it
+          // This avoids duplicate session loading and MCP restarts
+          const ws = await GetCurrentWorkspace();
+          console.log('[DEBUG] GetCurrentWorkspace returned:', {
+            id: ws?.id,
+            name: ws?.name,
+            agentCount: ws?.agents?.length,
+            selectedSession: ws?.selectedSession,
+          });
           if (ws) {
             setWorkspace({
               id: ws.id,
@@ -305,17 +340,22 @@ function AppContent() {
             });
 
             if (ws.selectedSession?.agentId && ws.selectedSession?.sessionId && ws.selectedSession?.folder) {
+              console.log('[DEBUG] Restoring session from selectedSession:', ws.selectedSession);
               selectSession(ws.selectedSession.sessionId, ws.selectedSession.folder);
             } else {
+              console.log('[DEBUG] No selectedSession found, checking agents for selectedSessionId');
               const agentWithSession = ws.agents?.find((a: any) => a.selectedSessionId);
               if (agentWithSession?.selectedSessionId) {
+                console.log('[DEBUG] Found agent with selectedSessionId:', agentWithSession);
                 selectAgent(agentWithSession.id);
                 selectSession(agentWithSession.selectedSessionId, agentWithSession.folder);
+              } else {
+                console.log('[DEBUG] No session to restore');
               }
             }
           }
         } catch (e) {
-          console.log('Failed to load current workspace, starting fresh');
+          console.log('Failed to load current workspace, starting fresh:', e);
         }
       } else if (workspaces.length > 0) {
         try {
@@ -1137,6 +1177,9 @@ function AppContent() {
           </button>
         </div>
       )}
+
+      {/* MCP AskUserQuestion Dialog */}
+      <MCPQuestionDialog />
     </div>
   );
 }

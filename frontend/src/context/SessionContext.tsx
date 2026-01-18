@@ -3,6 +3,19 @@ import { mcpserver } from '../../wailsjs/go/models';
 
 type InboxMessage = mcpserver.InboxMessage;
 
+// MCP Pending Question from backend event
+export interface MCPPendingQuestion {
+  id: string;
+  agentSlug: string;
+  questions: Array<{
+    question: string;
+    header: string;
+    options: Array<{ label: string; description: string }>;
+    multiSelect: boolean;
+  }>;
+  createdAt: string;
+}
+
 // SessionState: state that changes frequently via events
 export interface SessionState {
   selectedSessionId: string | null;
@@ -15,6 +28,8 @@ export interface SessionState {
   // Inbox dialog state
   inboxMessages: InboxMessage[];
   inboxDialogAgentId: string | null;
+  // MCP AskUserQuestion dialog state
+  mcpPendingQuestion: MCPPendingQuestion | null;
 }
 
 export type SessionAction =
@@ -31,6 +46,7 @@ export type SessionAction =
   | { type: 'SET_INBOX_MESSAGES'; payload: InboxMessage[] }
   | { type: 'UPDATE_INBOX_MESSAGE'; payload: { messageId: string; updates: Partial<InboxMessage> } }
   | { type: 'REMOVE_INBOX_MESSAGE'; payload: string }
+  | { type: 'SET_MCP_PENDING_QUESTION'; payload: MCPPendingQuestion | null }
   | { type: 'RESET' };
 
 const initialState: SessionState = {
@@ -41,6 +57,7 @@ const initialState: SessionState = {
   inboxTotalCounts: new Map(),
   inboxMessages: [],
   inboxDialogAgentId: null,
+  mcpPendingQuestion: null,
 };
 
 function sessionReducer(state: SessionState, action: SessionAction): SessionState {
@@ -138,6 +155,12 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
       return {
         ...state,
         inboxMessages: state.inboxMessages.filter(m => m.id !== action.payload),
+      };
+
+    case 'SET_MCP_PENDING_QUESTION':
+      return {
+        ...state,
+        mcpPendingQuestion: action.payload,
       };
 
     case 'RESET':

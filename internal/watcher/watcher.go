@@ -6,10 +6,12 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/fsnotify/fsnotify"
 
@@ -23,15 +25,17 @@ import (
 
 // FileWatcher watches session JSONL files for changes and notifies the runtime.
 type FileWatcher struct {
-	watcher         *fsnotify.Watcher
-	runtime         *runtime.WorkspaceRuntime
-	workspaceID     string
-	folderToAgentID map[string]string // folder path -> agent UUID
-	watchedDirs     map[string]bool   // Track watched directories
-	watchedFiles    map[string]bool   // Track watched files
-	mu              sync.RWMutex
-	ctx             context.Context
-	cancel          context.CancelFunc
+	watcher           *fsnotify.Watcher
+	runtime           *runtime.WorkspaceRuntime
+	workspaceID       string
+	folderToAgentIDs  map[string][]string // folder path -> list of agent UUIDs (multiple agents can share a folder)
+	watchedDirs       map[string]bool     // Track watched directories
+	watchedFiles      map[string]bool     // Track watched files
+	loadedAgents      map[string]bool     // Track agents that have completed initial session load
+	activeSessionPath string              // Currently watched active session file (only ONE at a time)
+	mu                sync.RWMutex
+	ctx               context.Context
+	cancel            context.CancelFunc
 }
 
 // NewFileWatcher creates a new file watcher.
@@ -43,12 +47,13 @@ func NewFileWatcher() (*FileWatcher, error) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	fw := &FileWatcher{
-		watcher:         w,
-		folderToAgentID: make(map[string]string),
-		watchedDirs:     make(map[string]bool),
-		watchedFiles:    make(map[string]bool),
-		ctx:             ctx,
-		cancel:          cancel,
+		watcher:          w,
+		folderToAgentIDs: make(map[string][]string),
+		watchedDirs:      make(map[string]bool),
+		watchedFiles:     make(map[string]bool),
+		loadedAgents:     make(map[string]bool),
+		ctx:              ctx,
+		cancel:           cancel,
 	}
 
 	go fw.run()
@@ -67,11 +72,81 @@ func (fw *FileWatcher) SetRuntime(rt *runtime.WorkspaceRuntime) {
 
 // SetWorkspaceContext sets the workspace context for event routing.
 // This maps folder paths to agent IDs for proper event routing.
-func (fw *FileWatcher) SetWorkspaceContext(workspaceID string, folderToAgentID map[string]string) {
+// NOTE: Multiple agents can share the same folder, each watching a different session.
+func (fw *FileWatcher) SetWorkspaceContext(workspaceID string, folderToAgentIDs map[string][]string) {
 	fw.mu.Lock()
 	defer fw.mu.Unlock()
 	fw.workspaceID = workspaceID
-	fw.folderToAgentID = folderToAgentID
+	fw.folderToAgentIDs = folderToAgentIDs
+}
+
+// =============================================================================
+// ACTIVE SESSION WATCHING
+// Only ONE session file should be watched at a time (the active one).
+// This saves resources - we don't need to watch 100+ session files.
+// Directory-level watching handles new file discovery.
+// =============================================================================
+
+// SetActiveSessionWatch switches the watched session file to the active session.
+// Unwatches the previous session file and watches the new one.
+func (fw *FileWatcher) SetActiveSessionWatch(agentID, sessionID string) {
+	fw.mu.Lock()
+	defer fw.mu.Unlock()
+
+	// Get folder for this agent (check all folders since multiple agents can share a folder)
+	var folder string
+	for f, agentIDs := range fw.folderToAgentIDs {
+		for _, id := range agentIDs {
+			if id == agentID {
+				folder = f
+				break
+			}
+		}
+		if folder != "" {
+			break
+		}
+	}
+	if folder == "" {
+		fmt.Printf("[DEBUG] SetActiveSessionWatch: agent %s not found in folderToAgentIDs\n", agentID[:8])
+		return
+	}
+
+	newPath := filepath.Join(GetSessionsDir(folder), sessionID+".jsonl")
+
+	// Skip if already watching this file
+	if fw.activeSessionPath == newPath {
+		fmt.Printf("[DEBUG] SetActiveSessionWatch: already watching %s\n", sessionID[:8])
+		return
+	}
+
+	// Unwatch previous active session file
+	if fw.activeSessionPath != "" {
+		fw.watcher.Remove(fw.activeSessionPath)
+		delete(fw.watchedFiles, fw.activeSessionPath)
+		fmt.Printf("[DEBUG] SetActiveSessionWatch: unwatched previous session\n")
+	}
+
+	// Watch new active session file
+	if err := fw.watcher.Add(newPath); err == nil {
+		fw.watchedFiles[newPath] = true
+		fw.activeSessionPath = newPath
+		fmt.Printf("[DEBUG] SetActiveSessionWatch: now watching session=%s path=%s\n", sessionID[:8], newPath)
+	} else {
+		fmt.Printf("[DEBUG] SetActiveSessionWatch: failed to watch %s: %v\n", newPath, err)
+	}
+}
+
+// ClearActiveSessionWatch stops watching any session file.
+func (fw *FileWatcher) ClearActiveSessionWatch() {
+	fw.mu.Lock()
+	defer fw.mu.Unlock()
+
+	if fw.activeSessionPath != "" {
+		fw.watcher.Remove(fw.activeSessionPath)
+		delete(fw.watchedFiles, fw.activeSessionPath)
+		fmt.Printf("[DEBUG] ClearActiveSessionWatch: unwatched %s\n", fw.activeSessionPath)
+		fw.activeSessionPath = ""
+	}
 }
 
 // =============================================================================
@@ -130,13 +205,28 @@ func (fw *FileWatcher) handleFileChange(path string) {
 		return
 	}
 
-	// Get agentID from folder
+	// Get all agent IDs for this folder (multiple agents can share a folder)
 	fw.mu.RLock()
-	agentID, ok := fw.folderToAgentID[folder]
+	agentIDs, ok := fw.folderToAgentIDs[folder]
 	fw.mu.RUnlock()
-	if !ok {
+	if !ok || len(agentIDs) == 0 {
 		return
 	}
+
+	// Find which agent (if any) has this session as active
+	// Only ONE agent can be viewing at a time, so at most one will match
+	var activeAgentID string
+	for _, agentID := range agentIDs {
+		if rt.IsActiveSession(agentID, sessionID) {
+			activeAgentID = agentID
+			break
+		}
+	}
+	if activeAgentID == "" {
+		// No agent is actively viewing this session
+		return
+	}
+	agentID := activeAgentID
 
 	// Get or create session state in runtime
 	session := rt.GetOrCreateSessionState(agentID, sessionID)
@@ -146,35 +236,92 @@ func (fw *FileWatcher) handleFileChange(path string) {
 
 	// Skip delta reads until initial load is complete (prevents race condition)
 	if !rt.IsInitialLoadDone(agentID, sessionID) {
+		fmt.Printf("[DEBUG] handleFileChange: skipping - initial load not done for session=%s\n", sessionID[:8])
 		return
 	}
 
-	// Read new messages from file
-	newMessages := fw.readNewMessages(path, session.FilePosition)
+	// Get current file size for comparison
+	fileInfo, _ := os.Stat(path)
+	currentSize := int64(0)
+	if fileInfo != nil {
+		currentSize = fileInfo.Size()
+	}
+
+	// Detailed position tracking for debugging
+	oldPosition := session.FilePosition
+	delta := currentSize - oldPosition
+	fmt.Printf("[DEBUG] handleFileChange: session=%s filePos=%d fileSize=%d delta=%d bytes\n",
+		sessionID[:8], oldPosition, currentSize, delta)
+
+	// WARN if delta is suspiciously large (>100KB - could be image/document upload or position reset)
+	if delta > 100*1024 {
+		fmt.Printf("[WARN] handleFileChange: LARGE DELTA detected! session=%s delta=%d bytes (possible image/document upload)\n",
+			sessionID[:8], delta)
+	}
+
+	// Read new messages from file (limit to currentSize to avoid reading content still being written)
+	newMessages := fw.readNewMessagesLimited(path, oldPosition, currentSize)
+	fmt.Printf("[DEBUG] handleFileChange: read %d messages from pos=%d (limited to %d)\n", len(newMessages), oldPosition, currentSize)
 	if len(newMessages) == 0 {
 		return
 	}
 
-	// Update file position
-	if info, err := os.Stat(path); err == nil {
-		rt.SetFilePosition(agentID, sessionID, info.Size())
+	// TIMESTAMP-BASED FILTERING: When Claude Code resumes a session, it writes historical
+	// context messages with OLD timestamps but NEW UUIDs. UUID deduplication doesn't work
+	// because the UUIDs are different. Instead, we filter by timestamp: only emit messages
+	// with timestamps >= (lastSendTime - buffer). The buffer accounts for clock skew.
+	lastSendTime := rt.GetLastSendTime(agentID, sessionID)
+	if !lastSendTime.IsZero() {
+		// Use 10 second buffer to account for clock skew and include the user's own message
+		cutoffTime := lastSendTime.Add(-10 * time.Second)
+		var filteredMessages []types.Message
+		skippedOld := 0
+		for _, msg := range newMessages {
+			// Parse message timestamp
+			msgTime := parseTimestampToTime(msg.Timestamp)
+			if msgTime.IsZero() {
+				// Can't parse timestamp, include the message to be safe
+				filteredMessages = append(filteredMessages, msg)
+			} else if msgTime.After(cutoffTime) || msgTime.Equal(cutoffTime) {
+				// Message is recent enough, include it
+				filteredMessages = append(filteredMessages, msg)
+			} else {
+				// Message is too old (historical context), skip it
+				skippedOld++
+			}
+		}
+		fmt.Printf("[DEBUG] handleFileChange: timestamp filter cutoff=%v, kept=%d, skippedOld=%d\n",
+			cutoffTime.Format(time.RFC3339), len(filteredMessages), skippedOld)
+		newMessages = filteredMessages
+
+		if len(newMessages) == 0 {
+			// All messages were historical context, nothing to emit
+			// But still update file position so we don't re-process these bytes
+			rt.SetFilePosition(agentID, sessionID, currentSize)
+			return
+		}
 	}
 
-	// Append messages to runtime
-	rt.AppendMessages(agentID, sessionID, newMessages)
+	// Update file position to what we actually read up to (currentSize), NOT current EOF
+	// This ensures we don't skip content if Claude wrote more while we were processing
+	fmt.Printf("[DEBUG] handleFileChange: updating file position from %d to %d (delta: %d bytes)\n", oldPosition, currentSize, currentSize-oldPosition)
+	rt.SetFilePosition(agentID, sessionID, currentSize)
 
-	// Emit unread:changed event
+	// Append messages to runtime (returns only the actually added messages after deduplication)
+	addedMessages := rt.AppendMessages(agentID, sessionID, newMessages)
+
+	// If nothing was actually added (all duplicates), skip emission
+	if len(addedMessages) == 0 {
+		fmt.Printf("[DEBUG] handleFileChange: all %d messages were duplicates, skipping emission\n", len(newMessages))
+		return
+	}
+
+	// Emit unread:changed event (for active session, this will show 0 since we're viewing it)
 	rt.EmitUnreadChanged(agentID, sessionID)
 
-	// If this is the active session, also emit session:messages
-	isActive := rt.IsActiveSession(agentID, sessionID)
-	activeAgent, activeSession := rt.GetActiveSession()
-	fmt.Printf("[DEBUG] handleFileChange: isActive=%v thisAgent=%s thisSession=%s activeAgent=%s activeSession=%s\n",
-		isActive, agentID, sessionID, activeAgent, activeSession)
-	if isActive {
-		fmt.Printf("[DEBUG] handleFileChange: emitting session:messages for %d messages\n", len(newMessages))
-		rt.EmitSessionMessages(agentID, sessionID, newMessages)
-	}
+	// Emit session:messages (we already filtered to only active session above)
+	fmt.Printf("[DEBUG] handleFileChange: emitting session:messages for %d messages\n", len(addedMessages))
+	rt.EmitSessionMessages(agentID, sessionID, addedMessages)
 }
 
 // handleFileCreate handles new file creation (new sessions).
@@ -205,46 +352,45 @@ func (fw *FileWatcher) handleFileCreate(path string) {
 		return
 	}
 
-	// Get agentID from folder
+	// Get all agent IDs for this folder (multiple agents can share a folder)
 	fw.mu.RLock()
-	agentID, ok := fw.folderToAgentID[folder]
+	agentIDs, ok := fw.folderToAgentIDs[folder]
 	fw.mu.RUnlock()
-	if !ok {
+	if !ok || len(agentIDs) == 0 {
 		return
 	}
 
-	// Add the file to our watch list
-	fw.mu.Lock()
-	if !fw.watchedFiles[path] {
-		fw.watcher.Add(path)
-		fw.watchedFiles[path] = true
+	// NOTE: We do NOT automatically watch new session files.
+	// Only the ACTIVE session should be watched (via SetActiveSessionWatch).
+	// New sessions that aren't active don't need file watches.
+
+	// Notify ALL agents that share this folder about the new session
+	for _, agentID := range agentIDs {
+		// Create session state in runtime
+		session := rt.GetOrCreateSessionState(agentID, sessionID)
+		if session == nil {
+			continue
+		}
+
+		// Set file position to current size (start watching from now)
+		if info, err := os.Stat(path); err == nil {
+			rt.SetFilePosition(agentID, sessionID, info.Size())
+		}
+
+		// Mark initial load done (new file, nothing to load)
+		rt.MarkInitialLoadDone(agentID, sessionID)
+
+		// Emit session:discovered event
+		rt.Emit("session:discovered", agentID, sessionID, map[string]any{
+			"agentId": agentID,
+			"session": types.Session{
+				ID:        sessionID,
+				AgentID:   agentID,
+				CreatedAt: session.CreatedAt,
+				UpdatedAt: session.UpdatedAt,
+			},
+		})
 	}
-	fw.mu.Unlock()
-
-	// Create session state in runtime
-	session := rt.GetOrCreateSessionState(agentID, sessionID)
-	if session == nil {
-		return
-	}
-
-	// Set file position to current size (start watching from now)
-	if info, err := os.Stat(path); err == nil {
-		rt.SetFilePosition(agentID, sessionID, info.Size())
-	}
-
-	// Mark initial load done (new file, nothing to load)
-	rt.MarkInitialLoadDone(agentID, sessionID)
-
-	// Emit session:discovered event
-	rt.Emit("session:discovered", agentID, sessionID, map[string]any{
-		"agentId": agentID,
-		"session": types.Session{
-			ID:        sessionID,
-			AgentID:   agentID,
-			CreatedAt: session.CreatedAt,
-			UpdatedAt: session.UpdatedAt,
-		},
-	})
 }
 
 // =============================================================================
@@ -253,13 +399,25 @@ func (fw *FileWatcher) handleFileCreate(path string) {
 
 // StartWatchingAgent begins watching all sessions for an agent folder.
 // lastViewedMap contains last viewed timestamps (Unix ms) for calculating initial unread.
+// NOTE: Multiple agents can share the same folder, each watching a different session.
 func (fw *FileWatcher) StartWatchingAgent(agentID, folder string, lastViewedMap map[string]int64) error {
 	fw.mu.Lock()
-	fw.folderToAgentID[folder] = agentID
+	// Add agent to folder's list (multiple agents can share a folder)
+	if fw.folderToAgentIDs[folder] == nil {
+		fw.folderToAgentIDs[folder] = []string{}
+	}
+	fw.folderToAgentIDs[folder] = append(fw.folderToAgentIDs[folder], agentID)
 	rt := fw.runtime
+	alreadyLoaded := fw.loadedAgents[agentID]
 	fw.mu.Unlock()
 
 	if rt == nil {
+		return nil
+	}
+
+	// Guard: skip session discovery if agent was already loaded
+	if alreadyLoaded {
+		fmt.Printf("[DEBUG] StartWatchingAgent: SKIPPING agent=%s (already loaded)\n", agentID[:8])
 		return nil
 	}
 
@@ -329,6 +487,7 @@ func (fw *FileWatcher) StartWatchingAgent(agentID, folder string, lastViewedMap 
 		if len(messages) > 0 {
 			rt.AppendMessages(agentID, sessionID, messages)
 		}
+		fmt.Printf("[DEBUG] DiscoverAndLoadSessions: setting filePos=%d for session=%s\n", filePos, sessionID[:8])
 		rt.SetFilePosition(agentID, sessionID, filePos)
 
 		// Initialize viewed state from persisted lastViewedAt
@@ -341,39 +500,66 @@ func (fw *FileWatcher) StartWatchingAgent(agentID, folder string, lastViewedMap 
 		// Mark initial load complete - now delta reads can proceed
 		rt.MarkInitialLoadDone(agentID, sessionID)
 
-		// Watch the file
-		fw.mu.Lock()
-		if !fw.watchedFiles[filePath] {
-			fw.watcher.Add(filePath)
-			fw.watchedFiles[filePath] = true
-		}
-		fw.mu.Unlock()
+		// NOTE: We do NOT watch individual session files here.
+		// Only the ACTIVE session file should be watched (via SetActiveSessionWatch).
+		// Directory-level watching handles new file creation events.
+		// This saves resources - we don't need 100+ fsnotify watches.
 	}
+
+	// Mark agent as loaded to prevent duplicate discovery
+	fw.mu.Lock()
+	fw.loadedAgents[agentID] = true
+	fw.mu.Unlock()
+	fmt.Printf("[DEBUG] StartWatchingAgent: completed agent=%s\n", agentID[:8])
 
 	return nil
 }
 
-// StopWatchingAgent stops watching sessions for an agent folder.
-func (fw *FileWatcher) StopWatchingAgent(folder string) {
+// StopWatchingAgent stops watching sessions for a specific agent.
+// If this was the last agent watching a folder, the directory watch is also removed.
+func (fw *FileWatcher) StopWatchingAgent(agentID, folder string) {
 	sessionsDir := GetSessionsDir(folder)
 
 	fw.mu.Lock()
 	defer fw.mu.Unlock()
 
-	// Remove folder mapping
-	delete(fw.folderToAgentID, folder)
-
-	// Unwatch directory
-	if fw.watchedDirs[sessionsDir] {
-		fw.watcher.Remove(sessionsDir)
-		delete(fw.watchedDirs, sessionsDir)
+	// Clear active session watch if it belongs to this agent
+	if fw.activeSessionPath != "" && strings.HasPrefix(fw.activeSessionPath, sessionsDir+"/") {
+		fw.watcher.Remove(fw.activeSessionPath)
+		delete(fw.watchedFiles, fw.activeSessionPath)
+		fw.activeSessionPath = ""
 	}
 
-	// Unwatch all session files in this directory
-	for filePath := range fw.watchedFiles {
-		if strings.HasPrefix(filePath, sessionsDir+"/") {
-			fw.watcher.Remove(filePath)
-			delete(fw.watchedFiles, filePath)
+	// Clear agent from loadedAgents
+	delete(fw.loadedAgents, agentID)
+
+	// Remove agent from folder's list
+	if agentIDs, ok := fw.folderToAgentIDs[folder]; ok {
+		newList := make([]string, 0, len(agentIDs))
+		for _, id := range agentIDs {
+			if id != agentID {
+				newList = append(newList, id)
+			}
+		}
+		if len(newList) == 0 {
+			// No more agents watching this folder - remove entirely
+			delete(fw.folderToAgentIDs, folder)
+
+			// Unwatch directory
+			if fw.watchedDirs[sessionsDir] {
+				fw.watcher.Remove(sessionsDir)
+				delete(fw.watchedDirs, sessionsDir)
+			}
+
+			// Unwatch all session files in this directory
+			for filePath := range fw.watchedFiles {
+				if strings.HasPrefix(filePath, sessionsDir+"/") {
+					fw.watcher.Remove(filePath)
+					delete(fw.watchedFiles, filePath)
+				}
+			}
+		} else {
+			fw.folderToAgentIDs[folder] = newList
 		}
 	}
 }
@@ -382,6 +568,9 @@ func (fw *FileWatcher) StopWatchingAgent(folder string) {
 func (fw *FileWatcher) StopAllWatchers() {
 	fw.mu.Lock()
 	defer fw.mu.Unlock()
+
+	// Clear active session watch
+	fw.activeSessionPath = ""
 
 	// Unwatch all directories
 	for dir := range fw.watchedDirs {
@@ -396,7 +585,10 @@ func (fw *FileWatcher) StopAllWatchers() {
 	fw.watchedFiles = make(map[string]bool)
 
 	// Clear folder mapping
-	fw.folderToAgentID = make(map[string]string)
+	fw.folderToAgentIDs = make(map[string][]string)
+
+	// Clear loaded agents (allows re-loading on next StartWatchingAgent)
+	fw.loadedAgents = make(map[string]bool)
 }
 
 // =============================================================================
@@ -405,17 +597,13 @@ func (fw *FileWatcher) StopAllWatchers() {
 
 // ReloadSession clears a session's cache and reloads it from the JSONL file.
 // This is called after JSONL patching to refresh the in-memory state.
-func (fw *FileWatcher) ReloadSession(folder, sessionID string) error {
+func (fw *FileWatcher) ReloadSession(agentID, folder, sessionID string) error {
 	fw.mu.RLock()
 	rt := fw.runtime
-	agentID, ok := fw.folderToAgentID[folder]
 	fw.mu.RUnlock()
 
 	if rt == nil {
 		return fmt.Errorf("runtime not set")
-	}
-	if !ok {
-		return fmt.Errorf("agent not found for folder: %s", folder)
 	}
 
 	// Build JSONL file path
@@ -462,12 +650,14 @@ func (fw *FileWatcher) readNewMessages(path string, startPos int64) []types.Mess
 
 	var messages []types.Message
 	scanner := bufio.NewScanner(file)
-	// Increase buffer for large lines
+	// Increase buffer for large lines (images can be 1.5MB+ when base64 encoded)
 	scanBuf := make([]byte, 0, 64*1024)
-	scanner.Buffer(scanBuf, 1024*1024)
+	scanner.Buffer(scanBuf, 10*1024*1024) // 10MB max line size
 
+	lineNum := 0
 	for scanner.Scan() {
 		line := scanner.Text()
+		lineNum++
 		if line == "" {
 			continue
 		}
@@ -475,7 +665,62 @@ func (fw *FileWatcher) readNewMessages(path string, startPos int64) []types.Mess
 		msg := fw.parseLine(line)
 		if msg != nil {
 			messages = append(messages, *msg)
+			fmt.Printf("[DEBUG] readNewMessages: line %d, len=%d, type=%s, uuid=%s\n", lineNum, len(line), msg.Type, msg.UUID[:8])
 		}
+	}
+	if err := scanner.Err(); err != nil {
+		fmt.Printf("[DEBUG] readNewMessages: scanner error: %v\n", err)
+	}
+
+	return messages
+}
+
+// readNewMessagesLimited reads new messages from startPos up to endPos (exclusive).
+// This prevents reading content that's still being written by Claude Code.
+// The endPos should be the file size observed at the START of handleFileChange.
+func (fw *FileWatcher) readNewMessagesLimited(path string, startPos, endPos int64) []types.Message {
+	if endPos <= startPos {
+		return nil
+	}
+
+	file, err := os.Open(path)
+	if err != nil {
+		return nil
+	}
+	defer file.Close()
+
+	// Seek to last known position
+	_, err = file.Seek(startPos, 0)
+	if err != nil {
+		return nil
+	}
+
+	// Limit reading to exactly the bytes we observed at the start
+	// This prevents reading content Claude is still writing
+	limitReader := io.LimitReader(file, endPos-startPos)
+
+	var messages []types.Message
+	scanner := bufio.NewScanner(limitReader)
+	// Increase buffer for large lines (images can be 1.5MB+ when base64 encoded)
+	scanBuf := make([]byte, 0, 64*1024)
+	scanner.Buffer(scanBuf, 10*1024*1024) // 10MB max line size
+
+	lineNum := 0
+	for scanner.Scan() {
+		line := scanner.Text()
+		lineNum++
+		if line == "" {
+			continue
+		}
+
+		msg := fw.parseLine(line)
+		if msg != nil {
+			messages = append(messages, *msg)
+			fmt.Printf("[DEBUG] readNewMessagesLimited: line %d, len=%d, type=%s, uuid=%s\n", lineNum, len(line), msg.Type, msg.UUID[:8])
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		fmt.Printf("[DEBUG] readNewMessagesLimited: scanner error: %v\n", err)
 	}
 
 	return messages
@@ -495,7 +740,7 @@ func (fw *FileWatcher) loadInitialMessages(filePath string) ([]types.Message, in
 	var allMessages []types.Message
 	scanner := bufio.NewScanner(file)
 	buf := make([]byte, 0, 64*1024)
-	scanner.Buffer(buf, 1024*1024)
+	scanner.Buffer(buf, 10*1024*1024) // 10MB max line size for large image messages
 
 	lineCount := 0
 	parseFailures := 0
@@ -512,58 +757,16 @@ func (fw *FileWatcher) loadInitialMessages(filePath string) ([]types.Message, in
 		}
 	}
 
-	// Find last compaction message
-	lastCompactionIdx := -1
-	for i := len(allMessages) - 1; i >= 0; i-- {
-		if allMessages[i].IsCompaction {
-			lastCompactionIdx = i
-			break
-		}
-	}
-
-	// Determine which messages to load
-	var messagesToLoad []types.Message
-	if lastCompactionIdx >= 0 {
-		messagesToLoad = allMessages[lastCompactionIdx:]
-	} else if len(allMessages) > FallbackMessageCount {
-		// No compaction point - use smart fallback that ensures we include user messages
-		// Find the last N user messages and include everything from the first one
-		startIdx := len(allMessages) - FallbackMessageCount
-
-		// Look for user messages in the portion we'd skip
-		// Find index of Nth-from-last user message to include more context
-		userMsgCount := 0
-		minUserMsgsToInclude := 5 // Ensure at least 5 user messages if available
-		for i := len(allMessages) - 1; i >= 0; i-- {
-			if allMessages[i].Type == "user" {
-				userMsgCount++
-				if userMsgCount >= minUserMsgsToInclude && i < startIdx {
-					// Found a user message before our fallback window - extend to include it
-					startIdx = i
-				}
-			}
-		}
-
-		// Also cap at a reasonable maximum to avoid loading too much
-		// This should be less than or equal to runtime.MaxBufferSize (750)
-		maxFallbackMessages := 500
-		if len(allMessages)-startIdx > maxFallbackMessages {
-			startIdx = len(allMessages) - maxFallbackMessages
-		}
-
-		messagesToLoad = allMessages[startIdx:]
-	} else {
-		messagesToLoad = allMessages
-	}
+	// Load ALL messages for proper deduplication when Claude Code resumes
+	// (Claude Code may write context that includes old messages - we need all UUIDs to deduplicate)
+	// Note: The frontend handles pagination/display limits via GetConversationPaged
 
 	// Debug: count message types
 	typeCounts := make(map[string]int)
-	for _, msg := range messagesToLoad {
+	for _, msg := range allMessages {
 		typeCounts[msg.Type]++
 	}
 	sessionID := filepath.Base(filePath)
-	fmt.Printf("[DEBUG] loadInitialMessages: file=%s lines=%d parsed=%d failures=%d compaction=%d loading=%d (types: %v)\n",
-		sessionID, lineCount, len(allMessages), parseFailures, lastCompactionIdx, len(messagesToLoad), typeCounts)
 
 	// Get file position (EOF)
 	fileInfo, _ := file.Stat()
@@ -572,7 +775,10 @@ func (fw *FileWatcher) loadInitialMessages(filePath string) ([]types.Message, in
 		filePos = fileInfo.Size()
 	}
 
-	return messagesToLoad, filePos
+	fmt.Printf("[DEBUG] loadInitialMessages: file=%s lines=%d parsed=%d failures=%d loading=%d filePos=%d (types: %v)\n",
+		sessionID, lineCount, len(allMessages), parseFailures, len(allMessages), filePos, typeCounts)
+
+	return allMessages, filePos
 }
 
 // =============================================================================
@@ -608,7 +814,7 @@ func (fw *FileWatcher) parseSessionPath(path string) (folder, sessionID string) 
 	fw.mu.RLock()
 	defer fw.mu.RUnlock()
 
-	for f := range fw.folderToAgentID {
+	for f := range fw.folderToAgentIDs {
 		encodedName := strings.ReplaceAll(f, "/", "-")
 		expectedDir := filepath.Join(os.Getenv("HOME"), ".claude", "projects", encodedName)
 		if dir == expectedDir {
@@ -630,14 +836,27 @@ func (fw *FileWatcher) Close() {
 }
 
 // =============================================================================
-// PATH HELPERS (exported for use by other packages)
+// TIMESTAMP HELPERS
 // =============================================================================
 
-const (
-	// FallbackMessageCount is the number of messages to load if no compaction found
-	// The actual buffer limit is defined in runtime.MaxBufferSize (500)
-	FallbackMessageCount = 60
-)
+// parseTimestampToTime converts ISO timestamp string to time.Time.
+func parseTimestampToTime(ts string) time.Time {
+	if ts == "" {
+		return time.Time{}
+	}
+	t, err := time.Parse(time.RFC3339, ts)
+	if err != nil {
+		t, err = time.Parse(time.RFC3339Nano, ts)
+		if err != nil {
+			return time.Time{}
+		}
+	}
+	return t
+}
+
+// =============================================================================
+// PATH HELPERS (exported for use by other packages)
+// =============================================================================
 
 // BuildSessionPath constructs the path to a session JSONL file.
 func BuildSessionPath(folder, sessionID string) string {

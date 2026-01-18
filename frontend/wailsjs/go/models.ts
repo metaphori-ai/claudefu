@@ -97,6 +97,24 @@ export namespace main {
 		    return a;
 		}
 	}
+	export class MCPPendingQuestion {
+	    id: string;
+	    agentSlug: string;
+	    questions: any[];
+	    createdAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new MCPPendingQuestion(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.agentSlug = source["agentSlug"];
+	        this.questions = source["questions"];
+	        this.createdAt = source["createdAt"];
+	    }
+	}
 
 }
 
@@ -147,12 +165,40 @@ export namespace mcpserver {
 		    return a;
 		}
 	}
+	export class ToolAvailability {
+	    agentQuery: boolean;
+	    agentMessage: boolean;
+	    agentBroadcast: boolean;
+	    notifyUser: boolean;
+	    askUserQuestion: boolean;
+	    selfQuery: boolean;
+	    browserAgent: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new ToolAvailability(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.agentQuery = source["agentQuery"];
+	        this.agentMessage = source["agentMessage"];
+	        this.agentBroadcast = source["agentBroadcast"];
+	        this.notifyUser = source["notifyUser"];
+	        this.askUserQuestion = source["askUserQuestion"];
+	        this.selfQuery = source["selfQuery"];
+	        this.browserAgent = source["browserAgent"];
+	    }
+	}
 	export class ToolInstructions {
 	    agentQuery: string;
 	    agentQuerySystemPrompt: string;
 	    agentMessage: string;
 	    agentBroadcast: string;
 	    notifyUser: string;
+	    askUserQuestion: string;
+	    selfQuery: string;
+	    selfQuerySystemPrompt: string;
+	    browserAgent: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ToolInstructions(source);
@@ -165,6 +211,10 @@ export namespace mcpserver {
 	        this.agentMessage = source["agentMessage"];
 	        this.agentBroadcast = source["agentBroadcast"];
 	        this.notifyUser = source["notifyUser"];
+	        this.askUserQuestion = source["askUserQuestion"];
+	        this.selfQuery = source["selfQuery"];
+	        this.selfQuerySystemPrompt = source["selfQuerySystemPrompt"];
+	        this.browserAgent = source["browserAgent"];
 	    }
 	}
 
@@ -176,6 +226,7 @@ export namespace settings {
 	    theme: string;
 	    enterBehavior: string;
 	    defaultWorkingDir: string;
+	    debugLogging: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -186,6 +237,7 @@ export namespace settings {
 	        this.theme = source["theme"];
 	        this.enterBehavior = source["enterBehavior"];
 	        this.defaultWorkingDir = source["defaultWorkingDir"];
+	        this.debugLogging = source["debugLogging"];
 	    }
 	}
 
@@ -193,6 +245,22 @@ export namespace settings {
 
 export namespace types {
 	
+	export class Attachment {
+	    type: string;
+	    media_type: string;
+	    data: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Attachment(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.type = source["type"];
+	        this.media_type = source["media_type"];
+	        this.data = source["data"];
+	    }
+	}
 	export class ImageSource {
 	    type: string;
 	    media_type: string;

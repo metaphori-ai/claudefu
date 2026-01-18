@@ -11,6 +11,8 @@ export function AddAgent(arg1:string,arg2:string):Promise<workspace.Agent>;
 
 export function AlertDialog(arg1:string,arg2:string):Promise<void>;
 
+export function AnswerMCPQuestion(arg1:string,arg2:Record<string, string>):Promise<void>;
+
 export function AnswerQuestion(arg1:string,arg2:string,arg3:string,arg4:Array<Record<string, any>>,arg5:Record<string, string>):Promise<void>;
 
 export function ClearAPIKey():Promise<void>;
@@ -47,7 +49,11 @@ export function GetConversation(arg1:string,arg2:string):Promise<Array<types.Mes
 
 export function GetConversationPaged(arg1:string,arg2:string,arg3:number,arg4:number):Promise<main.ConversationResult>;
 
+export function GetCurrentWorkspace():Promise<workspace.Workspace>;
+
 export function GetCurrentWorkspaceID():Promise<string>;
+
+export function GetDefaultMCPToolAvailability():Promise<mcpserver.ToolAvailability>;
 
 export function GetDefaultMCPToolInstructions():Promise<mcpserver.ToolInstructions>;
 
@@ -59,7 +65,11 @@ export function GetInboxUnreadCount(arg1:string):Promise<number>;
 
 export function GetMCPServerPort():Promise<number>;
 
+export function GetMCPToolAvailability():Promise<mcpserver.ToolAvailability>;
+
 export function GetMCPToolInstructions():Promise<mcpserver.ToolInstructions>;
+
+export function GetPendingMCPQuestions():Promise<Array<main.MCPPendingQuestion>>;
 
 export function GetPlanFilePath(arg1:string,arg2:string):Promise<string>;
 
@@ -103,6 +113,8 @@ export function SaveClaudePermissions(arg1:string,arg2:Array<string>,arg3:Array<
 
 export function SaveFile(arg1:string):Promise<string>;
 
+export function SaveMCPToolAvailability(arg1:mcpserver.ToolAvailability):Promise<void>;
+
 export function SaveMCPToolInstructions(arg1:mcpserver.ToolInstructions):Promise<void>;
 
 export function SaveSettings(arg1:settings.Settings):Promise<void>;
@@ -117,13 +129,15 @@ export function SelectFile(arg1:string):Promise<string>;
 
 export function SelectWorkspaceFolder():Promise<string>;
 
-export function SendMessage(arg1:string,arg2:string,arg3:string,arg4:boolean):Promise<void>;
+export function SendMessage(arg1:string,arg2:string,arg3:string,arg4:Array<types.Attachment>,arg5:boolean):Promise<void>;
 
 export function SetAPIKey(arg1:string):Promise<void>;
 
 export function SetActiveSession(arg1:string,arg2:string):Promise<void>;
 
 export function SetSessionName(arg1:string,arg2:string,arg3:string):Promise<void>;
+
+export function SkipMCPQuestion(arg1:string):Promise<void>;
 
 export function StartHyperLogin():Promise<auth.DeviceAuthInfo>;
 

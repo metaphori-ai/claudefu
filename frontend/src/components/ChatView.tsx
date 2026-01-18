@@ -2,13 +2,14 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { GetConversationPaged, SetActiveSession, SendMessage, MarkSessionViewed, NewSession, ReadPlanFile, GetPlanFilePath, AnswerQuestion } from '../../wailsjs/go/main/App';
+import { types } from '../../wailsjs/go/models';
 
 // Extracted components
 import { MessageList } from './chat/MessageList';
 import { DebugStatsOverlay } from './chat/DebugStatsOverlay';
 import { InputArea, InputAreaHandle } from './chat/InputArea';
 import { ControlButtonsRow } from './chat/ControlButtonsRow';
-import type { Message, ContentBlock, PendingQuestion, ChatViewProps } from './chat/types';
+import type { Message, ContentBlock, PendingQuestion, ChatViewProps, Attachment } from './chat/types';
 
 // Existing components
 import { CompactionPane } from './CompactionPane';
@@ -23,6 +24,7 @@ import { useMessages } from '../hooks/useMessages';
 
 // Utilities
 import { buildToolResultMap, buildPendingQuestionMap, computeDebugStats, filterMessagesToRender } from '../utils/messageUtils';
+import { debugLogger, startDebugCycle, logDebug, endDebugCycle } from '../utils/debugLogger';
 
 // CSS keyframes for spinner animation
 const spinnerStyles = `
@@ -192,7 +194,14 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
   // Session initialization - event handling is now in WailsEventHub
   useEffect(() => {
     const initSession = async () => {
-      SetActiveSession(agentId, sessionId);
+      try {
+        await SetActiveSession(agentId, sessionId);
+      } catch (err) {
+        // Conflict: another agent from same folder already has this session active
+        console.error('Failed to set active session:', err);
+        setError(String(err));
+        return;
+      }
 
       try {
         await MarkSessionViewed(agentId, sessionId);
@@ -206,6 +215,10 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
     initSession();
   }, [agentId, sessionId]);
 
+  // Track last message count to detect new messages
+  const lastMessageCountRef = useRef(messages.length);
+  const pendingCycleRef = useRef(false);
+
   // Scroll when messages change (from context updates via WailsEventHub)
   useEffect(() => {
     if (messages.length > 0) {
@@ -214,6 +227,29 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
       if (shouldScroll) {
         scroll.scrollToBottomDoubleRAF();
       }
+
+      // Check for new messages since last render
+      const newMessageCount = messages.length - lastMessageCountRef.current;
+      if (newMessageCount > 0 && debugLogger.isCycleActive()) {
+        // Log new messages arriving
+        const newMessages = messages.slice(-newMessageCount);
+        for (const msg of newMessages) {
+          logDebug('ChatView', 'MESSAGE_RECEIVED', {
+            type: msg.type,
+            uuid: msg.uuid?.substring(0, 8),
+            isPending: msg.isPending,
+            contentLength: msg.content?.length,
+          });
+        }
+
+        // Check if we got an assistant message (potential cycle end)
+        const hasNewAssistant = newMessages.some(m => m.type === 'assistant' && !m.isPending);
+        if (hasNewAssistant) {
+          // End cycle when assistant message arrives
+          endDebugCycle('assistant_message_received');
+        }
+      }
+      lastMessageCountRef.current = messages.length;
 
       // Update plan file path when messages change
       GetPlanFilePath(agentId, sessionId).then(planPath => {
@@ -241,7 +277,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
         scroll.scrollToBottomRAF();
 
         try {
-          await SendMessage(agentId, sessionId, initialMessage, planningMode);
+          await SendMessage(agentId, sessionId, initialMessage, [], planningMode);
         } catch (err) {
           // On failure, the message stays in pending state
           // Context will handle cleanup when confirmed message arrives
@@ -282,7 +318,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
   // Handle skipping a pending question
   const handleQuestionSkip = async (toolUseId: string) => {
     try {
-      await SendMessage(agentId, sessionId, "I'm skipping this question. Please continue.", planningMode);
+      await SendMessage(agentId, sessionId, "I'm skipping this question. Please continue.", [], planningMode);
       // Clear and reload from context
       clearContextSession(agentId, sessionId);
       await loadConversation(true); // Force reload
@@ -292,8 +328,35 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
   };
 
   // Handle sending a message (receives message from InputArea)
-  const handleSend = async (message: string) => {
-    if (!message || isSending) return;
+  const handleSend = async (message: string, attachments: Attachment[] = []) => {
+    console.log('=== USER PROMPT START ===', {
+      timestamp: new Date().toISOString(),
+      messageLength: message.length,
+      attachmentCount: attachments.length,
+      sessionId: sessionId.substring(0, 8),
+    });
+    if ((!message && attachments.length === 0) || isSending) return;
+
+    // Start debug cycle for this prompt
+    startDebugCycle(message, {
+      agentId,
+      sessionId,
+      attachmentCount: attachments.length,
+      planningMode,
+      newSessionMode,
+    });
+
+    // Convert frontend attachments to backend format
+    const backendAttachments: types.Attachment[] = attachments.map(att => ({
+      type: att.type,
+      media_type: att.mediaType,
+      data: att.data
+    }));
+    logDebug('ChatView', 'SEND_START', {
+      messageLength: message.length,
+      attachments: attachments.length,
+      backendAttachments: backendAttachments.length,
+    });
 
     setIsSending(true);
 
@@ -333,9 +396,12 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
     scroll.scrollToBottomRAF();
 
     try {
-      await SendMessage(agentId, sessionId, message, planningMode);
+      await SendMessage(agentId, sessionId, message, backendAttachments, planningMode);
+      logDebug('ChatView', 'SEND_COMPLETE', { success: true });
     } catch (err) {
       console.error('Failed to send message:', err);
+      logDebug('ChatView', 'SEND_ERROR', { error: String(err) });
+      endDebugCycle('send_error');
       // On failure, restore message to input
       // The pending message will be cleaned up when/if the confirmed message arrives
       inputAreaRef.current?.setValue(message);

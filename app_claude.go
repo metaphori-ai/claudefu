@@ -3,8 +3,10 @@ package main
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"claudefu/internal/providers"
+	"claudefu/internal/types"
 	"claudefu/internal/workspace"
 )
 
@@ -12,9 +14,10 @@ import (
 // CLAUDE CODE METHODS (Bound to frontend)
 // =============================================================================
 
-// SendMessage sends a message to Claude Code
-// If planMode is true, forces Claude into planning mode
-func (a *App) SendMessage(agentID, sessionID, message string, planMode bool) error {
+// SendMessage sends a message to Claude Code, optionally with image attachments.
+// If attachments are provided, uses stdin with stream-json format.
+// If planMode is true, forces Claude into planning mode.
+func (a *App) SendMessage(agentID, sessionID, message string, attachments []types.Attachment, planMode bool) error {
 	if a.claude == nil {
 		return fmt.Errorf("claude service not initialized")
 	}
@@ -27,7 +30,13 @@ func (a *App) SendMessage(agentID, sessionID, message string, planMode bool) err
 		return fmt.Errorf("agent not found: %s", agentID)
 	}
 
-	return a.claude.SendMessage(agent.Folder, sessionID, message, planMode)
+	// Record send time BEFORE calling Claude - used to filter out historical context
+	// that Claude Code writes when resuming a session (those have old timestamps)
+	if a.rt != nil {
+		a.rt.SetLastSendTime(agentID, sessionID, time.Now())
+	}
+
+	return a.claude.SendMessage(agent.Folder, sessionID, message, attachments, planMode)
 }
 
 // NewSession creates a new Claude Code session
@@ -103,12 +112,17 @@ func (a *App) AnswerQuestion(agentID, sessionID, toolUseID string, questions []m
 	// Step 2: Reload session cache from the patched JSONL file
 	// This ensures GetMessages returns fresh data with is_error=false
 	if a.watcher != nil {
-		if err := a.watcher.ReloadSession(agent.Folder, sessionID); err != nil {
+		if err := a.watcher.ReloadSession(agentID, agent.Folder, sessionID); err != nil {
 			fmt.Printf("[WARN] Failed to reload session after patch: %v\n", err)
 			// Continue anyway - the data is on disk, worst case user refreshes
 		}
 	}
 
-	// Step 3: Resume the session with "question answered" to trigger Claude continuation
-	return a.claude.SendMessage(agent.Folder, sessionID, "question answered", false)
+	// Step 3: Record send time for timestamp-based filtering
+	if a.rt != nil {
+		a.rt.SetLastSendTime(agentID, sessionID, time.Now())
+	}
+
+	// Step 4: Resume the session with "question answered" to trigger Claude continuation
+	return a.claude.SendMessage(agent.Folder, sessionID, "question answered", nil, false)
 }

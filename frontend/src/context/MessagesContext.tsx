@@ -1,5 +1,6 @@
 import { createContext, useReducer, ReactNode, Dispatch } from 'react';
 import { Message } from '../components/chat/types';
+import { logDebug } from '../utils/debugLogger';
 
 // SessionMessages: per-session message state
 export interface SessionMessages {
@@ -171,35 +172,51 @@ function messagesReducer(state: MessagesState, action: MessagesAction): Messages
       const newUUIDs = new Set(currentUUIDs);
       const newPending = new Set(currentPending);
       const newMessages: Message[] = [];
+      const confirmedPendingContents: Set<string> = new Set();
+      let duplicateCount = 0;
 
       for (const msg of messages) {
-        if (msg.uuid && newUUIDs.has(msg.uuid)) continue;
+        if (msg.uuid && newUUIDs.has(msg.uuid)) {
+          duplicateCount++;
+          continue;
+        }
         if (msg.uuid) newUUIDs.add(msg.uuid);
 
         // Check if this confirms a pending user message
         if (msg.type === 'user' && newPending.has(msg.content)) {
           newPending.delete(msg.content);
-          // Don't add - it was already added optimistically
-          continue;
+          confirmedPendingContents.add(msg.content);
+          // Still add to newMessages so it replaces the pending message
         }
 
         newMessages.push(msg);
       }
 
+      logDebug('MessagesContext', 'APPEND_MESSAGES', {
+        sessionId: sessionId.substring(0, 8),
+        incoming: messages.length,
+        duplicates: duplicateCount,
+        newMessages: newMessages.length,
+        confirmedPending: confirmedPendingContents.size,
+        currentTotal: current.messages.length,
+        types: newMessages.map(m => m.type).join(','),
+      });
+
       if (newMessages.length === 0 && newPending.size === currentPending.size) {
+        logDebug('MessagesContext', 'APPEND_MESSAGES_SKIP', {
+          reason: 'all_duplicates',
+          sessionId: sessionId.substring(0, 8),
+        });
         return state;
       }
 
-      // Update messages, removing any pending flags that match confirmed messages
-      const updatedMessages = [...current.messages];
+      // Start with current messages, but remove any pending messages that were confirmed
+      const updatedMessages = current.messages.filter(
+        m => !(m.isPending && m.type === 'user' && confirmedPendingContents.has(m.content))
+      );
+
+      // Add all new messages
       for (const msg of newMessages) {
-        // Remove any pending message that matches this confirmed message
-        const pendingIdx = updatedMessages.findIndex(
-          m => m.isPending && m.type === 'user' && m.content === msg.content
-        );
-        if (pendingIdx !== -1) {
-          updatedMessages.splice(pendingIdx, 1);
-        }
         updatedMessages.push(msg);
       }
 
@@ -284,6 +301,12 @@ function messagesReducer(state: MessagesState, action: MessagesAction): Messages
       const { agentId, sessionId, content, message } = action.payload;
       const current = getOrCreateSessionMessages(state, agentId, sessionId);
       const currentPending = getOrCreatePendingMessages(state, agentId, sessionId);
+
+      logDebug('MessagesContext', 'ADD_PENDING_MESSAGE', {
+        sessionId: sessionId.substring(0, 8),
+        contentLength: content.length,
+        pendingCount: currentPending.size + 1,
+      });
 
       // Add to pending set
       const newPending = new Set(currentPending);

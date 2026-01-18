@@ -18,6 +18,10 @@ type ToolInstructions struct {
 	AgentMessage           string `json:"agentMessage"`
 	AgentBroadcast         string `json:"agentBroadcast"`
 	NotifyUser             string `json:"notifyUser"`
+	AskUserQuestion        string `json:"askUserQuestion"`
+	SelfQuery              string `json:"selfQuery"`
+	SelfQuerySystemPrompt  string `json:"selfQuerySystemPrompt"` // System prompt appended to SelfQuery calls
+	BrowserAgent           string `json:"browserAgent"`          // BrowserAgent tool description
 }
 
 // ToolInstructionsManager handles loading and saving tool instructions
@@ -73,6 +77,39 @@ Use this for:
 - Warnings that need user attention
 - Success confirmations
 - Questions that need user awareness (not blocking questions)`,
+
+		AskUserQuestion: `Ask the user a question and wait for their response. This tool blocks until the user answers or skips the question.
+
+Use this to:
+- Get user preferences or decisions
+- Clarify ambiguous requirements
+- Offer choices about implementation direction
+
+The question will appear as a dialog in ClaudeFu UI. You can provide multiple choice options for the user.`,
+
+		SelfQuery: `Query your own codebase with full CLAUDE.md context. This spawns a stateless Claude that has access to all your project instructions.
+
+Use this when you need:
+- Deep codebase analysis with full architectural context
+- Quick focused questions that benefit from project knowledge
+- Sub-tasks that don't need their own session history
+
+Unlike Task subagents, SelfQuery has access to CLAUDE.md and all includes.
+
+IMPORTANT: You must provide your agent slug in from_agent so we can identify your folder.`,
+
+		SelfQuerySystemPrompt: `You are responding to a self-query from the same agent. You have full access to CLAUDE.md and project context. Respond with precise, actionable information. Do NOT offer to make changes or ask follow-up questions.`,
+
+		BrowserAgent: `Delegate visual/DOM/CSS investigation to Claude in Browser.
+
+Use this when you need:
+- CSS debugging (computed styles, layout issues)
+- DOM inspection (rendered state, event listeners, a11y tree)
+- Visual verification (screenshots, layout description)
+- Runtime JS execution in browser context
+
+Note: This tool requires the Chrome extension bridge to be running.
+Timeout defaults to 10 minutes - complex investigations take time.`,
 	}
 }
 
@@ -147,6 +184,22 @@ func (m *ToolInstructionsManager) load() error {
 	}
 	if ti.NotifyUser == "" {
 		ti.NotifyUser = defaults.NotifyUser
+		needsSave = true
+	}
+	if ti.AskUserQuestion == "" {
+		ti.AskUserQuestion = defaults.AskUserQuestion
+		needsSave = true
+	}
+	if ti.SelfQuery == "" {
+		ti.SelfQuery = defaults.SelfQuery
+		needsSave = true
+	}
+	if ti.SelfQuerySystemPrompt == "" {
+		ti.SelfQuerySystemPrompt = defaults.SelfQuerySystemPrompt
+		needsSave = true
+	}
+	if ti.BrowserAgent == "" {
+		ti.BrowserAgent = defaults.BrowserAgent
 		needsSave = true
 	}
 

@@ -120,3 +120,52 @@ func CreateNotifyUserTool(instruction string) mcp.Tool {
 		),
 	)
 }
+
+// CreateAskUserQuestionTool creates the AskUserQuestion tool definition
+// This matches the schema of Claude's built-in AskUserQuestion tool
+func CreateAskUserQuestionTool(instruction string) mcp.Tool {
+	return mcp.NewTool("AskUserQuestion",
+		mcp.WithDescription(instruction),
+		mcp.WithArray("questions",
+			mcp.Required(),
+			mcp.Description("Array of questions to ask the user. Each question has: question (string), header (string), options (array of {label, description}), multiSelect (boolean)"),
+		),
+		mcp.WithString("from_agent",
+			mcp.Description("Your agent name/slug for identification (optional)"),
+		),
+	)
+}
+
+// CreateSelfQueryTool creates the SelfQuery tool definition
+// Unlike AgentQuery, from_agent is REQUIRED because we need to identify the caller's folder
+func CreateSelfQueryTool(instruction string) mcp.Tool {
+	return mcp.NewTool("SelfQuery",
+		mcp.WithDescription(instruction),
+		mcp.WithString("query",
+			mcp.Required(),
+			mcp.Description("The question or request to answer using your own codebase context"),
+		),
+		mcp.WithString("from_agent",
+			mcp.Required(),
+			mcp.Description("Your agent name/slug - REQUIRED to identify your folder"),
+		),
+	)
+}
+
+// CreateBrowserAgentTool creates the BrowserAgent tool definition
+// This tool delegates visual/DOM/CSS investigation to Claude in Browser via a Chrome extension bridge
+func CreateBrowserAgentTool(instruction string) mcp.Tool {
+	return mcp.NewTool("BrowserAgent",
+		mcp.WithDescription(instruction),
+		mcp.WithString("prompt",
+			mcp.Required(),
+			mcp.Description("Investigation prompt for Claude in Browser"),
+		),
+		mcp.WithNumber("timeout",
+			mcp.Description("Seconds to wait for findings (default: 600 = 10 minutes)"),
+		),
+		mcp.WithString("from_agent",
+			mcp.Description("Your agent name/slug for identification"),
+		),
+	)
+}

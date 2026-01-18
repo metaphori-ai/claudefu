@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.4] - 2025-01-18
+
+### Added
+- **Multi-Agent Folder Support** - Multiple agents can now share the same project folder
+  - Each agent watches a different session within the shared folder
+  - Folder-to-agent mapping changed from 1:1 to 1:M (`folderToAgentIDs`)
+  - File change events routed to the correct agent based on active session
+  - New session discovery notifies ALL agents sharing the folder
+- **SelfQuery MCP Tool** - New `mcp__claudefu__SelfQuery` tool for querying your own codebase
+  - Spawns stateless `claude --print` in the caller's folder (not a target's)
+  - Has full access to CLAUDE.md and all includes - unlike Task subagents
+  - `from_agent` is required to identify the caller's folder
+  - Configurable tool instructions and system prompt via MCP Settings
+- **BrowserAgent MCP Tool** - New `mcp__claudefu__BrowserAgent` for visual/DOM/CSS investigation
+  - Delegates to Claude in Browser via WebSocket bridge (`ws://localhost:9320/ws`)
+  - Requires custom Chrome extension bridge (not publicly available)
+  - Disabled by default, password-protected (`claudefu`) to enable
+  - 10-minute default timeout for complex investigations
+  - Sends investigation prompt, receives findings via report form
+- **Tool Availability System** - Per-tool enable/disable in MCP Settings
+  - New "Tool Availability" tab in MCP Settings (between Configuration and Tool Instructions)
+  - Toggle switches for all 7 MCP tools (AgentQuery, AgentMessage, AgentBroadcast, NotifyUser, AskUserQuestion, SelfQuery, BrowserAgent)
+  - Standard tools enabled by default, experimental tools (BrowserAgent) disabled
+  - Handler-level availability checks return helpful error messages when disabled
+  - Settings persisted to `~/.claudefu/mcp_tool_availability.json`
+
+### Changed
+- **Watcher function signatures** - Updated to support multi-agent folders
+  - `StopWatchingAgent(agentID, folder)` - now takes agentID to remove specific agent
+  - `ReloadSession(agentID, folder, sessionID)` - now takes agentID explicitly
+
+### Fixed
+- **Unread badge accuracy** - Badge now shows session-specific unread count (not sum of all sessions)
+  - Frontend uses `unread` from event payload instead of `agentTotal`
+  - Badge only shows for non-selected agents (hidden when viewing that agent)
+- **Same-session conflict validation** - Two agents from the same folder cannot watch the same sessionID
+  - Returns error: "session {id} is already active in agent '{name}'"
+  - Prevents weird duplicate conversation views
+
 ## [0.3.3] - 2025-01-17
 
 ### Added

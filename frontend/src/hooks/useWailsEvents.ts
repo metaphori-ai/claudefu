@@ -6,6 +6,7 @@ import { useMessages } from './useMessages';
 import { GetInboxTotalCount } from '../../wailsjs/go/main/App';
 import { types } from '../../wailsjs/go/models';
 import { Message } from '../components/chat/types';
+import { logDebug } from '../utils/debugLogger';
 
 type Session = types.Session;
 
@@ -16,7 +17,7 @@ type Session = types.Session;
  */
 export function useWailsEvents() {
   const { addDiscoveredSession } = useWorkspace();
-  const { setUnreadTotal, setInboxCounts } = useSession();
+  const { setUnreadTotal, setInboxCounts, setMCPPendingQuestion } = useSession();
   const {
     appendMessages,
     isMessageProcessed,
@@ -28,13 +29,14 @@ export function useWailsEvents() {
   const pendingEventDataRef = useRef<{ agentId: string; sessionId: string; messages: Message[] } | null>(null);
 
   // Subscribe to unread:changed events
+  // We use session-specific 'unread' (not agentTotal) since each agent watches only ONE session
   useEffect(() => {
     const handleUnreadChanged = (envelope: {
       agentId?: string;
-      payload?: { agentTotal?: number };
+      payload?: { unread?: number };
     }) => {
-      if (envelope?.agentId && envelope.payload?.agentTotal !== undefined) {
-        setUnreadTotal(envelope.agentId, envelope.payload.agentTotal);
+      if (envelope?.agentId && envelope.payload?.unread !== undefined) {
+        setUnreadTotal(envelope.agentId, envelope.payload.unread);
       }
     };
 
@@ -60,6 +62,35 @@ export function useWailsEvents() {
       EventsOff('session:discovered');
     };
   }, [addDiscoveredSession]);
+
+  // Subscribe to mcp:askuser events (MCP-based AskUserQuestion)
+  useEffect(() => {
+    const handleAskUser = (envelope: {
+      payload?: {
+        id?: string;
+        agentSlug?: string;
+        questions?: any[];
+        createdAt?: string;
+      };
+    }) => {
+      if (!envelope?.payload?.id || !envelope?.payload?.questions) {
+        return;
+      }
+
+      console.log('[MCP:AskUser] Received question event:', envelope.payload.id?.substring(0, 8));
+      setMCPPendingQuestion({
+        id: envelope.payload.id,
+        agentSlug: envelope.payload.agentSlug || 'unknown',
+        questions: envelope.payload.questions,
+        createdAt: envelope.payload.createdAt || new Date().toISOString(),
+      });
+    };
+
+    EventsOn('mcp:askuser', handleAskUser);
+    return () => {
+      EventsOff('mcp:askuser');
+    };
+  }, [setMCPPendingQuestion]);
 
   // Subscribe to mcp:inbox events
   useEffect(() => {
@@ -96,19 +127,33 @@ export function useWailsEvents() {
       // Check if this session has done initial load (if not, ignore - ChatView will handle it)
       const sessionData = getSessionMessages(agentId, sessionId);
       if (!sessionData?.initialLoadDone) {
+        logDebug('WailsEvents', 'SKIP_MESSAGES_INITIAL_LOAD_NOT_DONE', {
+          sessionId: sessionId.substring(0, 8),
+          messageCount: messages.length,
+        });
         return;
       }
 
       // Pre-filter messages that are already processed (use state-based check)
       // Note: The APPEND_MESSAGES reducer handles final deduplication and marking as processed
       const uniqueMessages: Message[] = [];
+      let skippedCount = 0;
       for (const msg of messages) {
         // Skip if already processed (pre-filter to reduce unnecessary dispatch)
         if (msg.uuid && isMessageProcessed(agentId, sessionId, msg.uuid)) {
+          skippedCount++;
           continue;
         }
         uniqueMessages.push(msg);
       }
+
+      logDebug('WailsEvents', 'PROCESS_MESSAGES', {
+        sessionId: sessionId.substring(0, 8),
+        received: messages.length,
+        unique: uniqueMessages.length,
+        skipped: skippedCount,
+        types: uniqueMessages.map(m => m.type).join(','),
+      });
 
       if (uniqueMessages.length > 0) {
         // appendMessages handles: deduplication, marking as processed, and pending message cleanup
@@ -127,6 +172,19 @@ export function useWailsEvents() {
 
       const { agentId, sessionId } = envelope;
       const messages = envelope.payload.messages;
+
+      logDebug('WailsEvents', 'EVENT_session:messages', {
+        sessionId: sessionId.substring(0, 8),
+        messageCount: messages.length,
+        types: messages.map(m => m.type).join(','),
+        uuids: messages.map(m => m.uuid?.substring(0, 8)).join(','),
+      });
+
+      // Log session:messages events (helps with debugging)
+      if (messages.length > 10) {
+        // Large batches are normal - Claude Code writes context compaction, images, etc.
+        console.log(`[WailsEvents] session:messages: session=${sessionId.substring(0, 8)} count=${messages.length} (large batch - context/images)`);
+      }
 
       // Debounce rapid events (50ms)
       if (debounceTimerRef.current) {

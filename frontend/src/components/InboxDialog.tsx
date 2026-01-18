@@ -93,8 +93,8 @@ export function InboxDialog({
       isOpen={isOpen}
       onClose={onClose}
       title={title}
-      width="800px"
-      height="600px"
+      width="900px"
+      height="700px"
     >
       {/* Split Panel Content */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
@@ -217,14 +217,15 @@ export function InboxDialog({
                 padding: '1rem',
                 borderBottom: '1px solid #333',
                 flexShrink: 0,
+                textAlign: 'left'
               }}>
-                <div style={{ marginBottom: '0.25rem' }}>
+                <div style={{ marginBottom: '0.25rem', textAlign: 'left' }}>
                   <span style={{ color: '#666', fontSize: '0.8rem' }}>From: </span>
                   <span style={{ color: '#8b5cf6', fontSize: '0.9rem', fontWeight: 500 }}>
                     {selectedMessage.fromAgentName || 'Unknown'}
                   </span>
                 </div>
-                <div>
+                <div >
                   <span style={{ color: '#666', fontSize: '0.8rem' }}>Received: </span>
                   <span style={{ color: '#888', fontSize: '0.85rem' }}>
                     {formatRelativeTime(selectedMessage.timestamp)}
@@ -238,6 +239,7 @@ export function InboxDialog({
                       fontSize: '0.7rem',
                       padding: '0.15rem 0.4rem',
                       borderRadius: '4px',
+                      textAlign: 'left',
                     }}>
                       High Priority
                     </span>
@@ -253,8 +255,9 @@ export function InboxDialog({
               }}>
                 <div style={{
                   color: '#ccc',
-                  fontSize: '0.9rem',
-                  lineHeight: 1.6,
+                  fontSize: '0.7rem',
+                  lineHeight: 1.25,  
+                  textAlign: 'left',
                 }}
                 className="markdown-content"
                 >

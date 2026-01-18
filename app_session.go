@@ -105,7 +105,35 @@ func (a *App) SetActiveSession(agentID, sessionID string) error {
 		return fmt.Errorf("runtime not initialized")
 	}
 
+	// Validation: Two agents from the same folder cannot watch the same sessionID
+	// This would be weird - you'd see the same conversation in two different "agents"
+	if a.currentWorkspace != nil {
+		thisAgent := a.getAgentByID(agentID)
+		if thisAgent != nil {
+			for _, otherAgent := range a.currentWorkspace.Agents {
+				if otherAgent.ID == agentID {
+					continue // Skip self
+				}
+				if otherAgent.Folder != thisAgent.Folder {
+					continue // Different folder, no conflict
+				}
+				// Same folder - check if the other agent is already watching this session
+				currentActiveAgent, currentActiveSession := a.rt.GetActiveSession()
+				if currentActiveAgent == otherAgent.ID && currentActiveSession == sessionID {
+					return fmt.Errorf("session %s is already active in agent '%s'", sessionID[:8], otherAgent.Name)
+				}
+			}
+		}
+	}
+
 	a.rt.SetActiveSession(agentID, sessionID)
+
+	// Update file watcher to only watch this session file
+	// This saves resources - we don't need 100+ fsnotify watches
+	if a.watcher != nil {
+		a.watcher.SetActiveSessionWatch(agentID, sessionID)
+	}
+
 	return nil
 }
 
@@ -114,10 +142,15 @@ func (a *App) ClearActiveSession() {
 	if a.rt != nil {
 		a.rt.ClearActiveSession()
 	}
+	if a.watcher != nil {
+		a.watcher.ClearActiveSessionWatch()
+	}
 }
 
 // MarkSessionViewed marks a session as viewed
 func (a *App) MarkSessionViewed(agentID, sessionID string) error {
+	fmt.Printf("[DEBUG] MarkSessionViewed called: agentID=%s sessionID=%s\n", agentID, sessionID[:8])
+
 	// Get folder from agent
 	agent := a.getAgentByID(agentID)
 	if agent == nil {
@@ -137,6 +170,7 @@ func (a *App) MarkSessionViewed(agentID, sessionID string) error {
 		a.rt.EmitUnreadChanged(agentID, sessionID)
 	}
 
+	fmt.Printf("[DEBUG] MarkSessionViewed complete: agentID=%s sessionID=%s\n", agentID, sessionID[:8])
 	return nil
 }
 

@@ -28,8 +28,15 @@ func (a *App) GetCurrentWorkspaceID() (string, error) {
 	return a.workspace.GetCurrentWorkspaceID()
 }
 
+// GetCurrentWorkspace returns the currently loaded workspace without reloading.
+// Use this on frontend startup instead of SwitchWorkspace to avoid duplicate initialization.
+func (a *App) GetCurrentWorkspace() *workspace.Workspace {
+	return a.currentWorkspace
+}
+
 // SwitchWorkspace performs a clean workspace switch with full state teardown
 func (a *App) SwitchWorkspace(workspaceID string) (*workspace.Workspace, error) {
+	fmt.Printf("[DEBUG] SwitchWorkspace called: workspaceID=%s\n", workspaceID)
 	if a.workspace == nil {
 		return nil, fmt.Errorf("workspace manager not initialized")
 	}
