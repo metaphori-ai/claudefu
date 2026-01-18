@@ -45,6 +45,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Same-session conflict validation** - Two agents from the same folder cannot watch the same sessionID
   - Returns error: "session {id} is already active in agent '{name}'"
   - Prevents weird duplicate conversation views
+- **BrowserAgent permission** - Added `mcp__claudefu__BrowserAgent` to `--allowed-tools` in Claude CLI args
+- **New agent sessions not loading** - Sessions now load immediately when adding a new agent
+  - Fixed `GetOrCreateSessionState` to create agentState if it doesn't exist
 
 ## [0.3.3] - 2025-01-17
 

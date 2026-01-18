@@ -105,7 +105,7 @@ func (s *ClaudeCodeService) getMCPArgs() []string {
 	}
 	return []string{
 		"--mcp-config", s.mcpConfig,
-		"--allowed-tools", "mcp__claudefu__AgentBroadcast,mcp__claudefu__AgentMessage,mcp__claudefu__AgentQuery,mcp__claudefu__NotifyUser,mcp__claudefu__AskUserQuestion,mcp__claudefu__SelfQuery",
+		"--allowed-tools", "mcp__claudefu__AgentBroadcast,mcp__claudefu__AgentMessage,mcp__claudefu__AgentQuery,mcp__claudefu__NotifyUser,mcp__claudefu__AskUserQuestion,mcp__claudefu__SelfQuery,mcp__claudefu__BrowserAgent",
 		"--disallowed-tools", "AskUserQuestion", // Force Claude to use MCP version instead of built-in
 	}
 }

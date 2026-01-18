@@ -160,13 +160,19 @@ func (rt *WorkspaceRuntime) GetSessionState(agentID, sessionID string) *SessionS
 }
 
 // GetOrCreateSessionState returns existing session state or creates a new one.
+// Also creates the agent state if it doesn't exist (needed for newly added agents).
 func (rt *WorkspaceRuntime) GetOrCreateSessionState(agentID, sessionID string) *SessionState {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
 
 	agentState, ok := rt.agentStates[agentID]
 	if !ok {
-		return nil
+		// Create agent state if it doesn't exist (e.g., newly added agent)
+		fmt.Printf("[DEBUG] GetOrCreateSessionState: CREATING NEW agentState for agent=%s\n", agentID[:8])
+		agentState = &AgentState{
+			Sessions: make(map[string]*SessionState),
+		}
+		rt.agentStates[agentID] = agentState
 	}
 
 	session, exists := agentState.Sessions[sessionID]
