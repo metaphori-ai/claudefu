@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.5] - 2025-01-18
+
+### Added
+- **SessionsDialog current session highlight** - Currently selected session now highlighted with orange border
+  - Uses per-agent `selectedSessionId` so highlight works regardless of which agent is being viewed
+
+### Fixed
+- **BrowserAgent permission** - Added `mcp__claudefu__BrowserAgent` to `--allowed-tools` in Claude CLI args
+- **New agent sessions not loading** - Sessions now load immediately when adding a new agent
+  - Fixed `GetOrCreateSessionState` to create agentState if it doesn't exist
+- **Agent removal not persisting** - Removing an agent now calls backend `RemoveAgent` to persist to workspace file
+  - Previously only updated React state without saving to disk
+
 ## [0.3.4] - 2025-01-18
 
 ### Added
@@ -45,9 +58,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Same-session conflict validation** - Two agents from the same folder cannot watch the same sessionID
   - Returns error: "session {id} is already active in agent '{name}'"
   - Prevents weird duplicate conversation views
-- **BrowserAgent permission** - Added `mcp__claudefu__BrowserAgent` to `--allowed-tools` in Claude CLI args
-- **New agent sessions not loading** - Sessions now load immediately when adding a new agent
-  - Fixed `GetOrCreateSessionState` to create agentState if it doesn't exist
 
 ## [0.3.3] - 2025-01-17
 

@@ -12,6 +12,7 @@ import {
   DeleteInboxMessage,
   InjectInboxMessage,
   NewSession,
+  RemoveAgent,
 } from '../../wailsjs/go/main/App';
 import { AgentMenu } from './AgentMenu';
 import { InputDialog } from './InputDialog';
@@ -317,9 +318,14 @@ export function Sidebar({
                 setMenuAgentId(null);
                 setRenameDialogAgent(a);
               }}
-              onRemove={(id) => {
+              onRemove={async (id) => {
                 setMenuAgentId(null);
-                removeAgent(id);
+                try {
+                  await RemoveAgent(id);
+                  removeAgent(id);
+                } catch (err) {
+                  console.error('Failed to remove agent:', err);
+                }
               }}
               onCloseMenu={() => setMenuAgentId(null)}
             />
@@ -373,6 +379,7 @@ export function Sidebar({
           agentName={sessionsDialogAgent.name}
           sessions={agentSessions.get(sessionsDialogAgent.id) || []}
           sessionNames={sessionNames.get(sessionsDialogAgent.id) || new Map()}
+          currentSessionId={sessionsDialogAgent.selectedSessionId}
           onSelectSession={(session) => handleSessionClick(sessionsDialogAgent, session)}
           onRenameSession={(session) => {
             setRenameSessionDialog({ agent: sessionsDialogAgent, session });

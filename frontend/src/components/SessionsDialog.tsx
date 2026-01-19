@@ -11,6 +11,7 @@ interface SessionsDialogProps {
   agentName: string;
   sessions: Session[];
   sessionNames: Map<string, string>;
+  currentSessionId?: string;
   onSelectSession: (session: Session) => void;
   onRenameSession: (session: Session) => void;
   onNewSession: () => Promise<void>;
@@ -23,6 +24,7 @@ export function SessionsDialog({
   agentName,
   sessions,
   sessionNames,
+  currentSessionId,
   onSelectSession,
   onRenameSession,
   onNewSession,
@@ -309,7 +311,9 @@ export function SessionsDialog({
               : 'No sessions match the current filters.'}
           </div>
         ) : (
-          filteredAndSortedSessions.map(session => (
+          filteredAndSortedSessions.map(session => {
+            const isCurrentSession = session.id === currentSessionId;
+            return (
             <div
               key={session.id}
               onClick={() => onSelectSession(session)}
@@ -318,17 +322,21 @@ export function SessionsDialog({
                 borderRadius: '8px',
                 cursor: 'pointer',
                 marginBottom: '0.5rem',
-                background: '#1f1f1f',
-                border: '1px solid #2a2a2a',
+                background: isCurrentSession ? '#2a2318' : '#1f1f1f',
+                border: isCurrentSession ? '1px solid #d97757' : '1px solid #2a2a2a',
                 transition: 'background 0.15s ease, border-color 0.15s ease'
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = '#252525';
-                e.currentTarget.style.borderColor = '#333';
+                if (!isCurrentSession) {
+                  e.currentTarget.style.background = '#252525';
+                  e.currentTarget.style.borderColor = '#333';
+                }
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.background = '#1f1f1f';
-                e.currentTarget.style.borderColor = '#2a2a2a';
+                if (!isCurrentSession) {
+                  e.currentTarget.style.background = '#1f1f1f';
+                  e.currentTarget.style.borderColor = '#2a2a2a';
+                }
               }}
             >
               <div style={{
@@ -482,7 +490,8 @@ export function SessionsDialog({
                 </div>
               </div>
             </div>
-          ))
+            );
+          })
         )}
       </div>
 
