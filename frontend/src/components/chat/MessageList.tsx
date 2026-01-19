@@ -1,7 +1,6 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import type { Message, ContentBlock, PendingQuestion } from './types';
 import { MessageRow } from './MessageRow';
-import { isLastAssistantInResponse, getFullResponseText, findResponseGroupStart } from '../../utils/messageUtils';
 
 interface MessageListProps {
   messages: Message[];
@@ -40,23 +39,6 @@ export function MessageList({
 }: MessageListProps) {
   // Filter out tool_result_carrier messages
   const displayableMessages = messages.filter(msg => msg.type !== 'tool_result_carrier');
-
-  // Build map of last assistant message UUID → full response text for copy button
-  const fullResponseMap = useMemo(() => {
-    const map = new Map<string, string>();
-
-    for (let i = 0; i < displayableMessages.length; i++) {
-      if (isLastAssistantInResponse(displayableMessages, i)) {
-        const startIdx = findResponseGroupStart(displayableMessages, i);
-        const fullText = getFullResponseText(displayableMessages, startIdx);
-        if (fullText.trim()) {
-          map.set(displayableMessages[i].uuid, fullText);
-        }
-      }
-    }
-
-    return map;
-  }, [displayableMessages]);
 
   return (
     <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
@@ -165,7 +147,6 @@ export function MessageList({
               onViewToolDetails={onViewToolDetails}
               onQuestionAnswer={onQuestionAnswer}
               onQuestionSkip={onQuestionSkip}
-              fullResponseText={fullResponseMap.get(message.uuid)}
             />
           </div>
         ))}

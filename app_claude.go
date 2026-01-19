@@ -126,3 +126,32 @@ func (a *App) AnswerQuestion(agentID, sessionID, toolUseID string, questions []m
 	// Step 4: Resume the session with "question answered" to trigger Claude continuation
 	return a.claude.SendMessage(agent.Folder, sessionID, "question answered", nil, false)
 }
+
+// CancelSession cancels a running Claude process for a session.
+// This sends SIGINT to the process, allowing it to clean up gracefully.
+// Returns nil if no process is running for that session.
+func (a *App) CancelSession(agentID, sessionID string) error {
+	if a.claude == nil {
+		return fmt.Errorf("claude service not initialized")
+	}
+
+	// Validate agent exists
+	agent := a.getAgentByID(agentID)
+	if agent == nil {
+		return fmt.Errorf("agent not found: %s", agentID)
+	}
+
+	fmt.Printf("[DEBUG] CancelSession: agentID=%s sessionID=%s\n", agentID, sessionID)
+	return a.claude.CancelSession(sessionID)
+}
+
+// AppendCancellationMarker adds a cancellation marker to the session JSONL.
+// This should be called after CancelSession to record the interruption.
+func (a *App) AppendCancellationMarker(agentID, sessionID string) error {
+	agent := a.getAgentByID(agentID)
+	if agent == nil {
+		return fmt.Errorf("agent not found: %s", agentID)
+	}
+
+	return workspace.AppendCancellationMarker(agent.Folder, sessionID)
+}

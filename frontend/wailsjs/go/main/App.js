@@ -18,6 +18,14 @@ export function AnswerQuestion(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['main']['App']['AnswerQuestion'](arg1, arg2, arg3, arg4, arg5);
 }
 
+export function AppendCancellationMarker(arg1, arg2) {
+  return window['go']['main']['App']['AppendCancellationMarker'](arg1, arg2);
+}
+
+export function CancelSession(arg1, arg2) {
+  return window['go']['main']['App']['CancelSession'](arg1, arg2);
+}
+
 export function ClearAPIKey() {
   return window['go']['main']['App']['ClearAPIKey']();
 }

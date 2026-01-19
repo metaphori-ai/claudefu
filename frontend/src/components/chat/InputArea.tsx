@@ -13,7 +13,10 @@ export interface InputAreaHandle {
 
 interface InputAreaProps {
   onSend: (message: string, attachments: Attachment[]) => void;
+  onCancel?: () => void;
   isSending: boolean;
+  isWaitingForResponse?: boolean;
+  isCancelling?: boolean;
   hasPendingQuestion: boolean;
 }
 
@@ -34,7 +37,10 @@ function fileToBase64(file: File): Promise<string> {
 
 export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function InputArea({
   onSend,
+  onCancel,
   isSending,
+  isWaitingForResponse = false,
+  isCancelling = false,
   hasPendingQuestion
 }, ref) {
   // Input state lives here - isolated from parent re-renders
@@ -217,8 +223,38 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
     adjustTextareaHeight();
   }, [inputValue]);
 
+  // ESC and Ctrl+C handler for cancelling Claude response
+  // Use isSending since SendMessage blocks until Claude finishes
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (!isSending || !onCancel) return;
+
+      // ESC key to cancel
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onCancel();
+        return;
+      }
+
+      // Ctrl+C to cancel (only when textarea is not focused or empty)
+      if (e.ctrlKey && e.key === 'c') {
+        const selection = window.getSelection()?.toString();
+        // Only cancel if nothing is selected (otherwise it's a copy operation)
+        if (!selection) {
+          e.preventDefault();
+          onCancel();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [isSending, onCancel]);
+
   const isDisabled = isSending || hasPendingQuestion;
   const isSendDisabled = isSending || (!inputValue.trim() && attachments.length === 0) || hasPendingQuestion;
+  // Show Stop when isSending is true - SendMessage blocks until Claude finishes
+  const showStopButton = isSending;
 
   return (
     <div
@@ -310,35 +346,76 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
             overflowY: 'hidden'
           }}
         />
-        <button
-          onClick={handleSend}
-          disabled={isSendDisabled}
-          style={{
-            width: '70px',
-            padding: '0.75rem 0',
-            borderRadius: '8px',
-            border: 'none',
-            background: isSendDisabled ? '#333' : '#d97757',
-            color: isSendDisabled ? '#666' : '#fff',
-            cursor: isSendDisabled ? 'not-allowed' : 'pointer',
-            fontWeight: 500,
-            transition: 'background 0.15s ease',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}
-        >
-          {isSending ? (
-            <div style={{
-              width: '16px',
-              height: '16px',
-              border: '2px solid #666',
-              borderTopColor: '#d97757',
-              borderRadius: '50%',
-              animation: 'spin 1s linear infinite'
-            }} />
-          ) : 'Send'}
-        </button>
+        {showStopButton ? (
+          <button
+            onClick={onCancel}
+            disabled={isCancelling}
+            title="Stop Claude (ESC)"
+            style={{
+              width: '70px',
+              padding: '0.75rem 0',
+              borderRadius: '8px',
+              border: 'none',
+              background: isCancelling ? '#444' : '#ef4444',
+              color: isCancelling ? '#888' : '#fff',
+              cursor: isCancelling ? 'not-allowed' : 'pointer',
+              fontWeight: 500,
+              transition: 'background 0.15s ease',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '0.25rem'
+            }}
+          >
+            {isCancelling ? (
+              <div style={{
+                width: '16px',
+                height: '16px',
+                border: '2px solid #666',
+                borderTopColor: '#ef4444',
+                borderRadius: '50%',
+                animation: 'spin 1s linear infinite'
+              }} />
+            ) : (
+              <>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                  <rect x="4" y="4" width="16" height="16" rx="2" />
+                </svg>
+                Stop
+              </>
+            )}
+          </button>
+        ) : (
+          <button
+            onClick={handleSend}
+            disabled={isSendDisabled}
+            style={{
+              width: '70px',
+              padding: '0.75rem 0',
+              borderRadius: '8px',
+              border: 'none',
+              background: isSendDisabled ? '#333' : '#d97757',
+              color: isSendDisabled ? '#666' : '#fff',
+              cursor: isSendDisabled ? 'not-allowed' : 'pointer',
+              fontWeight: 500,
+              transition: 'background 0.15s ease',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            {isSending ? (
+              <div style={{
+                width: '16px',
+                height: '16px',
+                border: '2px solid #666',
+                borderTopColor: '#d97757',
+                borderRadius: '50%',
+                animation: 'spin 1s linear infinite'
+              }} />
+            ) : 'Send'}
+          </button>
+        )}
       </div>
 
       {/* Drag overlay */}

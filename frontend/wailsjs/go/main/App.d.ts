@@ -15,6 +15,10 @@ export function AnswerMCPQuestion(arg1:string,arg2:Record<string, string>):Promi
 
 export function AnswerQuestion(arg1:string,arg2:string,arg3:string,arg4:Array<Record<string, any>>,arg5:Record<string, string>):Promise<void>;
 
+export function AppendCancellationMarker(arg1:string,arg2:string):Promise<void>;
+
+export function CancelSession(arg1:string,arg2:string):Promise<void>;
+
 export function ClearAPIKey():Promise<void>;
 
 export function ClearActiveSession():Promise<void>;

@@ -6,6 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
+
+	"github.com/google/uuid"
 )
 
 // PatchQuestionAnswer patches a failed AskUserQuestion tool_result with a successful answer.
@@ -274,4 +277,45 @@ func formatAnswerContent(questions []map[string]any, answers map[string]string) 
 	}
 
 	return string(jsonBytes)
+}
+
+// AppendCancellationMarker appends a user message to the JSONL file indicating
+// the response was cancelled. This provides context for both the user and Claude.
+// The message uses a special prefix that the frontend can detect for styling.
+func AppendCancellationMarker(folder, sessionID string) error {
+	// Build JSONL path
+	encodedName := encodeProjectPath(folder)
+	sessionPath := filepath.Join(os.Getenv("HOME"), ".claude", "projects", encodedName, sessionID+".jsonl")
+
+	// Create the cancellation marker message
+	// Use a prefix that frontend can detect: [CANCELLED]
+	event := map[string]any{
+		"type":      "user",
+		"uuid":      uuid.New().String(),
+		"timestamp": time.Now().UTC().Format(time.RFC3339Nano),
+		"message": map[string]any{
+			"role":    "user",
+			"content": "[CANCELLED] Response interrupted by user.",
+		},
+	}
+
+	// Marshal to JSON
+	jsonBytes, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("failed to marshal cancellation marker: %w", err)
+	}
+
+	// Append to file (with newline)
+	f, err := os.OpenFile(sessionPath, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open session file: %w", err)
+	}
+	defer f.Close()
+
+	if _, err := f.WriteString(string(jsonBytes) + "\n"); err != nil {
+		return fmt.Errorf("failed to append cancellation marker: %w", err)
+	}
+
+	fmt.Printf("[DEBUG] AppendCancellationMarker: wrote marker to %s\n", sessionPath)
+	return nil
 }

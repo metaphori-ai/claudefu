@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.6] - 2025-01-19
+
+### Added
+- **Stop/Cancel Claude Response** - Interrupt Claude mid-response with ESC key or Stop button
+  - Red Stop button appears while Claude is thinking (replaces Send button)
+  - ESC key cancels the current response
+  - Ctrl+C also cancels (when nothing is selected)
+  - Sends SIGINT to gracefully terminate the Claude process
+  - Backend process tracking (`map[sessionID]*exec.Cmd`) enables per-session cancellation
+- **Cancellation Marker** - Visual indicator in chat when response is interrupted
+  - Subtle centered pill with red stop icon and timestamp
+  - Writes `[CANCELLED]` user message to JSONL for persistence
+
+### Removed
+- **Copy Claude Response button** - Removed the always-visible "Copy Claude Response" button
+  - Individual hover-to-show copy buttons remain for both user and assistant messages
+  - Cleaner UI with less visual clutter
+
 ## [0.3.5] - 2025-01-18
 
 ### Added

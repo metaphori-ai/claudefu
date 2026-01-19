@@ -69,11 +69,18 @@ func GetClaudePath() string {
 type ClaudeCodeService struct {
 	ctx       context.Context
 	mcpConfig string // JSON config for --mcp-config flag (empty = disabled)
+
+	// Process tracking for cancellation support
+	activeProcs   map[string]*exec.Cmd // sessionID -> running command
+	activeProcsMu sync.RWMutex
 }
 
 // NewClaudeCodeService creates a new Claude Code service
 func NewClaudeCodeService(ctx context.Context) *ClaudeCodeService {
-	return &ClaudeCodeService{ctx: ctx}
+	return &ClaudeCodeService{
+		ctx:         ctx,
+		activeProcs: make(map[string]*exec.Cmd),
+	}
 }
 
 // SetContext updates the context (called from OnStartup)
@@ -96,6 +103,48 @@ func (s *ClaudeCodeService) SetMCPServerPort(port int) {
 // ClearMCPConfig disables MCP config injection
 func (s *ClaudeCodeService) ClearMCPConfig() {
 	s.mcpConfig = ""
+}
+
+// trackProcess stores a running command for potential cancellation
+func (s *ClaudeCodeService) trackProcess(sessionID string, cmd *exec.Cmd) {
+	s.activeProcsMu.Lock()
+	defer s.activeProcsMu.Unlock()
+	s.activeProcs[sessionID] = cmd
+}
+
+// untrackProcess removes a command from the tracking map
+func (s *ClaudeCodeService) untrackProcess(sessionID string) {
+	s.activeProcsMu.Lock()
+	defer s.activeProcsMu.Unlock()
+	delete(s.activeProcs, sessionID)
+}
+
+// CancelSession sends SIGINT to the running Claude process for a session
+// Returns nil if no process is running for that session (already finished)
+func (s *ClaudeCodeService) CancelSession(sessionID string) error {
+	s.activeProcsMu.RLock()
+	cmd, ok := s.activeProcs[sessionID]
+	s.activeProcsMu.RUnlock()
+
+	if !ok {
+		// No running process - already finished or never started
+		return nil
+	}
+
+	if cmd.Process == nil {
+		return nil
+	}
+
+	// Send SIGINT for graceful termination (like Ctrl+C in terminal)
+	// This allows Claude CLI to clean up properly
+	fmt.Printf("[DEBUG] CancelSession: sending SIGINT to session %s (PID %d)\n", sessionID, cmd.Process.Pid)
+	if err := cmd.Process.Signal(os.Interrupt); err != nil {
+		// Process may have already exited
+		fmt.Printf("[DEBUG] CancelSession: signal error (process may have exited): %v\n", err)
+		return nil
+	}
+
+	return nil
 }
 
 // getMCPArgs returns the --mcp-config, --allowed-tools, and --disallowed-tools args if MCP is configured
@@ -157,11 +206,34 @@ func (s *ClaudeCodeService) SendMessage(folder, sessionId, message string, attac
 	cmd := exec.CommandContext(s.ctx, path, args...)
 	cmd.Dir = folder
 
-	// Run the command - Claude will write to the session file
-	// The file watcher will pick up changes and emit events to frontend
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("claude command failed: %w, output: %s", err, string(output))
+	// Track the process for potential cancellation
+	s.trackProcess(sessionId, cmd)
+	defer s.untrackProcess(sessionId)
+
+	// Capture output for error reporting
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	// Start the command (non-blocking)
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start claude: %w", err)
+	}
+
+	fmt.Printf("[DEBUG] SendMessage: started claude PID=%d for session %s\n", cmd.Process.Pid, sessionId)
+
+	// Wait for command to complete (or be cancelled via CancelSession)
+	if err := cmd.Wait(); err != nil {
+		// Check if it was cancelled (context or signal)
+		if s.ctx.Err() != nil {
+			return fmt.Errorf("claude command cancelled: %w", s.ctx.Err())
+		}
+		// Include output in error for debugging
+		output := stderr.String()
+		if output == "" {
+			output = stdout.String()
+		}
+		return fmt.Errorf("claude command failed: %w, output: %s", err, output)
 	}
 
 	return nil
@@ -235,13 +307,40 @@ func (s *ClaudeCodeService) sendWithAttachments(claudePath, folder, sessionId, m
 	cmd.Dir = folder
 	cmd.Stdin = bytes.NewReader(jsonBytes)
 
+	// Track the process for potential cancellation
+	s.trackProcess(sessionId, cmd)
+	defer s.untrackProcess(sessionId)
+
+	// Capture output for error reporting
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
 	fmt.Printf("[DEBUG] sendWithAttachments: executing command...\n")
-	output, err := cmd.CombinedOutput()
-	fmt.Printf("[DEBUG] sendWithAttachments: command completed, err=%v outputLen=%d\n", err, len(output))
+
+	// Start the command (non-blocking)
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start claude: %w", err)
+	}
+
+	fmt.Printf("[DEBUG] sendWithAttachments: started claude PID=%d for session %s\n", cmd.Process.Pid, sessionId)
+
+	// Wait for command to complete (or be cancelled via CancelSession)
+	err = cmd.Wait()
+	fmt.Printf("[DEBUG] sendWithAttachments: command completed, err=%v\n", err)
 
 	if err != nil {
-		fmt.Printf("[DEBUG] sendWithAttachments: ERROR output: %s\n", string(output))
-		return fmt.Errorf("claude command failed: %w, output: %s", err, string(output))
+		// Check if it was cancelled (context or signal)
+		if s.ctx.Err() != nil {
+			fmt.Printf("[DEBUG] sendWithAttachments: CANCELLED\n")
+			return fmt.Errorf("claude command cancelled: %w", s.ctx.Err())
+		}
+		output := stderr.String()
+		if output == "" {
+			output = stdout.String()
+		}
+		fmt.Printf("[DEBUG] sendWithAttachments: ERROR output: %s\n", output)
+		return fmt.Errorf("claude command failed: %w, output: %s", err, output)
 	}
 
 	fmt.Printf("[DEBUG] sendWithAttachments: SUCCESS\n")

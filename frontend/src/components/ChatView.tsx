@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { GetConversationPaged, SetActiveSession, SendMessage, MarkSessionViewed, NewSession, ReadPlanFile, GetPlanFilePath, AnswerQuestion } from '../../wailsjs/go/main/App';
+import { GetConversationPaged, SetActiveSession, SendMessage, MarkSessionViewed, NewSession, ReadPlanFile, GetPlanFilePath, AnswerQuestion, CancelSession, AppendCancellationMarker } from '../../wailsjs/go/main/App';
 import { types } from '../../wailsjs/go/models';
 
 // Extracted components
@@ -78,6 +78,8 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
   const [selectedToolResult, setSelectedToolResult] = useState<ContentBlock | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
+  const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
 
   // Ref for InputArea imperative control (setValue, focus)
   const inputAreaRef = useRef<InputAreaHandle>(null);
@@ -247,6 +249,9 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
         if (hasNewAssistant) {
           // End cycle when assistant message arrives
           endDebugCycle('assistant_message_received');
+          // Clear waiting state - Claude has responded
+          setIsWaitingForResponse(false);
+          setIsCancelling(false);
         }
       }
       lastMessageCountRef.current = messages.length;
@@ -327,6 +332,38 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
     }
   };
 
+  // Handle cancelling a running Claude response
+  const handleCancel = async () => {
+    if (!isSending || isCancelling) return;
+
+    setIsCancelling(true);
+    console.log('[ChatView] Cancelling Claude response for session:', sessionId);
+
+    try {
+      await CancelSession(agentId, sessionId);
+      console.log('[ChatView] Cancel request sent');
+
+      // Append cancellation marker to JSONL for history
+      try {
+        await AppendCancellationMarker(agentId, sessionId);
+        console.log('[ChatView] Cancellation marker appended');
+      } catch (markerErr) {
+        console.warn('[ChatView] Failed to append cancellation marker:', markerErr);
+        // Non-fatal - continue anyway
+      }
+
+      // Don't clear isWaitingForResponse here - let it clear when the assistant message arrives
+      // or after a short timeout if no response comes
+      setTimeout(() => {
+        setIsWaitingForResponse(false);
+        setIsCancelling(false);
+      }, 2000); // Safety timeout - clear state if no response within 2s
+    } catch (err) {
+      console.error('Failed to cancel session:', err);
+      setIsCancelling(false);
+    }
+  };
+
   // Handle sending a message (receives message from InputArea)
   const handleSend = async (message: string, attachments: Attachment[] = []) => {
     console.log('=== USER PROMPT START ===', {
@@ -395,16 +432,21 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
     scroll.activateForceScroll();
     scroll.scrollToBottomRAF();
 
+    // Start waiting for Claude's response
+    setIsWaitingForResponse(true);
+
     try {
       await SendMessage(agentId, sessionId, message, backendAttachments, planningMode);
       logDebug('ChatView', 'SEND_COMPLETE', { success: true });
+      // Note: isWaitingForResponse stays true - it gets cleared when assistant message arrives
     } catch (err) {
       console.error('Failed to send message:', err);
       logDebug('ChatView', 'SEND_ERROR', { error: String(err) });
       endDebugCycle('send_error');
-      // On failure, restore message to input
+      // On failure, restore message to input and clear waiting state
       // The pending message will be cleaned up when/if the confirmed message arrives
       inputAreaRef.current?.setValue(message);
+      setIsWaitingForResponse(false);
     } finally {
       setIsSending(false);
     }
@@ -507,7 +549,10 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
         <InputArea
           ref={inputAreaRef}
           onSend={handleSend}
+          onCancel={handleCancel}
           isSending={isSending}
+          isWaitingForResponse={isWaitingForResponse}
+          isCancelling={isCancelling}
           hasPendingQuestion={hasPendingQuestion}
         />
       </div>
