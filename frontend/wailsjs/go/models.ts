@@ -97,6 +97,28 @@ export namespace main {
 		    return a;
 		}
 	}
+	export class FileInfo {
+	    path: string;
+	    relPath: string;
+	    name: string;
+	    isDir: boolean;
+	    size: number;
+	    ext: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new FileInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.path = source["path"];
+	        this.relPath = source["relPath"];
+	        this.name = source["name"];
+	        this.isDir = source["isDir"];
+	        this.size = source["size"];
+	        this.ext = source["ext"];
+	    }
+	}
 	export class MCPPendingQuestion {
 	    id: string;
 	    agentSlug: string;
@@ -249,6 +271,9 @@ export namespace types {
 	    type: string;
 	    media_type: string;
 	    data: string;
+	    filePath?: string;
+	    fileName?: string;
+	    extension?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Attachment(source);
@@ -259,6 +284,9 @@ export namespace types {
 	        this.type = source["type"];
 	        this.media_type = source["media_type"];
 	        this.data = source["data"];
+	        this.filePath = source["filePath"];
+	        this.fileName = source["fileName"];
+	        this.extension = source["extension"];
 	    }
 	}
 	export class ImageSource {

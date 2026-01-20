@@ -2,6 +2,8 @@ import React, { useRef, useEffect, useState, useImperativeHandle, forwardRef, us
 import type { Attachment } from './types';
 import { ATTACHMENT_LIMITS } from './types';
 import { AttachmentPreviewRow } from './AttachmentPreviewRow';
+import { FilePicker } from './FilePicker';
+import { ReadFileContent } from '../../../wailsjs/go/main/App';
 
 // Imperative handle interface for parent to control input
 export interface InputAreaHandle {
@@ -12,12 +14,32 @@ export interface InputAreaHandle {
 }
 
 interface InputAreaProps {
+  agentId: string;  // Needed for FilePicker API
+  folder: string;   // Agent folder for calculating relative paths
   onSend: (message: string, attachments: Attachment[]) => void;
   onCancel?: () => void;
   isSending: boolean;
   isWaitingForResponse?: boolean;
   isCancelling?: boolean;
   hasPendingQuestion: boolean;
+}
+
+// File picker state
+interface FilePickerState {
+  isOpen: boolean;
+  isDoubleAt: boolean;   // @@ vs @
+  triggerIndex: number;  // Position of @ in input
+  query: string;         // Text after @
+}
+
+// FileInfo from backend
+interface FileInfo {
+  path: string;
+  relPath: string;
+  name: string;
+  isDir: boolean;
+  size: number;
+  ext: string;
 }
 
 // Helper: Convert file to base64 (without data: prefix)
@@ -36,6 +58,8 @@ function fileToBase64(file: File): Promise<string> {
 }
 
 export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function InputArea({
+  agentId,
+  folder,
   onSend,
   onCancel,
   isSending,
@@ -47,6 +71,9 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
   const [inputValue, setInputValue] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [filePickerState, setFilePickerState] = useState<FilePickerState | null>(null);
+  // Track @file references for substitution: displayPath -> fullPath
+  const [filePathMap, setFilePathMap] = useState<Map<string, string>>(new Map());
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -171,6 +198,84 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
     setAttachments(prev => prev.filter(att => att.id !== id));
   }, []);
 
+  // Handle file selection from FilePicker (@ reference)
+  const handleFilePickerSelect = useCallback(async (file: FileInfo, isAttachment: boolean) => {
+    if (!filePickerState) return;
+
+    const { triggerIndex, isDoubleAt } = filePickerState;
+
+    // Calculate where the @ pattern ends (triggerIndex is start of @, add @ or @@ length + query length)
+    const atLength = isDoubleAt ? 2 : 1;
+    const patternEnd = triggerIndex + atLength + filePickerState.query.length;
+
+    // Calculate display path for @ references (not @@)
+    // - Files in agent folder: @/relative/path
+    // - Files outside agent folder: @/full/absolute/path
+    let displayPath: string;
+    if (file.path.startsWith(folder)) {
+      // File is inside agent folder - show relative path
+      const relativePath = file.path.slice(folder.length);
+      displayPath = '@' + relativePath; // e.g., @/CLAUDE.md or @/src/App.tsx
+    } else {
+      // File is outside agent folder - show full path
+      displayPath = '@' + file.path; // e.g., @/Users/jasdeep/svml/tda-documents/...
+    }
+
+    // Build new input value: text before @ + display path + space + text after pattern
+    const beforeAt = inputValue.slice(0, triggerIndex);
+    const afterPattern = inputValue.slice(patternEnd);
+    const newValue = beforeAt + displayPath + ' ' + afterPattern;
+
+    // Track the mapping for substitution on submit (only for single @, not @@)
+    if (!isDoubleAt) {
+      setFilePathMap(prev => {
+        const newMap = new Map(prev);
+        newMap.set(displayPath, file.path);
+        return newMap;
+      });
+    }
+
+    setInputValue(newValue);
+    setFilePickerState(null);
+
+    // If @@, also load file content as attachment
+    if (isAttachment && !file.isDir) {
+      try {
+        const content = await ReadFileContent(file.path);
+
+        // Add file attachment
+        const attachment: Attachment = {
+          id: `file-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          type: 'file' as const,
+          mediaType: `text/${file.ext || 'plain'}`,
+          data: content,
+          previewUrl: '', // No preview for files
+          fileName: file.name,
+          size: content.length,
+          filePath: file.path,
+          extension: file.ext
+        };
+
+        setAttachments(prev => [...prev, attachment]);
+      } catch (err) {
+        console.error('[InputArea] Failed to read file:', file.path, err);
+        // Still insert the path even if content read fails
+      }
+    }
+
+    // Refocus textarea and adjust height
+    setTimeout(() => {
+      textareaRef.current?.focus();
+      adjustTextareaHeight();
+    }, 0);
+  }, [filePickerState, inputValue]);
+
+  // Cancel file picker
+  const handleFilePickerCancel = useCallback(() => {
+    setFilePickerState(null);
+    textareaRef.current?.focus();
+  }, []);
+
   // Auto-resize textarea based on content
   const adjustTextareaHeight = () => {
     const textarea = textareaRef.current;
@@ -192,28 +297,69 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
     textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
   };
 
-  // Handle send - clear input and notify parent
+  // Handle send - substitute @paths, clear input, and notify parent
   const handleSend = () => {
-    const message = inputValue.trim();
+    let message = inputValue.trim();
     if ((!message && attachments.length === 0) || isSending) return;
+
+    // Substitute @display paths with [file:fullPath] format before sending
+    // This format enables nice display in YOU messages and is clear to Claude
+    // Only substitutes paths that were selected from FilePicker (tracked in filePathMap)
+    filePathMap.forEach((fullPath, displayPath) => {
+      // Use global replace in case same file is referenced multiple times
+      message = message.split(displayPath).join(`[file:${fullPath}]`);
+    });
 
     const toSend = [...attachments];
     setInputValue('');
     setAttachments([]);
+    setFilePathMap(new Map()); // Clear the tracking map
     onSend(message, toSend);
   };
 
   // Handle Enter key to send, Shift+Enter for newline
+  // Don't submit if FilePicker is open (it handles Enter for selection)
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
+      // If FilePicker is open, don't submit - let FilePicker handle Enter
+      if (filePickerState?.isOpen) {
+        return; // FilePicker's global handler will catch this
+      }
       e.preventDefault();
       handleSend();
     }
   };
 
-  // Handle input change with auto-resize
+  // Handle input change with auto-resize and @ detection
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setInputValue(e.target.value);
+    const value = e.target.value;
+    const cursorPos = e.target.selectionStart ?? value.length;
+
+    // Detect @ or @@ pattern before cursor
+    const beforeCursor = value.slice(0, cursorPos);
+    // Match @@ or @ followed by non-whitespace characters at end of beforeCursor
+    // Must be preceded by whitespace or start of string
+    const atMatch = beforeCursor.match(/(?:^|[\s])@@?([^\s@]*)$/);
+
+    if (atMatch) {
+      const fullMatch = atMatch[0];
+      const isDoubleAt = fullMatch.includes('@@');
+      const query = atMatch[1]; // Text after @
+      // Calculate trigger index - position of the @ in the input
+      const triggerIndex = cursorPos - fullMatch.length + (fullMatch.startsWith(' ') || fullMatch.startsWith('\n') || fullMatch.startsWith('\t') ? 1 : 0);
+
+      setFilePickerState({
+        isOpen: true,
+        isDoubleAt,
+        triggerIndex,
+        query
+      });
+    } else {
+      // Close file picker if pattern no longer matches
+      setFilePickerState(null);
+    }
+
+    setInputValue(value);
     // Use setTimeout to ensure the DOM has updated
     setTimeout(adjustTextareaHeight, 0);
   };
@@ -438,6 +584,18 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
             Drop images here
           </span>
         </div>
+      )}
+
+      {/* File Picker for @ references */}
+      {filePickerState?.isOpen && (
+        <FilePicker
+          query={filePickerState.query}
+          agentId={agentId}
+          isDoubleAt={filePickerState.isDoubleAt}
+          anchorRef={textareaRef as React.RefObject<HTMLElement>}
+          onSelect={handleFilePickerSelect}
+          onCancel={handleFilePickerCancel}
+        />
       )}
     </div>
   );

@@ -7,15 +7,18 @@ export interface ImageSource {
   data: string;       // Base64 data, file path, or URL
 }
 
-// Attachment for images sent with messages (frontend-specific with preview data)
+// Attachment for images or files sent with messages (frontend-specific with preview data)
 export interface Attachment {
   id: string;           // Unique ID for React keys
-  type: 'image';        // Currently only images supported
-  mediaType: string;    // "image/png", "image/jpeg", "image/gif", "image/webp"
-  data: string;         // Base64 data (no data: prefix)
-  previewUrl: string;   // Data URL for preview display (data:image/png;base64,...)
-  fileName?: string;    // Original filename if from file upload
-  size: number;         // File size in bytes
+  type: 'image' | 'file';  // Discriminator for attachment type
+  mediaType: string;    // "image/png", "text/typescript", etc.
+  data: string;         // Base64 data for images, raw content for files
+  previewUrl: string;   // Data URL for preview display (images only)
+  fileName?: string;    // Original filename
+  size: number;         // File size in bytes (or content length for files)
+  // File-specific fields
+  filePath?: string;    // Absolute path for file attachments
+  extension?: string;   // File extension (e.g., "tsx", "go")
 }
 
 // Constants for attachment validation

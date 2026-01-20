@@ -5,6 +5,7 @@ import { CompactionCard } from '../CompactionCard';
 import { ImageBlock } from '../ImageBlock';
 import { ContentBlockRenderer } from './ContentBlockRenderer';
 import { CopyButton } from '../CopyButton';
+import { FileAttachmentBlock } from './FileAttachmentBlock';
 
 interface MessageRowProps {
   message: Message;
@@ -16,35 +17,108 @@ interface MessageRowProps {
   onQuestionSkip?: (toolUseId: string) => void;
 }
 
-// Parse text content for embedded image references like [Image: source: /path/to/file]
-function parseTextWithImages(text: string): React.ReactNode[] {
-  const imagePattern = /\[Image: source: ([^\]]+)\]/g;
+// Styled file reference component
+function FileReference({ path }: { path: string }) {
+  // Extract just the filename for compact display
+  const fileName = path.split('/').pop() || path;
+
+  return (
+    <span
+      title={path}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '0.25rem',
+        padding: '0.125rem 0.375rem',
+        background: 'rgba(217, 119, 87, 0.15)',
+        borderRadius: '4px',
+        fontSize: '0.85em',
+        fontFamily: 'ui-monospace, monospace',
+      }}
+    >
+      <span style={{ color: '#666' }}>[</span>
+      <span style={{ color: '#d97757', fontWeight: 500 }}>file:</span>
+      <span style={{ color: '#ccc' }}>{fileName}</span>
+      <span style={{ color: '#666' }}>]</span>
+    </span>
+  );
+}
+
+// Extract extension from file path
+function getExtensionFromPath(filePath: string): string {
+  const fileName = filePath.split('/').pop() || '';
+  const dotIndex = fileName.lastIndexOf('.');
+  return dotIndex > 0 ? fileName.slice(dotIndex + 1) : '';
+}
+
+// Parse text content for embedded references:
+// - [Image: source: /path/to/file] - embedded images
+// - [file:/path/to/file] - file references from @ syntax
+// - <claudefu-file path="..." ext="...">content</claudefu-file> - file attachment blocks
+function parseTextWithEmbeds(text: string): React.ReactNode[] {
+  // Combined pattern for all embeds
+  // Group 1: Image path from [Image: source: path]
+  // Group 2: File path from [file:path]
+  // Group 3: File path from <claudefu-file path="...">
+  // Group 4: Extension from ext="..."
+  // Group 5: Content between tags
+  const pattern = /\[Image: source: ([^\]]+)\]|\[file:([^\]]+)\]|<claudefu-file path="([^"]+)" ext="([^"]*)">\n([\s\S]*?)\n<\/claudefu-file>/g;
   const parts: React.ReactNode[] = [];
   let lastIndex = 0;
   let match;
 
-  while ((match = imagePattern.exec(text)) !== null) {
-    // Add text before the image
+  while ((match = pattern.exec(text)) !== null) {
+    // Add text before the match (trim leading/trailing newlines for cleaner display)
     if (match.index > lastIndex) {
+      const beforeText = text.slice(lastIndex, match.index);
+      // Only add if not just whitespace
+      if (beforeText.trim()) {
+        parts.push(
+          <span key={`text-${lastIndex}`}>{beforeText}</span>
+        );
+      }
+    }
+
+    if (match[1]) {
+      // Image match - [Image: source: path]
+      const imagePath = match[1].trim();
       parts.push(
-        <span key={`text-${lastIndex}`}>{text.slice(lastIndex, match.index)}</span>
+        <div key={`img-${match.index}`} style={{ margin: '0.5rem 0' }}>
+          <ImageBlock src={imagePath} />
+        </div>
+      );
+    } else if (match[2]) {
+      // File reference match - [file:path]
+      const filePath = match[2].trim();
+      parts.push(
+        <FileReference key={`file-${match.index}`} path={filePath} />
+      );
+    } else if (match[3]) {
+      // File attachment block - <claudefu-file path="..." ext="...">content</claudefu-file>
+      const filePath = match[3].trim();
+      const ext = match[4] || getExtensionFromPath(filePath);
+      const content = match[5] || '';
+      parts.push(
+        <FileAttachmentBlock
+          key={`attachment-${match.index}`}
+          filePath={filePath}
+          content={content}
+          extension={ext}
+        />
       );
     }
-    // Add the image
-    const imagePath = match[1].trim();
-    parts.push(
-      <div key={`img-${match.index}`} style={{ margin: '0.5rem 0' }}>
-        <ImageBlock src={imagePath} />
-      </div>
-    );
+
     lastIndex = match.index + match[0].length;
   }
 
   // Add remaining text
   if (lastIndex < text.length) {
-    parts.push(
-      <span key={`text-${lastIndex}`}>{text.slice(lastIndex)}</span>
-    );
+    const remainingText = text.slice(lastIndex);
+    if (remainingText.trim()) {
+      parts.push(
+        <span key={`text-${lastIndex}`}>{remainingText}</span>
+      );
+    }
   }
 
   return parts.length > 0 ? parts : [<span key="text">{text}</span>];
@@ -158,9 +232,13 @@ export function MessageRow({
       {message.type === 'user' ? (
         // User message - text with slight background, may include images
         (() => {
+          // Check if message has file attachments (already collapsible, don't truncate)
+          const hasFileAttachment = message.content.includes('<claudefu-file ');
+
           const lines = message.content.split('\n');
           const lineCount = lines.length;
-          const isLongMessage = lineCount > 6;
+          // Don't truncate messages with file attachments - they have their own collapse
+          const isLongMessage = !hasFileAttachment && lineCount > 6;
           const displayContent = isLongMessage && !isExpanded
             ? lines.slice(0, 6).join('\n') + '...'
             : message.content;
@@ -190,10 +268,10 @@ export function MessageRow({
                     </div>
                   ) : null;
                 })}
-                {/* Parse text for embedded image references */}
-                {parseTextWithImages(displayContent)}
+                {/* Parse text for embedded references (images and files) */}
+                {parseTextWithEmbeds(displayContent)}
               </div>
-              {/* Expand/collapse for long messages */}
+              {/* Expand/collapse for long messages (not used for file attachments) */}
               {isLongMessage && (
                 <button
                   onClick={() => setIsExpanded(!isExpanded)}

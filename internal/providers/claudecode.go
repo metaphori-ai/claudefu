@@ -255,17 +255,39 @@ func (s *ClaudeCodeService) sendWithAttachments(claudePath, folder, sessionId, m
 		})
 	}
 
-	// Add image blocks
+	// Add attachment blocks (images or files)
 	for i, att := range attachments {
 		fmt.Printf("[DEBUG] sendWithAttachments: attachment[%d] type=%s mediaType=%s dataLen=%d\n", i, att.Type, att.MediaType, len(att.Data))
-		contentBlocks = append(contentBlocks, map[string]any{
-			"type": "image",
-			"source": map[string]any{
-				"type":       "base64",
-				"media_type": att.MediaType,
-				"data":       att.Data,
-			},
-		})
+
+		if att.Type == "image" {
+			// Image block - send as base64 image
+			contentBlocks = append(contentBlocks, map[string]any{
+				"type": "image",
+				"source": map[string]any{
+					"type":       "base64",
+					"media_type": att.MediaType,
+					"data":       att.Data,
+				},
+			})
+		} else if att.Type == "file" {
+			// File block - use unique XML-style delimiter (avoids collision with ``` in content)
+			// Use filePath for the header, fallback to fileName
+			displayPath := att.FilePath
+			if displayPath == "" {
+				displayPath = att.FileName
+			}
+			ext := att.Extension
+			if ext == "" {
+				ext = "txt"
+			}
+			// Format: <claudefu-file path="..." ext="...">content</claudefu-file>
+			// This delimiter won't appear in normal file content
+			fileContent := fmt.Sprintf("\n\n<claudefu-file path=\"%s\" ext=\"%s\">\n%s\n</claudefu-file>", displayPath, ext, att.Data)
+			contentBlocks = append(contentBlocks, map[string]any{
+				"type": "text",
+				"text": fileContent,
+			})
+		}
 	}
 
 	// Build the user message payload (stream-json input format)

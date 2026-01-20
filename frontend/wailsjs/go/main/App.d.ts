@@ -93,6 +93,8 @@ export function InjectInboxMessage(arg1:string,arg2:string,arg3:string):Promise<
 
 export function IsClaudeInstalled():Promise<boolean>;
 
+export function ListFiles(arg1:string,arg2:string,arg3:number):Promise<Array<main.FileInfo>>;
+
 export function Logout():Promise<void>;
 
 export function MarkAllInboxRead(arg1:string):Promise<void>;
@@ -102,6 +104,8 @@ export function MarkInboxMessageRead(arg1:string,arg2:string):Promise<boolean>;
 export function MarkSessionViewed(arg1:string,arg2:string):Promise<void>;
 
 export function NewSession(arg1:string):Promise<string>;
+
+export function ReadFileContent(arg1:string):Promise<string>;
 
 export function ReadImageAsDataURL(arg1:string):Promise<string>;
 

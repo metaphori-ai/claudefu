@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.7] - 2025-01-19
+
+### Added
+- **@file Path References** - Type `@filename` in prompt to insert absolute file path
+  - FilePicker dropdown appears below cursor when typing `@`
+  - Searches agent folder + `additionalDirectories` from `.claude/settings.local.json`
+  - Keyboard navigation: Up/Down arrows, Enter to select, ESC/Space to cancel
+  - Substring matching on any part of file path
+  - File/folder icons with extension hints
+  - Uses `@floating-ui/react` for smart positioning
+- **@@file Content Attachments** - Type `@@filename` to attach file content to prompt
+  - Same FilePicker UI as @file
+  - Reads file content (max 100KB) and attaches to message
+  - File content sent to Claude as part of the prompt context
+- **FileAttachmentBlock Component** - Collapsible file attachment display in chat
+  - Attached files show as expandable blocks in user messages
+  - Click header to expand/collapse file content
+  - `.md` files render as formatted markdown with compact styling
+  - Other files display as syntax-highlighted code blocks
+  - Shows filename, line count, and expand/collapse indicator
+- **Backend File Listing API** - New `ListFiles` and `ReadFileContent` bound methods
+  - `ListFiles(agentID, query, maxResults)` - searches directories with ignore patterns
+  - `ReadFileContent(filePath)` - reads file with 100KB limit
+  - Ignores: node_modules, .git, dist, build, __pycache__, .venv, vendor, target, etc.
+
+### Changed
+- **Attachment Type Extended** - `Attachment` interface now supports both images and files
+  - New fields: `fileName`, `filePath`, `extension` for file attachments
+  - `AttachmentPreviewRow` displays file chips with filename (distinct from image thumbnails)
+- **File Content Format** - Uses XML-style `<claudefu-file>` delimiter to avoid collision with content containing markdown fences
+
+### Fixed
+- **Pending Message Spinner** - Fixed spinner not clearing when sending messages with attachments
+  - Changed from exact content match to `startsWith` matching in MessagesContext
+  - Attachments append content to the user message, so exact match failed
+- **File Attachment Display** - Fixed missing filepath in "Contents of:" header
+  - `backendAttachments` mapping now includes `fileName`, `filePath`, `extension` fields
+- **Long Message Truncation** - Skip 6-line truncation for messages with file attachments
+  - Truncation was cutting off `</claudefu-file>` closing tag, breaking the regex parser
+
 ## [0.3.6] - 2025-01-19
 
 ### Added

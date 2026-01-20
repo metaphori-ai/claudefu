@@ -174,6 +174,10 @@ export function IsClaudeInstalled() {
   return window['go']['main']['App']['IsClaudeInstalled']();
 }
 
+export function ListFiles(arg1, arg2, arg3) {
+  return window['go']['main']['App']['ListFiles'](arg1, arg2, arg3);
+}
+
 export function Logout() {
   return window['go']['main']['App']['Logout']();
 }
@@ -192,6 +196,10 @@ export function MarkSessionViewed(arg1, arg2) {
 
 export function NewSession(arg1) {
   return window['go']['main']['App']['NewSession'](arg1);
+}
+
+export function ReadFileContent(arg1) {
+  return window['go']['main']['App']['ReadFileContent'](arg1);
 }
 
 export function ReadImageAsDataURL(arg1) {

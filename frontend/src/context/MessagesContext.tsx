@@ -30,6 +30,7 @@ export type MessagesAction =
   | { type: 'MARK_INITIAL_LOAD_DONE'; payload: { agentId: string; sessionId: string } }
   | { type: 'ADD_PENDING_MESSAGE'; payload: { agentId: string; sessionId: string; content: string; message: Message } }
   | { type: 'CLEAR_PENDING_MESSAGE'; payload: { agentId: string; sessionId: string; content: string } }
+  | { type: 'CLEAR_ALL_PENDING_IN_SESSION'; payload: { agentId: string; sessionId: string } }
   | { type: 'MARK_MESSAGE_PROCESSED'; payload: { agentId: string; sessionId: string; uuid: string } }
   | { type: 'CLEAR_SESSION'; payload: { agentId: string; sessionId: string } }
   | { type: 'CLEAR_AGENT'; payload: { agentId: string } }
@@ -183,10 +184,15 @@ function messagesReducer(state: MessagesState, action: MessagesAction): Messages
         if (msg.uuid) newUUIDs.add(msg.uuid);
 
         // Check if this confirms a pending user message
-        if (msg.type === 'user' && newPending.has(msg.content)) {
-          newPending.delete(msg.content);
-          confirmedPendingContents.add(msg.content);
-          // Still add to newMessages so it replaces the pending message
+        // Use startsWith match because attachments append content (e.g., file contents)
+        if (msg.type === 'user') {
+          for (const pendingContent of newPending) {
+            if (msg.content.startsWith(pendingContent)) {
+              newPending.delete(pendingContent);
+              confirmedPendingContents.add(pendingContent);
+              break;
+            }
+          }
         }
 
         newMessages.push(msg);
@@ -337,6 +343,28 @@ function messagesReducer(state: MessagesState, action: MessagesAction): Messages
       return {
         ...state,
         pendingMessages: setPendingMessages(state, agentId, sessionId, newPending),
+      };
+    }
+
+    case 'CLEAR_ALL_PENDING_IN_SESSION': {
+      const { agentId, sessionId } = action.payload;
+      const current = getOrCreateSessionMessages(state, agentId, sessionId);
+
+      // Clear pendingMessages set
+      const emptyPending = new Set<string>();
+
+      // Update all messages to have isPending: false
+      const updatedMessages = current.messages.map(msg =>
+        msg.isPending ? { ...msg, isPending: false } : msg
+      );
+
+      return {
+        ...state,
+        sessionMessages: setSessionMessages(state, agentId, sessionId, {
+          ...current,
+          messages: updatedMessages,
+        }),
+        pendingMessages: setPendingMessages(state, agentId, sessionId, emptyPending),
       };
     }
 

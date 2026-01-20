@@ -89,6 +89,14 @@ export function useMessages() {
     });
   }, [dispatch]);
 
+  // Clear all pending messages in session (on cancel/interrupt)
+  const clearAllPendingInSession = useCallback((agentId: string, sessionId: string) => {
+    dispatch({
+      type: 'CLEAR_ALL_PENDING_IN_SESSION',
+      payload: { agentId, sessionId }
+    });
+  }, [dispatch]);
+
   // Check if a message UUID has been processed
   const isMessageProcessed = useCallback((agentId: string, sessionId: string, uuid: string): boolean => {
     const agentUUIDs = state.processedUUIDs.get(agentId);
@@ -150,6 +158,7 @@ export function useMessages() {
     markInitialLoadDone,
     addPendingMessage,
     clearPendingMessage,
+    clearAllPendingInSession,
     markMessageProcessed,
     clearSession,
     clearAgent,

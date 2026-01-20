@@ -54,6 +54,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
     setLoading: setContextLoading,
     markInitialLoadDone,
     addPendingMessage,
+    clearAllPendingInSession,
     clearSession: clearContextSession,
   } = useMessages();
 
@@ -343,6 +344,9 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
       await CancelSession(agentId, sessionId);
       console.log('[ChatView] Cancel request sent');
 
+      // Clear pending spinner immediately on cancel
+      clearAllPendingInSession(agentId, sessionId);
+
       // Append cancellation marker to JSONL for history
       try {
         await AppendCancellationMarker(agentId, sessionId);
@@ -387,7 +391,11 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
     const backendAttachments: types.Attachment[] = attachments.map(att => ({
       type: att.type,
       media_type: att.mediaType,
-      data: att.data
+      data: att.data,
+      // File-specific fields
+      fileName: att.fileName,
+      filePath: att.filePath,
+      extension: att.extension
     }));
     logDebug('ChatView', 'SEND_START', {
       messageLength: message.length,
@@ -548,6 +556,8 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
         />
         <InputArea
           ref={inputAreaRef}
+          agentId={agentId}
+          folder={folder}
           onSend={handleSend}
           onCancel={handleCancel}
           isSending={isSending}
