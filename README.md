@@ -34,7 +34,7 @@ brew install --cask claudefu
 brew upgrade --cask claudefu
 ```
 
-> **Note:** For unsigned builds, macOS may block the app. Right-click → Open, or run:
+> **Note:** For unsigned builds, macOS may block the app. Right-click → Open; Go to System Settings > Privacy & Security >  or run:
 > ```bash
 > xattr -cr /Applications/ClaudeFu.app
 > ```
@@ -106,11 +106,11 @@ Workspace (container)
 ┌─────────────────────┐                  ┌─────────────────────┐
 │   Frontend (React)  │                  │   Backend (Go)      │
 │                     │                  │                     │
-│  ───Bound Methods──────────────────▶  │  WorkspaceRuntime   │
+│  ───Bound Methods──────────────────▶   │  WorkspaceRuntime   │
 │     SendMessage()   │                  │  AgentState         │
 │     GetSessions()   │                  │  SessionState       │
 │                     │                  │                     │
-│  ◀────Wails Events─────────────────   │  FileWatcher        │
+│  ◀────Wails Events─────────────────    │  FileWatcher        │
 │     session:messages│                  │  (fsnotify)         │
 │     unread:changed  │                  │                     │
 └─────────────────────┘                  └─────────────────────┘
