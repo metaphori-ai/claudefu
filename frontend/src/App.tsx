@@ -8,7 +8,8 @@ import { MCPSettingsPane } from './components/MCPSettingsPane';
 import { DialogBase } from './components/DialogBase';
 import { MCPQuestionDialog } from './components/MCPQuestionDialog';
 import { WorkspaceProvider, SessionProvider, MessagesProvider } from './context';
-import { useWorkspace, useSession, useSelectedAgent, WailsEventHub } from './hooks';
+import { useWorkspace, useSession, useSelectedAgent, useSessionName, WailsEventHub } from './hooks';
+import { Tooltip } from './components/Tooltip';
 import { debugLogger } from './utils/debugLogger';
 import {
   GetAuthStatus,
@@ -71,6 +72,8 @@ function AppContent() {
   const [mcpSettingsOpen, setMcpSettingsOpen] = useState<boolean>(false);
   const [reloadKey, setReloadKey] = useState<number>(0);
   const [pendingInitialMessage, setPendingInitialMessage] = useState<string | null>(null);
+  const [openSessionsForAgentId, setOpenSessionsForAgentId] = useState<string | null>(null);
+  const [isCreatingNewSessionExternally, setIsCreatingNewSessionExternally] = useState<boolean>(false);
 
   // MCP notification state
   const [notification, setNotification] = useState<{
@@ -117,6 +120,7 @@ function AppContent() {
   } = useSession();
 
   const selectedAgent = useSelectedAgent();
+  const sessionDisplayName = useSessionName(selectedAgentId || null, selectedSessionId || null);
 
   // Clear pendingInitialMessage after it's been passed to ChatView
   useEffect(() => {
@@ -810,6 +814,62 @@ function AppContent() {
             <>
               <span style={{ color: '#333' }}>/</span>
               <span style={{ color: '#888', fontSize: '0.9rem' }}>{selectedAgent.name}</span>
+              {selectedSessionId && (
+                <>
+                  <span style={{ color: '#333' }}>/</span>
+                  <Tooltip
+                    content={sessionDisplayName}
+                    placement="bottom"
+                    delay={300}
+                  >
+                    <span style={{
+                      color: '#666',
+                      fontSize: '0.85rem',
+                      maxWidth: '200px',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      display: 'inline-block',
+                      verticalAlign: 'middle'
+                    }}>
+                      {sessionDisplayName.length > 30
+                        ? sessionDisplayName.slice(0, 30) + '...'
+                        : sessionDisplayName}
+                    </span>
+                  </Tooltip>
+                  <Tooltip content="Switch session" placement="bottom" delay={100}>
+                    <button
+                      onClick={() => setOpenSessionsForAgentId(selectedAgentId || null)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        padding: '0.25rem',
+                        marginLeft: '0.25rem',
+                        color: '#555',
+                        display: 'flex',
+                        alignItems: 'center',
+                        transition: 'color 0.15s ease'
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.color = '#d97757')}
+                      onMouseLeave={(e) => (e.currentTarget.style.color = '#555')}
+                    >
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <polyline points="6 9 12 15 18 9" />
+                      </svg>
+                    </button>
+                  </Tooltip>
+                </>
+              )}
             </>
           )}
         </div>
@@ -930,6 +990,10 @@ function AppContent() {
           onAddAgent={handleAddAgent}
           onAgentSelect={handleAgentSelect}
           onSessionSelect={handleSessionSelect}
+          openSessionsForAgentId={openSessionsForAgentId}
+          onSessionsDialogClose={() => setOpenSessionsForAgentId(null)}
+          onNewSessionStart={() => setIsCreatingNewSessionExternally(true)}
+          onNewSessionComplete={() => setIsCreatingNewSessionExternally(false)}
         />
 
         {/* Main Content */}
@@ -970,6 +1034,7 @@ function AppContent() {
               sessionId={selectedSessionId}
               onSessionCreated={handleNewSessionCreated}
               initialMessage={pendingInitialMessage || undefined}
+              isExternallyCreatingSession={isCreatingNewSessionExternally}
             />
           ) : (
             <div style={{

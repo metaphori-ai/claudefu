@@ -28,12 +28,20 @@ interface SidebarProps {
   onAddAgent: (folder: string, name: string) => void;
   onAgentSelect: (agentId: string) => void;
   onSessionSelect: (agentId: string, sessionId: string, folder: string) => void;
+  openSessionsForAgentId?: string | null;  // When set, opens sessions dialog for this agent
+  onSessionsDialogClose?: () => void;       // Callback when sessions dialog closes
+  onNewSessionStart?: () => void;           // Called when new session creation starts (for spinner)
+  onNewSessionComplete?: () => void;        // Called when new session creation completes
 }
 
 export function Sidebar({
   onAddAgent,
   onAgentSelect,
   onSessionSelect,
+  openSessionsForAgentId,
+  onSessionsDialogClose,
+  onNewSessionStart,
+  onNewSessionComplete,
 }: SidebarProps) {
   // Use context hooks instead of local state
   const {
@@ -121,6 +129,19 @@ export function Sidebar({
     }
   }, [selectedAgentId, agents, sessionNames, setAllSessionNames]);
 
+  // Open sessions dialog when requested from header
+  useEffect(() => {
+    if (openSessionsForAgentId) {
+      const agent = agents.find(a => a.id === openSessionsForAgentId);
+      if (agent) {
+        // Load sessions first, then open dialog
+        loadAgentSessions(agent).then(() => {
+          setSessionsDialogAgent(agent);
+        });
+      }
+    }
+  }, [openSessionsForAgentId, agents]);
+
   const loadAgentSessions = async (agent: Agent) => {
     try {
       const sessions = await GetSessions(agent.id);
@@ -163,6 +184,7 @@ export function Sidebar({
   const handleSessionClick = async (agent: Agent, session: Session) => {
     // Close the sessions dialog
     setSessionsDialogAgent(null);
+    onSessionsDialogClose?.();
 
     // Mark session as viewed
     try {
@@ -175,13 +197,20 @@ export function Sidebar({
 
   const handleNewSession = async (agent: Agent) => {
     try {
-      const newSessionId = await NewSession(agent.id);
+      // Signal that we're starting to create a new session (for spinner)
+      onNewSessionStart?.();
       // Close the sessions dialog
       setSessionsDialogAgent(null);
+      onSessionsDialogClose?.();
+
+      const newSessionId = await NewSession(agent.id);
+      // Clear spinner BEFORE selecting new session to avoid flash in new ChatView
+      onNewSessionComplete?.();
       // Select the new session
       onSessionSelect(agent.id, newSessionId, agent.folder);
     } catch (err) {
       console.error('Failed to create new session:', err);
+      onNewSessionComplete?.(); // Clear spinner on error too
     }
   };
 
@@ -386,7 +415,10 @@ export function Sidebar({
           }}
           onNewSession={() => handleNewSession(sessionsDialogAgent)}
           onRefresh={() => loadAgentSessions(sessionsDialogAgent)}
-          onClose={() => setSessionsDialogAgent(null)}
+          onClose={() => {
+            setSessionsDialogAgent(null);
+            onSessionsDialogClose?.();
+          }}
         />
       )}
 

@@ -34,7 +34,7 @@ const spinnerStyles = `
   }
 `;
 
-export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreated, initialMessage }: ChatViewProps) {
+export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreated, initialMessage, isExternallyCreatingSession }: ChatViewProps) {
   // Inject spinner animation styles
   useEffect(() => {
     const styleId = 'chatview-spinner-styles';
@@ -530,7 +530,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
         messages={messagesToRender}
         globalToolResultMap={globalToolResultMap}
         globalPendingQuestionMap={globalPendingQuestionMap}
-        isCreatingSession={isCreatingSession}
+        isCreatingSession={isCreatingSession || !!isExternallyCreatingSession}
         scrollContainerRef={scroll.scrollContainerRef}
         messagesEndRef={scroll.messagesEndRef}
         showScrollButton={scroll.showScrollButton}

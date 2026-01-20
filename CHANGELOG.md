@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.9] - 2026-01-19
+
+### Added
+- **Session Breadcrumb** - Current session name now appears in the header breadcrumb
+  - Shows as `ClaudeFu / Workspace / Agent / Session Name` hierarchy
+  - Session name truncated at 30 characters with tooltip showing full name
+  - Chevron icon opens Sessions dialog for quick session switching
+- **Session Switcher Icon** - Click chevron in breadcrumb to open Sessions dialog
+  - Opens the same Sessions dialog as sidebar with full functionality
+  - Hover shows "Switch session" tooltip
+
+### Changed
+- **Shared New Session Spinner** - SessionsDialog "+" button now shows same spinner as InputArea
+  - "Creating new session..." spinner displays in chat area during creation
+  - Consistent visual feedback across both new session creation methods
+  - DRY implementation shares state between Sidebar and ChatView via App.tsx
+
 ## [0.3.8] - 2026-01-19
 
 ### Added

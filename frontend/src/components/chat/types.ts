@@ -77,4 +77,5 @@ export interface ChatViewProps {
   sessionId: string;
   onSessionCreated?: (newSessionId: string, initialMessage: string) => void;
   initialMessage?: string;
+  isExternallyCreatingSession?: boolean;  // True when SessionsDialog is creating a new session
 }
