@@ -20,6 +20,43 @@
 
 ---
 
+## Installation
+
+### Via Homebrew (Recommended)
+
+```bash
+brew tap metaphori-ai/claudefu
+brew install --cask claudefu
+```
+
+**Upgrade to latest version:**
+```bash
+brew upgrade --cask claudefu
+```
+
+> **Note:** For unsigned builds, macOS may block the app. Right-click → Open, or run:
+> ```bash
+> xattr -cr /Applications/ClaudeFu.app
+> ```
+
+### Prerequisites
+
+ClaudeFu requires the Claude Code CLI:
+
+```bash
+npm install -g @anthropic-ai/claude-code
+```
+
+### Reinstalling 
+
+rm -rf /Applications/ClaudeFu.app
+brew uninstall --cask claudefu
+brew untap metaphori-ai/claudefu
+brew tap metaphori-ai/claudefu
+brew install --cask claudefu
+
+---
+
 ## Features
 
 - **Multi-Agent Dashboard** - Manage multiple Claude Code instances across different project folders - single interface, many Claude Codes
