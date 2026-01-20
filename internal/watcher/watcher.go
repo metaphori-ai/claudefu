@@ -364,6 +364,27 @@ func (fw *FileWatcher) handleFileCreate(path string) {
 	// Only the ACTIVE session should be watched (via SetActiveSessionWatch).
 	// New sessions that aren't active don't need file watches.
 
+	// Load initial messages (file may already have content if created externally)
+	messages, filePos := fw.loadInitialMessages(path)
+
+	// Check if this is a real session (has user/assistant messages)
+	hasRealMessages := false
+	for _, msg := range messages {
+		if msg.Type == "user" || msg.Type == "assistant" {
+			hasRealMessages = true
+			break
+		}
+	}
+
+	fmt.Printf("[DEBUG] handleFileCreate: session=%s messages=%d hasRealMessages=%v filePos=%d\n",
+		sessionID[:8], len(messages), hasRealMessages, filePos)
+
+	// Skip summary-only sessions (no actual user/assistant messages)
+	if !hasRealMessages && len(messages) > 0 {
+		fmt.Printf("[DEBUG] handleFileCreate: Skipping summary-only session: %s\n", sessionID)
+		return
+	}
+
 	// Notify ALL agents that share this folder about the new session
 	for _, agentID := range agentIDs {
 		// Create session state in runtime
@@ -372,22 +393,28 @@ func (fw *FileWatcher) handleFileCreate(path string) {
 			continue
 		}
 
-		// Set file position to current size (start watching from now)
-		if info, err := os.Stat(path); err == nil {
-			rt.SetFilePosition(agentID, sessionID, info.Size())
+		// Add loaded messages to session (if any)
+		if len(messages) > 0 {
+			rt.AppendMessages(agentID, sessionID, messages)
+			fmt.Printf("[DEBUG] handleFileCreate: loaded %d messages for agent=%s session=%s\n",
+				len(messages), agentID[:8], sessionID[:8])
 		}
 
-		// Mark initial load done (new file, nothing to load)
+		// Set file position for future delta reads
+		rt.SetFilePosition(agentID, sessionID, filePos)
+
+		// Mark initial load done - now delta reads can proceed
 		rt.MarkInitialLoadDone(agentID, sessionID)
 
 		// Emit session:discovered event
 		rt.Emit("session:discovered", agentID, sessionID, map[string]any{
 			"agentId": agentID,
 			"session": types.Session{
-				ID:        sessionID,
-				AgentID:   agentID,
-				CreatedAt: session.CreatedAt,
-				UpdatedAt: session.UpdatedAt,
+				ID:           sessionID,
+				AgentID:      agentID,
+				MessageCount: len(messages),
+				CreatedAt:    session.CreatedAt,
+				UpdatedAt:    session.UpdatedAt,
 			},
 		})
 	}
@@ -541,13 +568,14 @@ func (fw *FileWatcher) RescanSessions(agentID, folder string, lastViewedMap map[
 		return 0, err
 	}
 
-	// Get existing session IDs from runtime
-	existingSessions := make(map[string]bool)
+	// Get existing sessions from runtime (track both ID and message count)
+	existingSessions := make(map[string]int) // sessionID -> messageCount
 	for _, s := range rt.GetSessionsForAgent(agentID) {
-		existingSessions[s.SessionID] = true
+		existingSessions[s.SessionID] = len(s.Messages)
 	}
 
 	newCount := 0
+	reloadedCount := 0
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".jsonl") {
 			continue
@@ -560,10 +588,14 @@ func (fw *FileWatcher) RescanSessions(agentID, folder string, lastViewedMap map[
 
 		sessionID := strings.TrimSuffix(entry.Name(), ".jsonl")
 
-		// Skip if already in memory
-		if existingSessions[sessionID] {
+		// Check if already in memory
+		msgCount, exists := existingSessions[sessionID]
+		if exists && msgCount > 0 {
+			// Already loaded with messages, skip
 			continue
 		}
+
+		// Either new session OR existing session with 0 messages (needs reload)
 
 		filePath := filepath.Join(sessionsDir, entry.Name())
 
@@ -593,7 +625,6 @@ func (fw *FileWatcher) RescanSessions(agentID, folder string, lastViewedMap map[
 		if len(messages) > 0 {
 			rt.AppendMessages(agentID, sessionID, messages)
 		}
-		fmt.Printf("[DEBUG] RescanSessions: found new session=%s with %d messages\n", sessionID[:8], len(messages))
 		rt.SetFilePosition(agentID, sessionID, filePos)
 
 		// Initialize viewed state from persisted lastViewedAt
@@ -606,14 +637,23 @@ func (fw *FileWatcher) RescanSessions(agentID, folder string, lastViewedMap map[
 		// Mark initial load complete
 		rt.MarkInitialLoadDone(agentID, sessionID)
 
-		newCount++
+		// Track whether this was a new discovery or a reload of empty session
+		if exists {
+			fmt.Printf("[DEBUG] RescanSessions: RELOADED session=%s (had 0 messages) with %d messages\n",
+				sessionID[:8], len(messages))
+			reloadedCount++
+		} else {
+			fmt.Printf("[DEBUG] RescanSessions: found NEW session=%s with %d messages\n",
+				sessionID[:8], len(messages))
+			newCount++
+		}
 	}
 
-	if newCount > 0 {
-		fmt.Printf("[DEBUG] RescanSessions: discovered %d new sessions for agent=%s\n", newCount, agentID[:8])
+	if newCount > 0 || reloadedCount > 0 {
+		fmt.Printf("[DEBUG] RescanSessions: agent=%s new=%d reloaded=%d\n", agentID[:8], newCount, reloadedCount)
 	}
 
-	return newCount, nil
+	return newCount + reloadedCount, nil
 }
 
 // StopWatchingAgent stops watching sessions for a specific agent.

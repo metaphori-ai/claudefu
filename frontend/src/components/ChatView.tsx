@@ -221,6 +221,14 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
     initSession();
   }, [agentId, sessionId]);
 
+  // Clear chat when creating new session externally (from SessionsDialog + button)
+  // This matches the behavior of the InputArea + button (newSessionMode)
+  useEffect(() => {
+    if (isExternallyCreatingSession) {
+      clearContextSession(agentId, sessionId);
+    }
+  }, [isExternallyCreatingSession, agentId, sessionId, clearContextSession]);
+
   // Track last message count to detect new messages
   const lastMessageCountRef = useRef(messages.length);
   const pendingCycleRef = useRef(false);
