@@ -38,6 +38,42 @@ func (a *App) GetSessions(agentID string) ([]types.Session, error) {
 	return result, nil
 }
 
+// RefreshSessions re-scans the filesystem for new sessions and returns updated list.
+// This is called by the "Refresh" button in SessionsDialog.
+func (a *App) RefreshSessions(agentID string) ([]types.Session, error) {
+	if a.watcher == nil {
+		return nil, fmt.Errorf("watcher not initialized")
+	}
+	if a.rt == nil {
+		return nil, fmt.Errorf("runtime not initialized")
+	}
+
+	// Get the agent's folder
+	agent := a.getAgentByID(agentID)
+	if agent == nil {
+		return nil, fmt.Errorf("agent not found: %s", agentID)
+	}
+
+	// Get last viewed timestamps for unread calculation
+	var lastViewedMap map[string]int64
+	if a.sessions != nil {
+		lastViewedMap = a.sessions.GetAllLastViewed(agent.Folder)
+	}
+
+	// Rescan filesystem for new sessions
+	newCount, err := a.watcher.RescanSessions(agentID, agent.Folder, lastViewedMap)
+	if err != nil {
+		return nil, fmt.Errorf("failed to rescan sessions: %w", err)
+	}
+
+	if newCount > 0 {
+		fmt.Printf("[DEBUG] RefreshSessions: discovered %d new sessions for agent=%s\n", newCount, agentID[:8])
+	}
+
+	// Return updated session list (same as GetSessions)
+	return a.GetSessions(agentID)
+}
+
 // GetConversation returns messages for a session
 func (a *App) GetConversation(agentID, sessionID string) ([]types.Message, error) {
 	if a.rt == nil {

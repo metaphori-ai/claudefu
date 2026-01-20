@@ -111,6 +111,8 @@ export function ReadImageAsDataURL(arg1:string):Promise<string>;
 
 export function ReadPlanFile(arg1:string):Promise<string>;
 
+export function RefreshSessions(arg1:string):Promise<Array<types.Session>>;
+
 export function RemoveAgent(arg1:string):Promise<void>;
 
 export function ResetMCPToolInstructions():Promise<void>;

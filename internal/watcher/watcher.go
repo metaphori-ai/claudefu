@@ -515,6 +515,107 @@ func (fw *FileWatcher) StartWatchingAgent(agentID, folder string, lastViewedMap 
 	return nil
 }
 
+// RescanSessions re-scans the filesystem for new sessions (for refresh functionality).
+// Unlike StartWatchingAgent, this doesn't guard against already-loaded agents.
+// It only discovers NEW sessions that aren't already in memory.
+func (fw *FileWatcher) RescanSessions(agentID, folder string, lastViewedMap map[string]int64) (int, error) {
+	fw.mu.RLock()
+	rt := fw.runtime
+	fw.mu.RUnlock()
+
+	if rt == nil {
+		return 0, fmt.Errorf("runtime not set")
+	}
+
+	// Get the sessions directory for this folder
+	sessionsDir := GetSessionsDir(folder)
+
+	// Check if directory exists
+	if _, err := os.Stat(sessionsDir); os.IsNotExist(err) {
+		return 0, nil // Directory doesn't exist yet - that's OK
+	}
+
+	// Read all JSONL files in the directory
+	entries, err := os.ReadDir(sessionsDir)
+	if err != nil {
+		return 0, err
+	}
+
+	// Get existing session IDs from runtime
+	existingSessions := make(map[string]bool)
+	for _, s := range rt.GetSessionsForAgent(agentID) {
+		existingSessions[s.SessionID] = true
+	}
+
+	newCount := 0
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".jsonl") {
+			continue
+		}
+
+		// Skip subagent files (format: agent-{short-id}.jsonl)
+		if strings.HasPrefix(entry.Name(), "agent-") {
+			continue
+		}
+
+		sessionID := strings.TrimSuffix(entry.Name(), ".jsonl")
+
+		// Skip if already in memory
+		if existingSessions[sessionID] {
+			continue
+		}
+
+		filePath := filepath.Join(sessionsDir, entry.Name())
+
+		// Load initial messages first to check if this is a real session
+		messages, filePos := fw.loadInitialMessages(filePath)
+
+		// Skip summary-only sessions (no actual user/assistant messages)
+		hasRealMessages := false
+		for _, msg := range messages {
+			if msg.Type == "user" || msg.Type == "assistant" {
+				hasRealMessages = true
+				break
+			}
+		}
+		if !hasRealMessages {
+			fmt.Printf("[DEBUG] RescanSessions: Skipping summary-only session: %s\n", sessionID)
+			continue
+		}
+
+		// Create session state in runtime
+		session := rt.GetOrCreateSessionState(agentID, sessionID)
+		if session == nil {
+			continue
+		}
+
+		// Add messages to session
+		if len(messages) > 0 {
+			rt.AppendMessages(agentID, sessionID, messages)
+		}
+		fmt.Printf("[DEBUG] RescanSessions: found new session=%s with %d messages\n", sessionID[:8], len(messages))
+		rt.SetFilePosition(agentID, sessionID, filePos)
+
+		// Initialize viewed state from persisted lastViewedAt
+		lastViewed := int64(0)
+		if lastViewedMap != nil {
+			lastViewed = lastViewedMap[sessionID]
+		}
+		rt.InitializeSessionViewed(agentID, sessionID, lastViewed)
+
+		// Mark initial load complete
+		rt.MarkInitialLoadDone(agentID, sessionID)
+
+		newCount++
+	}
+
+	if newCount > 0 {
+		fmt.Printf("[DEBUG] RescanSessions: discovered %d new sessions for agent=%s\n", newCount, agentID[:8])
+	}
+
+	return newCount, nil
+}
+
 // StopWatchingAgent stops watching sessions for a specific agent.
 // If this was the last agent watching a folder, the directory watch is also removed.
 func (fw *FileWatcher) StopWatchingAgent(agentID, folder string) {

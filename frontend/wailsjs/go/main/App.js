@@ -210,6 +210,10 @@ export function ReadPlanFile(arg1) {
   return window['go']['main']['App']['ReadPlanFile'](arg1);
 }
 
+export function RefreshSessions(arg1) {
+  return window['go']['main']['App']['RefreshSessions'](arg1);
+}
+
 export function RemoveAgent(arg1) {
   return window['go']['main']['App']['RemoveAgent'](arg1);
 }

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import {
   SelectWorkspaceFolder,
   GetSessions,
+  RefreshSessions,
   GetAllSessionNames,
   SetSessionName,
   MarkSessionViewed,
@@ -156,6 +157,25 @@ export function Sidebar({
       setAllSessionNames(agent.id, names || {});
     } catch (err) {
       console.error('Failed to load sessions for', agent.name, err);
+    }
+  };
+
+  // Refresh re-scans filesystem for new sessions (unlike loadAgentSessions which only reads memory)
+  const refreshAgentSessions = async (agent: Agent) => {
+    try {
+      // RefreshSessions re-scans the .claude/projects folder for new JSONL files
+      const sessions = await RefreshSessions(agent.id);
+      // Sort by updatedAt descending (newest first)
+      const sortedSessions = (sessions || []).sort((a, b) => {
+        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+      });
+      setAgentSessions(agent.id, sortedSessions);
+
+      // Also load session names for this agent
+      const names = await GetAllSessionNames(agent.id);
+      setAllSessionNames(agent.id, names || {});
+    } catch (err) {
+      console.error('Failed to refresh sessions for', agent.name, err);
     }
   };
 
@@ -414,7 +434,7 @@ export function Sidebar({
             setRenameSessionDialog({ agent: sessionsDialogAgent, session });
           }}
           onNewSession={() => handleNewSession(sessionsDialogAgent)}
-          onRefresh={() => loadAgentSessions(sessionsDialogAgent)}
+          onRefresh={() => refreshAgentSessions(sessionsDialogAgent)}
           onClose={() => {
             setSessionsDialogAgent(null);
             onSessionsDialogClose?.();
