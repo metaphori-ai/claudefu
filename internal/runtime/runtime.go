@@ -249,6 +249,25 @@ func (rt *WorkspaceRuntime) GetSessionsForAgent(agentID string) []*SessionState 
 	return sessions
 }
 
+// RefreshSessionUpdatedAt updates the UpdatedAt timestamp for an existing session.
+// This is called during rescan to sync UpdatedAt with the file's modification time.
+func (rt *WorkspaceRuntime) RefreshSessionUpdatedAt(agentID, sessionID string, updatedAt time.Time) {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+
+	agentState, ok := rt.agentStates[agentID]
+	if !ok {
+		return
+	}
+
+	session, ok := agentState.Sessions[sessionID]
+	if !ok {
+		return
+	}
+
+	session.UpdatedAt = updatedAt
+}
+
 // =============================================================================
 // ACTIVE SESSION MANAGEMENT
 // =============================================================================

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.10] - 2026-01-19
+
+### Fixed
+- **Session Discovery on Refresh** - Clicking Refresh in SessionsDialog now properly discovers new sessions
+  - Added `RescanSessions` backend method that re-scans filesystem for JSONL files
+  - Sessions created externally (e.g., terminal Claude Code) now appear after refresh
+- **New Session File Loading** - Externally-created JSONL files now load their existing content
+  - Fixed `handleFileCreate` to call `loadInitialMessages()` instead of assuming empty files
+  - Sessions no longer appear with 0 messages when created outside ClaudeFu
+- **Session Timestamp Accuracy** - Session "Updated" timestamps now reflect actual file modification time
+  - Added `RefreshSessionUpdatedAt` to sync timestamps from filesystem on startup and refresh
+  - Sessions sorted by recency now use accurate file mod times instead of stale message timestamps
+  - Fixes sessions showing "2d ago" when they were modified moments ago
+
 ## [0.3.9] - 2026-01-19
 
 ### Added

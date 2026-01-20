@@ -514,8 +514,14 @@ func (fw *FileWatcher) StartWatchingAgent(agentID, folder string, lastViewedMap 
 		if len(messages) > 0 {
 			rt.AppendMessages(agentID, sessionID, messages)
 		}
-		fmt.Printf("[DEBUG] DiscoverAndLoadSessions: setting filePos=%d for session=%s\n", filePos, sessionID[:8])
 		rt.SetFilePosition(agentID, sessionID, filePos)
+
+		// Refresh UpdatedAt from file modification time (more accurate than message timestamps
+		// when the session has been updated externally while ClaudeFu wasn't watching)
+		fileInfo, err := os.Stat(filePath)
+		if err == nil {
+			rt.RefreshSessionUpdatedAt(agentID, sessionID, fileInfo.ModTime())
+		}
 
 		// Initialize viewed state from persisted lastViewedAt
 		lastViewed := int64(0)
@@ -576,6 +582,7 @@ func (fw *FileWatcher) RescanSessions(agentID, folder string, lastViewedMap map[
 
 	newCount := 0
 	reloadedCount := 0
+	refreshedCount := 0
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".jsonl") {
 			continue
@@ -591,7 +598,13 @@ func (fw *FileWatcher) RescanSessions(agentID, folder string, lastViewedMap map[
 		// Check if already in memory
 		msgCount, exists := existingSessions[sessionID]
 		if exists && msgCount > 0 {
-			// Already loaded with messages, skip
+			// Already loaded with messages - but still refresh UpdatedAt from file mod time
+			filePath := filepath.Join(sessionsDir, entry.Name())
+			fileInfo, err := os.Stat(filePath)
+			if err == nil {
+				rt.RefreshSessionUpdatedAt(agentID, sessionID, fileInfo.ModTime())
+				refreshedCount++
+			}
 			continue
 		}
 
@@ -611,7 +624,6 @@ func (fw *FileWatcher) RescanSessions(agentID, folder string, lastViewedMap map[
 			}
 		}
 		if !hasRealMessages {
-			fmt.Printf("[DEBUG] RescanSessions: Skipping summary-only session: %s\n", sessionID)
 			continue
 		}
 
@@ -639,18 +651,15 @@ func (fw *FileWatcher) RescanSessions(agentID, folder string, lastViewedMap map[
 
 		// Track whether this was a new discovery or a reload of empty session
 		if exists {
-			fmt.Printf("[DEBUG] RescanSessions: RELOADED session=%s (had 0 messages) with %d messages\n",
-				sessionID[:8], len(messages))
 			reloadedCount++
 		} else {
-			fmt.Printf("[DEBUG] RescanSessions: found NEW session=%s with %d messages\n",
-				sessionID[:8], len(messages))
 			newCount++
 		}
 	}
 
-	if newCount > 0 || reloadedCount > 0 {
-		fmt.Printf("[DEBUG] RescanSessions: agent=%s new=%d reloaded=%d\n", agentID[:8], newCount, reloadedCount)
+	if newCount > 0 || reloadedCount > 0 || refreshedCount > 0 {
+		fmt.Printf("[DEBUG] RescanSessions: agent=%s new=%d reloaded=%d refreshed=%d\n",
+			agentID[:8], newCount, reloadedCount, refreshedCount)
 	}
 
 	return newCount + reloadedCount, nil

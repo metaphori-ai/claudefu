@@ -18,6 +18,7 @@ func (a *App) GetSessions(agentID string) ([]types.Session, error) {
 	}
 
 	sessions := a.rt.GetSessionsForAgent(agentID)
+
 	result := make([]types.Session, 0, len(sessions))
 	for _, s := range sessions {
 		// Skip subagent sessions (format: agent-{short-id})
