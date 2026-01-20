@@ -21,6 +21,7 @@ import { PermissionsDialog } from './PermissionsDialog';
 // Hooks
 import { useScrollManagement } from '../hooks/useScrollManagement';
 import { useMessages } from '../hooks/useMessages';
+import { useSession } from '../hooks/useSession';
 
 // Utilities
 import { buildToolResultMap, buildPendingQuestionMap, computeDebugStats, filterMessagesToRender } from '../utils/messageUtils';
@@ -72,12 +73,15 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
   // Combined loading state
   const isLoading = localLoading || isContextLoading;
 
+  // Per-agent "responding" state from context (survives agent switching)
+  const { setAgentResponding, isAgentResponding } = useSession();
+  const isSending = isAgentResponding(agentId);
+
   // UI state
   const [showDebugStats, setShowDebugStats] = useState(false);
   const [compactionContent, setCompactionContent] = useState<string | null>(null);
   const [selectedToolCall, setSelectedToolCall] = useState<ContentBlock | null>(null);
   const [selectedToolResult, setSelectedToolResult] = useState<ContentBlock | null>(null);
-  const [isSending, setIsSending] = useState(false);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
@@ -281,7 +285,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
     if (initialMessage && !initialMessageSentRef.current && !isLoading && initialLoadDone) {
       initialMessageSentRef.current = true;
       const sendInitialMessage = async () => {
-        setIsSending(true);
+        setAgentResponding(agentId, true);
         const pendingMessage: Message = {
           type: 'user',
           content: initialMessage,
@@ -300,12 +304,12 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
           // Context will handle cleanup when confirmed message arrives
           console.error('Failed to send initial message:', err);
         } finally {
-          setIsSending(false);
+          setAgentResponding(agentId, false);
         }
       };
       sendInitialMessage();
     }
-  }, [initialMessage, isLoading, initialLoadDone, agentId, sessionId, planningMode, addPendingMessage]);
+  }, [initialMessage, isLoading, initialLoadDone, agentId, sessionId, planningMode, addPendingMessage, setAgentResponding]);
 
   // Handle viewing tool details
   const handleViewToolDetails = (toolCall: ContentBlock, result?: ContentBlock) => {
@@ -414,7 +418,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
       backendAttachments: backendAttachments.length,
     });
 
-    setIsSending(true);
+    setAgentResponding(agentId, true);
 
     if (newSessionMode) {
       try {
@@ -427,12 +431,12 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
         if (onSessionCreated) {
           onSessionCreated(newSessionId, message);
         }
-        setIsSending(false);
+        setAgentResponding(agentId, false);
         return;
       } catch (err) {
         console.error('Failed to create new session:', err);
         setIsCreatingSession(false);
-        setIsSending(false);
+        setAgentResponding(agentId, false);
         // Restore message to input on failure
         inputAreaRef.current?.setValue(message);
         loadConversation(true);
@@ -470,7 +474,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
       inputAreaRef.current?.setValue(message);
       setIsWaitingForResponse(false);
     } finally {
-      setIsSending(false);
+      setAgentResponding(agentId, false);
     }
   };
 

@@ -30,6 +30,8 @@ export interface SessionState {
   inboxDialogAgentId: string | null;
   // MCP AskUserQuestion dialog state
   mcpPendingQuestion: MCPPendingQuestion | null;
+  // Per-agent "Claude is responding" state (survives agent switching)
+  respondingAgents: Map<string, boolean>;
 }
 
 export type SessionAction =
@@ -47,6 +49,7 @@ export type SessionAction =
   | { type: 'UPDATE_INBOX_MESSAGE'; payload: { messageId: string; updates: Partial<InboxMessage> } }
   | { type: 'REMOVE_INBOX_MESSAGE'; payload: string }
   | { type: 'SET_MCP_PENDING_QUESTION'; payload: MCPPendingQuestion | null }
+  | { type: 'SET_AGENT_RESPONDING'; payload: { agentId: string; isResponding: boolean } }
   | { type: 'RESET' };
 
 const initialState: SessionState = {
@@ -58,6 +61,7 @@ const initialState: SessionState = {
   inboxMessages: [],
   inboxDialogAgentId: null,
   mcpPendingQuestion: null,
+  respondingAgents: new Map(),
 };
 
 function sessionReducer(state: SessionState, action: SessionAction): SessionState {
@@ -162,6 +166,16 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
         ...state,
         mcpPendingQuestion: action.payload,
       };
+
+    case 'SET_AGENT_RESPONDING': {
+      const newRespondingAgents = new Map(state.respondingAgents);
+      if (action.payload.isResponding) {
+        newRespondingAgents.set(action.payload.agentId, true);
+      } else {
+        newRespondingAgents.delete(action.payload.agentId);
+      }
+      return { ...state, respondingAgents: newRespondingAgents };
+    }
 
     case 'RESET':
       return initialState;

@@ -69,6 +69,15 @@ export function useSession() {
     dispatch({ type: 'SET_MCP_PENDING_QUESTION', payload: question });
   }, [dispatch]);
 
+  // Per-agent "Claude is responding" state
+  const setAgentResponding = useCallback((agentId: string, isResponding: boolean) => {
+    dispatch({ type: 'SET_AGENT_RESPONDING', payload: { agentId, isResponding } });
+  }, [dispatch]);
+
+  const isAgentResponding = useCallback((agentId: string): boolean => {
+    return state.respondingAgents.get(agentId) ?? false;
+  }, [state.respondingAgents]);
+
   const reset = useCallback(() => {
     dispatch({ type: 'RESET' });
   }, [dispatch]);
@@ -83,6 +92,7 @@ export function useSession() {
     inboxMessages: state.inboxMessages,
     inboxDialogAgentId: state.inboxDialogAgentId,
     mcpPendingQuestion: state.mcpPendingQuestion,
+    respondingAgents: state.respondingAgents,
 
     // Actions
     selectSession,
@@ -99,6 +109,8 @@ export function useSession() {
     updateInboxMessage,
     removeInboxMessage,
     setMCPPendingQuestion,
+    setAgentResponding,
+    isAgentResponding,
     reset,
 
     // Raw dispatch for advanced usage

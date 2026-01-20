@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.12] - 2026-01-20
+
+### Fixed
+- **AI Responding State Persists on Agent Switch** - "Type while waiting" UI state now survives switching agents
+  - Previously, switching to another agent and back would show normal input even though Claude was still responding
+  - Added `respondingAgents` Map to SessionContext tracking per-agent responding state
+  - ChatView now derives `isSending` from context instead of local useState
+  - Stripes and dancing Clawd watermark now persist correctly when switching between agents
+
 ## [0.3.11] - 2026-01-19
 
 ### Fixed
