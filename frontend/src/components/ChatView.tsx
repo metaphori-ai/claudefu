@@ -94,6 +94,9 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
   const [claudeSettingsOpen, setClaudeSettingsOpen] = useState(false);
   const [permissionsDialogOpen, setPermissionsDialogOpen] = useState(false);
 
+  // Attachment state (lifted from InputArea, displayed in ControlButtonsRow)
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+
   // Refs for special flows (AnswerQuestion needs to pause watcher)
   const watcherPausedRef = useRef<boolean>(false);
 
@@ -412,6 +415,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
         const newSessionId = await NewSession(agentId);
         setNewSessionMode(false);
         setIsCreatingSession(false);
+        setAttachments([]);  // Clear attachments on new session
         if (onSessionCreated) {
           onSessionCreated(newSessionId, message);
         }
@@ -446,6 +450,8 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
     try {
       await SendMessage(agentId, sessionId, message, backendAttachments, planningMode);
       logDebug('ChatView', 'SEND_COMPLETE', { success: true });
+      // Clear attachments on successful send
+      setAttachments([]);
       // Note: isWaitingForResponse stays true - it gets cleared when assistant message arrives
     } catch (err) {
       console.error('Failed to send message:', err);
@@ -553,6 +559,8 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
           onViewPlan={handleViewPlan}
           onOpenPermissions={() => setPermissionsDialogOpen(true)}
           onOpenClaudeSettings={() => setClaudeSettingsOpen(true)}
+          attachments={attachments}
+          onAttachmentRemove={(id) => setAttachments(prev => prev.filter(att => att.id !== id))}
         />
         <InputArea
           ref={inputAreaRef}
@@ -564,6 +572,10 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
           isWaitingForResponse={isWaitingForResponse}
           isCancelling={isCancelling}
           hasPendingQuestion={hasPendingQuestion}
+          newSessionMode={newSessionMode}
+          planningMode={planningMode}
+          attachments={attachments}
+          onAttachmentsChange={setAttachments}
         />
       </div>
 

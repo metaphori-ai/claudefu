@@ -1,4 +1,5 @@
 import React from 'react';
+import { Tooltip } from '../Tooltip';
 import type { Attachment } from './types';
 
 interface AttachmentPreviewRowProps {
@@ -6,21 +7,8 @@ interface AttachmentPreviewRowProps {
   onRemove: (id: string) => void;
 }
 
-// Get file icon based on extension
-const getFileIcon = (ext?: string): string => {
-  if (!ext) return '📄';
-  const iconMap: Record<string, string> = {
-    ts: '📘', tsx: '📘', js: '📒', jsx: '📒',
-    py: '🐍', go: '🔵', rs: '🦀', rb: '💎',
-    json: '📋', yaml: '📋', yml: '📋', xml: '📋',
-    md: '📝', txt: '📄', html: '🌐', css: '🎨',
-    sh: '💻', bash: '💻', sql: '🗄️'
-  };
-  return iconMap[ext.toLowerCase()] || '📄';
-};
-
 // Truncate filename for display
-const truncateFilename = (name: string, maxLen: number = 20): string => {
+const truncateFilename = (name: string, maxLen: number = 16): string => {
   if (name.length <= maxLen) return name;
   const ext = name.includes('.') ? name.split('.').pop() : '';
   const base = name.slice(0, name.length - (ext ? ext.length + 1 : 0));
@@ -34,89 +22,136 @@ export function AttachmentPreviewRow({ attachments, onRemove }: AttachmentPrevie
   return (
     <div style={{
       display: 'flex',
-      gap: '0.5rem',
-      padding: '0.5rem 0',
-      overflowX: 'auto',
-      marginBottom: '0.5rem',
+      gap: '6px',
+      alignItems: 'center',
       flexWrap: 'wrap'
     }}>
       {attachments.map(att => (
-        <div
+        <Tooltip
           key={att.id}
-          style={{
-            position: 'relative',
-            flexShrink: 0
-          }}
+          content={
+            <div style={{ whiteSpace: 'nowrap' }}>
+              <div style={{ fontWeight: 500, marginBottom: '2px' }}>
+                {att.filePath || att.fileName}
+              </div>
+              <div style={{ fontSize: '0.7rem', color: '#888' }}>
+                {att.type === 'image' ? att.mediaType : (att.extension ? `.${att.extension} file` : 'file')}
+                {' • '}
+                {att.size < 1024 ? `${att.size} bytes` : att.size < 1024 * 1024 ? `${(att.size / 1024).toFixed(1)} KB` : `${(att.size / (1024 * 1024)).toFixed(1)} MB`}
+              </div>
+            </div>
+          }
+          placement="top"
         >
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              height: '26px',
+              background: '#1a1a1a',
+              border: '1px solid #333',
+              borderRadius: '4px',
+              overflow: 'hidden',
+              flexShrink: 0
+            }}
+          >
           {att.type === 'image' ? (
-            // Image attachment - show thumbnail
-            <img
-              src={att.previewUrl}
-              alt={att.fileName || 'Attachment'}
-              style={{
-                width: '60px',
-                height: '60px',
-                objectFit: 'cover',
-                borderRadius: '6px',
-                border: '1px solid #333'
-              }}
-            />
-          ) : (
-            // File attachment - show chip/pill
-            <div
-              title={att.filePath || att.fileName}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.375rem',
-                padding: '0.375rem 0.625rem',
-                background: '#1a1a1a',
-                border: '1px solid #333',
-                borderRadius: '6px',
-                color: '#ccc',
-                fontSize: '0.8rem',
-                maxWidth: '180px'
-              }}
-            >
-              <span style={{ fontSize: '1rem' }}>{getFileIcon(att.extension)}</span>
+            // Image attachment - small thumbnail
+            <>
+              <img
+                src={att.previewUrl}
+                alt={att.fileName || 'Attachment'}
+                style={{
+                  width: '24px',
+                  height: '24px',
+                  objectFit: 'cover'
+                }}
+              />
               <span style={{
+                padding: '0 6px',
+                fontSize: '0.65rem',
+                color: '#999',
+                maxWidth: '140px',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap'
               }}>
-                {truncateFilename(att.fileName || 'file')}
+                {truncateFilename(att.fileName || 'image', 20)}
               </span>
-              <span style={{ color: '#666', fontSize: '0.7rem', flexShrink: 0 }}>
-                {att.size < 1024 ? `${att.size}B` : `${(att.size / 1024).toFixed(1)}KB`}
+            </>
+          ) : (
+            // File attachment - compact chip
+            <>
+              {/* Placeholder for icon - user will add SVGs later */}
+              <div style={{
+                minWidth: '28px',
+                height: '24px',
+                padding: '0 4px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: '#252525',
+                fontSize: '0.55rem',
+                color: '#888',
+                fontWeight: 600,
+                boxSizing: 'border-box'
+              }}>
+                {(att.extension || 'file').slice(0, 4).toUpperCase()}
+              </div>
+              <span style={{
+                padding: '0 6px',
+                fontSize: '0.65rem',
+                color: '#ccc',
+                maxWidth: '160px',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap'
+              }}>
+                {truncateFilename(att.fileName || 'file', 24)}
               </span>
-            </div>
+              <span style={{
+                fontSize: '0.55rem',
+                color: '#666',
+                paddingRight: '4px'
+              }}>
+                {att.size < 1024 ? `${att.size}B` : `${(att.size / 1024).toFixed(0)}KB`}
+              </span>
+            </>
           )}
-          {/* Remove button */}
+          {/* Integrated X button on right */}
           <button
-            onClick={() => onRemove(att.id)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove(att.id);
+            }}
             style={{
-              position: 'absolute',
-              top: '-6px',
-              right: '-6px',
-              width: '18px',
-              height: '18px',
-              borderRadius: '50%',
+              width: '24px',
+              height: '24px',
               border: 'none',
-              background: '#555',
-              color: '#fff',
+              borderLeft: '1px solid #333',
+              background: 'transparent',
+              color: '#666',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              fontSize: '12px',
-              lineHeight: 1,
-              padding: 0
+              fontSize: '14px',
+              padding: 0,
+              transition: 'color 0.15s ease, background 0.15s ease'
             }}
-            title="Remove attachment"
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = '#333';
+              e.currentTarget.style.color = '#fff';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent';
+              e.currentTarget.style.color = '#666';
+            }}
           >
             ×
           </button>
-        </div>
+          </div>
+        </Tooltip>
       ))}
     </div>
   );

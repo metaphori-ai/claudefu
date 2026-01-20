@@ -1,7 +1,6 @@
 import React, { useRef, useEffect, useState, useImperativeHandle, forwardRef, useCallback } from 'react';
 import type { Attachment } from './types';
 import { ATTACHMENT_LIMITS } from './types';
-import { AttachmentPreviewRow } from './AttachmentPreviewRow';
 import { FilePicker } from './FilePicker';
 import { ReadFileContent } from '../../../wailsjs/go/main/App';
 
@@ -22,6 +21,11 @@ interface InputAreaProps {
   isWaitingForResponse?: boolean;
   isCancelling?: boolean;
   hasPendingQuestion: boolean;
+  newSessionMode?: boolean;   // For status indicator chip
+  planningMode?: boolean;     // For status indicator chip
+  // Lifted attachment state (managed by parent, displayed in ControlButtonsRow)
+  attachments: Attachment[];
+  onAttachmentsChange: React.Dispatch<React.SetStateAction<Attachment[]>>;
 }
 
 // File picker state
@@ -65,11 +69,16 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
   isSending,
   isWaitingForResponse = false,
   isCancelling = false,
-  hasPendingQuestion
+  hasPendingQuestion,
+  newSessionMode = false,
+  planningMode = false,
+  attachments,
+  onAttachmentsChange
 }, ref) {
   // Input state lives here - isolated from parent re-renders
   const [inputValue, setInputValue] = useState('');
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  // Attachments state is lifted to parent, we use onAttachmentsChange to update
+  const setAttachments = onAttachmentsChange;
   const [isDragOver, setIsDragOver] = useState(false);
   const [filePickerState, setFilePickerState] = useState<FilePickerState | null>(null);
   // Track @file references for substitution: displayPath -> fullPath
@@ -85,8 +94,8 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
     setValue: (value: string) => setInputValue(value),
     getValue: () => inputValue,
     focus: () => textareaRef.current?.focus(),
-    clearAttachments: () => setAttachments([])
-  }), [inputValue]);
+    clearAttachments: () => onAttachmentsChange([])
+  }), [inputValue, onAttachmentsChange]);
 
   // Process and add files as attachments
   const processFiles = useCallback(async (files: FileList | File[]) => {
@@ -416,11 +425,7 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
         margin: isDragOver ? '-0.5rem' : '0'
       }}
     >
-      {/* Attachment Previews */}
-      <AttachmentPreviewRow
-        attachments={attachments}
-        onRemove={removeAttachment}
-      />
+      {/* Attachments are displayed in ControlButtonsRow (above input area) */}
 
       {/* Hidden file input */}
       <input
@@ -434,7 +439,8 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
 
       <div style={{
         display: 'flex',
-        gap: '0.75rem'
+        gap: '0.75rem',
+        alignItems: 'stretch'
       }}>
         {/* Attach button */}
         <button
@@ -443,7 +449,7 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
           title="Attach images (or drag & drop, or paste)"
           style={{
             width: '44px',
-            padding: '0.75rem 0',
+            minHeight: '100px',
             borderRadius: '8px',
             border: '1px solid #333',
             background: '#1a1a1a',
@@ -452,7 +458,9 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            transition: 'color 0.15s ease'
+            transition: 'color 0.15s ease',
+            flexShrink: 0,
+            boxSizing: 'border-box'
           }}
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -462,36 +470,79 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
           </svg>
         </button>
 
-        <textarea
-          ref={textareaRef}
-          value={inputValue}
-          onChange={handleInputChange}
-          onKeyDown={handleKeyDown}
-          onPaste={handlePaste}
-          placeholder={
-            isSending ? 'Sending...' :
-            hasPendingQuestion ? 'Claude has a question... please answer above ↑' :
-            'Type a message... (Shift+Enter for newline)'
-          }
-          disabled={isDisabled}
-          rows={1}
-          style={{
-            flex: 1,
-            padding: '0.75rem 1rem',
-            borderRadius: '8px',
-            border: '1px solid #333',
-            background: '#0a0a0a',
-            color: isSending ? '#666' : '#ccc',
-            fontSize: '0.9rem',
-            fontFamily: 'inherit',
-            outline: 'none',
-            resize: 'none',
-            lineHeight: '1.5',
-            minHeight: '44px',
-            maxHeight: '308px', // ~14 lines
-            overflowY: 'hidden'
-          }}
-        />
+        {/* Textarea wrapper for floating status chip */}
+        <div style={{ flex: 1, position: 'relative', display: 'flex' }}>
+          <textarea
+            ref={textareaRef}
+            value={inputValue}
+            onChange={handleInputChange}
+            onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
+            placeholder={
+              isSending ? 'Sending...' :
+              hasPendingQuestion ? 'Claude has a question... please answer above ↑' :
+              'Type a message... (Shift+Enter for newline)'
+            }
+            disabled={isDisabled}
+            rows={1}
+            style={{
+              width: '100%',
+              padding: '0.75rem 1rem',
+              borderRadius: '8px',
+              border: '1px solid #333',
+              background: '#0a0a0a',
+              color: isSending ? '#666' : '#ccc',
+              fontSize: '0.85rem',
+              fontFamily: 'inherit',
+              outline: 'none',
+              resize: 'none',
+              lineHeight: '1.5',
+              minHeight: '100px',  // ~5 lines
+              maxHeight: '308px', // ~14 lines
+              overflowY: 'hidden',
+              boxSizing: 'border-box',
+              flex: 1
+            }}
+          />
+          {/* Floating status chip - bottom right of textarea */}
+          {(newSessionMode || planningMode) && (
+            <div style={{
+              position: 'absolute',
+              bottom: '6px',
+              right: '8px',
+              display: 'flex',
+              gap: '6px',
+              alignItems: 'center',
+              padding: '2px 8px',
+              background: 'rgba(10, 10, 10, 0.9)',
+              borderRadius: '4px',
+              border: '1px solid #333',
+              fontSize: '0.65rem',
+              color: '#d97757',
+              pointerEvents: 'none'
+            }}>
+              {newSessionMode && (
+                <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                  <span style={{ fontSize: '1em' }}>+</span> Create New Session
+                </span>
+              )}
+              {newSessionMode && planningMode && (
+                <span style={{ color: '#444' }}>•</span>
+              )}
+              {planningMode && (
+                <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+                    <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
+                    <line x1="9" y1="12" x2="15" y2="12" />
+                    <line x1="9" y1="16" x2="15" y2="16" />
+                  </svg>
+                  Planning Mode
+                </span>
+              )}
+            </div>
+          )}
+        </div>
         {showStopButton ? (
           <button
             onClick={onCancel}
@@ -499,7 +550,7 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
             title="Stop Claude (ESC)"
             style={{
               width: '70px',
-              padding: '0.75rem 0',
+              minHeight: '100px',
               borderRadius: '8px',
               border: 'none',
               background: isCancelling ? '#444' : '#ef4444',
@@ -510,7 +561,9 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: '0.25rem'
+              gap: '0.25rem',
+              flexShrink: 0,
+              boxSizing: 'border-box'
             }}
           >
             {isCancelling ? (
@@ -537,7 +590,7 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
             disabled={isSendDisabled}
             style={{
               width: '70px',
-              padding: '0.75rem 0',
+              minHeight: '100px',
               borderRadius: '8px',
               border: 'none',
               background: isSendDisabled ? '#333' : '#d97757',
@@ -547,7 +600,9 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
               transition: 'background 0.15s ease',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center'
+              justifyContent: 'center',
+              flexShrink: 0,
+              boxSizing: 'border-box'
             }}
           >
             {isSending ? (

@@ -7,7 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.3.7] - 2025-01-19
+## [0.3.8] - 2026-01-19
+
+### Added
+- **FloatingUI Tooltips** - Instant hover tooltips (~100ms) on control buttons and file cards
+  - New `Tooltip` component using `@floating-ui/react` with offset, flip, shift, arrow middleware
+  - Control buttons (New Session, Planning Mode, View Plan, Permissions, CLAUDE.md) now show instant tooltips
+  - Active toggle states show "(ON)" in orange within tooltip
+  - File attachment cards show full path, file type, and formatted size on hover
+- **Status Indicator Chip** - Floating chip shows active toggle modes
+  - Appears at bottom-right of textarea when New Session or Planning Mode is active
+  - Shows "+ Create New Session" and/or "📋 Planning Mode" with clipboard SVG icon
+  - Semi-transparent dark background with orange text
+
+### Changed
+- **Attachment Preview Location** - File/image attachments now render in ControlButtonsRow spacer
+  - Moved from above textarea to natural space between left and right button groups
+  - Attachment state lifted from InputArea to ChatView for cross-component access
+- **File Card Design** - Redesigned attachment preview cards
+  - 26px height matching control button row
+  - 4-character extension badges (YAML, JSON, SVML, TOML) instead of 3
+  - Integrated X remove button on right edge (not floating bubble)
+  - Wider filename display area (160px max for files, 140px for images)
+  - Smaller fonts with compact layout
+- **Input Area Alignment** - Attach button, textarea, and send button now match heights
+  - All elements use `minHeight: 100px` with `boxSizing: border-box`
+  - Flex container uses `alignItems: stretch` for consistent sizing
+- **Textarea Styling** - Refined textarea appearance
+  - Font size reduced from 0.9rem to 0.85rem
+  - ~5 lines visible by default (100px minHeight)
+
+## [0.3.7] - 2026-01-19
 
 ### Added
 - **@file Path References** - Type `@filename` in prompt to insert absolute file path
