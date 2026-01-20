@@ -49,11 +49,13 @@ npm install -g @anthropic-ai/claude-code
 
 ### Reinstalling 
 
+```bash
 rm -rf /Applications/ClaudeFu.app
 brew uninstall --cask claudefu
 brew untap metaphori-ai/claudefu
 brew tap metaphori-ai/claudefu
 brew install --cask claudefu
+```
 
 ---
 
