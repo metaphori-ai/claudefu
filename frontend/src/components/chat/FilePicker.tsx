@@ -99,6 +99,7 @@ export function FilePicker({
   const [error, setError] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<number>();
+  const requestIdRef = useRef(0); // Track request order to handle race conditions
 
   // Floating UI setup for smart positioning
   const { refs, floatingStyles } = useFloating({
@@ -118,26 +119,36 @@ export function FilePicker({
     }
   }, [anchorRef, refs]);
 
-  // Fetch files with debounce
+  // Fetch files with debounce (using request counter to handle race conditions)
   useEffect(() => {
     if (debounceRef.current) {
       window.clearTimeout(debounceRef.current);
     }
 
+    // Increment request ID - only the latest request should update state
+    const thisRequestId = ++requestIdRef.current;
+
     debounceRef.current = window.setTimeout(async () => {
+      console.log('[FilePicker] Fetching files for query:', JSON.stringify(query), 'requestId:', thisRequestId);
       setIsLoading(true);
       setError(null);
 
       try {
         const results = await ListFiles(agentId, query, 100);
-        setFiles(results || []);
-        setSelectedIndex(0);
+        console.log('[FilePicker] Got results:', results?.length, 'for query:', JSON.stringify(query), 'requestId:', thisRequestId, 'current:', requestIdRef.current);
+        // Only update if this is still the latest request (prevents race condition)
+        if (requestIdRef.current === thisRequestId) {
+          setFiles(results || []);
+          setSelectedIndex(0);
+          setIsLoading(false);
+        }
       } catch (err) {
-        console.error('[FilePicker] ListFiles error:', err);
-        setError('Failed to load files');
-        setFiles([]);
-      } finally {
-        setIsLoading(false);
+        console.error('[FilePicker] ListFiles error for query:', JSON.stringify(query), 'error:', err);
+        if (requestIdRef.current === thisRequestId) {
+          setError('Failed to load files');
+          setFiles([]);
+          setIsLoading(false);
+        }
       }
     }, 150);
 

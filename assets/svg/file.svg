@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
+
+<svg
+   width="612.66663"
+   height="740"
+   viewBox="0 0 18.379999 22.2"
+   id="Layer_1"
+   data-name="Layer 1"
+   version="1.1"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs1">
+    <style
+       id="style1">.cls-1{fill:none;stroke:#020202;stroke-miterlimit:10;stroke-width:1.91px;}</style>
+  </defs>
+  <polygon
+     class="cls-1"
+     points="15.82,1.5 20.59,6.27 20.59,22.5 3.41,22.5 3.41,1.5 "
+     id="polygon2"
+     style="stroke-width:1.2;stroke-linecap:butt;stroke-linejoin:round;stroke-dasharray:none"
+     transform="translate(-2.8099999,-0.89999998)" />
+  <polygon
+     class="cls-1"
+     points="15.82,1.5 20.59,6.27 20.59,7.23 14.86,7.23 14.86,1.5 "
+     id="polygon3"
+     style="stroke-width:1.2;stroke-linejoin:round;stroke-dasharray:none"
+     transform="translate(-2.8099999,-0.89999998)" />
+</svg>

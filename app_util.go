@@ -1,12 +1,16 @@
 package main
 
 import (
+	_ "embed"
 	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 )
+
+//go:embed VERSION
+var embeddedVersion string
 
 // =============================================================================
 // UTILITY METHODS (Bound to frontend)
@@ -43,14 +47,7 @@ func (a *App) ReadImageAsDataURL(filePath string) (string, error) {
 // VERSION METHODS (Bound to frontend)
 // =============================================================================
 
-// GetVersion returns the application version from the VERSION file
+// GetVersion returns the application version (embedded at build time)
 func (a *App) GetVersion() string {
-	// Try to read embedded version file, fall back to reading from disk
-	versionFile := "VERSION"
-	data, err := os.ReadFile(versionFile)
-	if err != nil {
-		// Try relative to executable
-		return "0.0.0"
-	}
-	return strings.TrimSpace(string(data))
+	return strings.TrimSpace(embeddedVersion)
 }

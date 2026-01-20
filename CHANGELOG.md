@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.11] - 2026-01-19
+
+### Fixed
+- **Version Display on Fresh Install** - Version now shows correctly (was showing "v0.0.0")
+  - VERSION file now embedded into binary using Go's `//go:embed` directive
+  - Works regardless of working directory when app is launched
+- **First Launch Crash** - Fixed "null is not an object (evaluating 'Ao.length')" error
+  - Go nil slice was serializing to JSON `null` instead of `[]`
+  - Changed `var workspaces []WorkspaceSummary` to `workspaces := []WorkspaceSummary{}`
+- **First Launch Workspace Creation** - Auto-creates "My Workspace" on first launch
+  - Previously, adding an agent failed with "no workspace loaded" on fresh install
+  - Now creates default workspace when no workspaces exist
+
+### Changed
+- **Type While Waiting** - Can now type next message while Claude is thinking
+  - Diagonal stripe background pattern on textarea when sending
+  - Random verb placeholder: "Claude is Gallivanting, Wibbling and Pondering..."
+  - Dancing Clawd watermark (60x60) in center of textarea at 25% opacity
+- **Control Button Hover Effects** - Refined hover styling for icon buttons
+  - Permissions and CLAUDE.md buttons now glow orange on hover
+  - Uses CSS `drop-shadow` filter for consistent glow effect
+
+### Fixed
+- **FilePicker Race Condition** - Fixed file list getting stuck when typing quickly
+  - Request counter pattern ensures only latest search updates state
+  - Fixed duplicate key React warning from overlapping search roots
+  - Results now sorted by relevance (filename matches first, shallower paths prioritized)
+
 ## [0.3.10] - 2026-01-19
 
 ### Fixed

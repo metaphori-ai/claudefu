@@ -194,7 +194,7 @@ func (m *Manager) GetAllWorkspaces() ([]WorkspaceSummary, error) {
 		return nil, err
 	}
 
-	var workspaces []WorkspaceSummary
+	workspaces := []WorkspaceSummary{}  // Initialize as empty slice, not nil (nil becomes JSON null)
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
 			continue

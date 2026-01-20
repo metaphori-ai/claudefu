@@ -376,7 +376,24 @@ function AppContent() {
           console.log('Failed to load workspace');
         }
       } else {
-        console.log('No workspaces found, starting fresh');
+        // First launch - create a default workspace
+        console.log('No workspaces found, creating default workspace');
+        try {
+          const ws = await CreateWorkspace('My Workspace');
+          if (ws) {
+            await SwitchWorkspace(ws.id);
+            setWorkspace({
+              id: ws.id,
+              name: ws.name || 'My Workspace',
+              agents: [],
+              mcpConfig: ws.mcpConfig,
+            });
+            const updatedWorkspaces = await GetAllWorkspaces();
+            setAllWorkspaces(updatedWorkspaces || []);
+          }
+        } catch (e) {
+          console.log('Failed to create default workspace:', e);
+        }
       }
 
       // Set pending view - will transition after splash minimum time

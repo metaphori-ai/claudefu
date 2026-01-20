@@ -569,6 +569,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
           onOpenClaudeSettings={() => setClaudeSettingsOpen(true)}
           attachments={attachments}
           onAttachmentRemove={(id) => setAttachments(prev => prev.filter(att => att.id !== id))}
+          isSending={isSending}
         />
         <InputArea
           ref={inputAreaRef}

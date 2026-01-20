@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -104,8 +105,9 @@ func (a *App) ListFiles(agentID string, query string, maxResults int) ([]FileInf
 	// Normalize query for case-insensitive matching
 	queryLower := strings.ToLower(query)
 
-	// Collect results from all roots
+	// Collect results from all roots (track seen paths to avoid duplicates)
 	results := []FileInfo{}
+	seenPaths := make(map[string]bool)
 
 	for _, root := range roots {
 		if len(results) >= maxResults {
@@ -143,6 +145,12 @@ func (a *App) ListFiles(agentID string, query string, maxResults int) ([]FileInf
 				return nil
 			}
 
+			// Skip if we've already seen this path (from another root)
+			if seenPaths[path] {
+				return nil
+			}
+			seenPaths[path] = true
+
 			// Get file info
 			info, err := d.Info()
 			if err != nil {
@@ -171,6 +179,34 @@ func (a *App) ListFiles(agentID string, query string, maxResults int) ([]FileInf
 			fmt.Printf("[ListFiles] Walk error for %s: %v\n", root, err)
 		}
 	}
+
+	// Sort results: prioritize shallower paths and filename matches
+	sort.Slice(results, func(i, j int) bool {
+		// Count depth (number of path separators)
+		depthI := strings.Count(results[i].RelPath, string(filepath.Separator))
+		depthJ := strings.Count(results[j].RelPath, string(filepath.Separator))
+
+		// If query provided, check if it matches filename (not just path)
+		if queryLower != "" {
+			matchesNameI := strings.Contains(strings.ToLower(results[i].Name), queryLower)
+			matchesNameJ := strings.Contains(strings.ToLower(results[j].Name), queryLower)
+			// Filename matches come first
+			if matchesNameI && !matchesNameJ {
+				return true
+			}
+			if !matchesNameI && matchesNameJ {
+				return false
+			}
+		}
+
+		// Shallower paths come first
+		if depthI != depthJ {
+			return depthI < depthJ
+		}
+
+		// Alphabetical as tiebreaker
+		return results[i].RelPath < results[j].RelPath
+	})
 
 	return results, nil
 }

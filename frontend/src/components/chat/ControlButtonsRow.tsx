@@ -3,6 +3,51 @@ import { Tooltip } from '../Tooltip';
 import { AttachmentPreviewRow } from './AttachmentPreviewRow';
 import type { Attachment } from './types';
 
+// CSS for button hover effects - avoids issues with Tooltip's FloatingUI handlers
+const controlButtonStyles = `
+  .control-toggle-btn {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.15s ease;
+  }
+  .control-toggle-btn:not(.active):hover {
+    color: #eb815e !important;
+  }
+
+  /* Icon buttons (PNG images) - dimmer default, brighter on hover */
+  .control-icon-btn {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .control-icon-btn img {
+    transition: filter 0.15s ease, opacity 0.15s ease;
+  }
+  /* View Plan & Permissions - glow on hover */
+  .control-icon-btn.orange-icon img {
+    transition: filter 0.15s ease;
+  }
+  .control-icon-btn.orange-icon:hover img {
+    filter: drop-shadow(0 0 3px rgba(217, 119, 87, 0.9)) drop-shadow(0 0 6px rgba(217, 119, 87, 0.6));
+  }
+  /* CLAUDE.md avatar - glow on hover */
+  .control-icon-btn.avatar-icon img {
+    transition: filter 0.15s ease;
+  }
+  .control-icon-btn.avatar-icon:hover img {
+    filter: drop-shadow(0 0 3px rgba(217, 119, 87, 0.9)) drop-shadow(0 0 6px rgba(217, 119, 87, 0.6));
+  }
+`;
+
 interface ControlButtonsRowProps {
   newSessionMode: boolean;
   onNewSessionModeToggle: () => void;
@@ -15,6 +60,8 @@ interface ControlButtonsRowProps {
   // Attachments to show in the spacer area
   attachments?: Attachment[];
   onAttachmentRemove?: (id: string) => void;
+  // Show dancing Clawd when Claude is thinking
+  isSending?: boolean;
 }
 
 export function ControlButtonsRow({
@@ -27,7 +74,8 @@ export function ControlButtonsRow({
   onOpenPermissions,
   onOpenClaudeSettings,
   attachments = [],
-  onAttachmentRemove
+  onAttachmentRemove,
+  isSending = false
 }: ControlButtonsRowProps) {
   return (
     <div style={{
@@ -37,23 +85,15 @@ export function ControlButtonsRow({
       alignItems: 'center',
       paddingRight: 'calc(75px + 0.75rem)', // Align with textarea right edge
     }}>
+      {/* Inject CSS for button hover - avoids FloatingUI event handler conflicts */}
+      <style>{controlButtonStyles}</style>
+
       {/* New Session */}
       <Tooltip content={<>New Session {newSessionMode && <span style={{ color: '#d97757' }}>(ON)</span>}</>}>
         <button
           onClick={onNewSessionModeToggle}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            color: newSessionMode ? '#d97757' : '#666',
-            cursor: 'pointer',
-            padding: '4px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            transition: 'color 0.15s ease'
-          }}
-          onMouseEnter={(e) => { if (!newSessionMode) e.currentTarget.style.color = '#eb815e'; }}
-          onMouseLeave={(e) => { if (!newSessionMode) e.currentTarget.style.color = '#666'; }}
+          className={`control-toggle-btn ${newSessionMode ? 'active' : ''}`}
+          style={{ color: newSessionMode ? '#d97757' : '#666' }}
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <line x1="12" y1="5" x2="12" y2="19" />
@@ -66,19 +106,8 @@ export function ControlButtonsRow({
       <Tooltip content={<>Planning Mode {planningMode && <span style={{ color: '#d97757' }}>(ON)</span>}</>}>
         <button
           onClick={onPlanningModeToggle}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            color: planningMode ? '#d97757' : '#666',
-            cursor: 'pointer',
-            padding: '4px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            transition: 'color 0.15s ease'
-          }}
-          onMouseEnter={(e) => { if (!planningMode) e.currentTarget.style.color = '#eb815e'; }}
-          onMouseLeave={(e) => { if (!planningMode) e.currentTarget.style.color = '#666'; }}
+          className={`control-toggle-btn ${planningMode ? 'active' : ''}`}
+          style={{ color: planningMode ? '#d97757' : '#666' }}
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
@@ -102,82 +131,29 @@ export function ControlButtonsRow({
       {/* Planning File (only visible when plan exists) */}
       {latestPlanFile && (
         <Tooltip content="View Plan">
-          <button
-            onClick={onViewPlan}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              cursor: 'pointer',
-              padding: '4px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}
-          >
-            <img
-              src="/assets/view-plan.png"
-              width="18"
-              height="18"
-              alt="View Plan"
-              style={{
-                filter: 'invert(52%) sepia(45%) saturate(500%) hue-rotate(336deg) brightness(92%) contrast(88%)',
-                transition: 'filter 0.15s ease'
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.filter = 'invert(62%) sepia(52%) saturate(600%) hue-rotate(336deg) brightness(95%) contrast(90%)'}
-              onMouseLeave={(e) => e.currentTarget.style.filter = 'invert(52%) sepia(45%) saturate(500%) hue-rotate(336deg) brightness(92%) contrast(88%)'}
-            />
+          <button onClick={onViewPlan} className="control-icon-btn orange-icon">
+            <img src="/assets/view-plan.png" width="18" height="18" alt="View Plan" />
           </button>
         </Tooltip>
       )}
 
       {/* Permissions */}
       <Tooltip content="Claude Permissions">
-        <button
-          onClick={onOpenPermissions}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            cursor: 'pointer',
-            padding: '4px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}
-        >
-          <img
-            src="/assets/view-permissions.png"
-            width="18"
-            height="18"
-            alt="Permissions"
-            style={{
-              filter: 'invert(52%) sepia(45%) saturate(500%) hue-rotate(336deg) brightness(92%) contrast(88%)',
-              transition: 'filter 0.15s ease'
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.filter = 'invert(62%) sepia(52%) saturate(600%) hue-rotate(336deg) brightness(95%) contrast(90%)'}
-            onMouseLeave={(e) => e.currentTarget.style.filter = 'invert(52%) sepia(45%) saturate(500%) hue-rotate(336deg) brightness(92%) contrast(88%)'}
-          />
+        <button onClick={onOpenPermissions} className="control-icon-btn orange-icon">
+          <img src="/assets/view-permissions.png" width="18" height="18" alt="Permissions" />
         </button>
       </Tooltip>
 
-      {/* CLAUDE.md - far right */}
+      {/* CLAUDE.md - far right (dances when thinking!) */}
       <Tooltip content="CLAUDE.md">
-        <button
-          onClick={onOpenClaudeSettings}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            cursor: 'pointer',
-            padding: '4px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            opacity: 0.7,
-            transition: 'opacity 0.15s ease'
-          }}
-          onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
-          onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'}
-        >
-          <img src="/assets/clawd.png" width="18" height="18" alt="CLAUDE.md" style={{ borderRadius: '2px' }} />
+        <button onClick={onOpenClaudeSettings} className="control-icon-btn avatar-icon">
+          <img
+            src={isSending ? "/assets/clawd-dance.gif" : "/assets/clawd.png"}
+            width="18"
+            height="18"
+            alt="CLAUDE.md"
+            style={{ borderRadius: '2px' }}
+          />
         </button>
       </Tooltip>
     </div>

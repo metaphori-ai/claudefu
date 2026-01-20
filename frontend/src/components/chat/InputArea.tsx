@@ -1,8 +1,32 @@
-import React, { useRef, useEffect, useState, useImperativeHandle, forwardRef, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useImperativeHandle, forwardRef, useCallback, useMemo } from 'react';
 import type { Attachment } from './types';
 import { ATTACHMENT_LIMITS } from './types';
 import { FilePicker } from './FilePicker';
 import { ReadFileContent } from '../../../wailsjs/go/main/App';
+
+// Fun verbs for the "Claude is thinking" placeholder
+const CLAUDE_VERBS = [
+  'Accomplishing', 'Actioning', 'Actualizing', 'Baking', 'Blipping', 'Blooping',
+  'Bloviating', 'Booping', 'Brewing', 'Calculating', 'Cerebrating', 'Churning',
+  'Clauding', 'Coalescing', 'Cogitating', 'Combobulating', 'Computing', 'Concocting',
+  'Conjuring', 'Considering', 'Cooking', 'Crafting', 'Creating', 'Crunching',
+  'Deciphering', 'Deliberating', 'Determining', 'Doing', 'Effecting', 'Elucidating',
+  'Envisaging', 'Finagling', 'Flibbertigibbeting', 'Forging', 'Forming', 'Furling',
+  'Gallivanting', 'Generating', 'Germinating', 'Hatching', 'Herding', 'Honking',
+  'Hustling', 'Ideating', 'Inferring', 'Jiving', 'Manifesting', 'Marinating',
+  'Meandering', 'Moseying', 'Mulling', 'Mustering', 'Musing', 'Noodling', 'Percolating',
+  'Perusing', 'Philosophising', 'Pondering', 'Pontificating', 'Processing', 'Puttering',
+  'Puzzling', 'Reticulating', 'Ruminating', 'Schlepping', 'Shucking', 'Simmering',
+  'Skewing', 'Smooshing', 'Sparkling', 'Spinning', 'Stewing', 'Sussing', 'Synthesizing',
+  'Thinking', 'Transmuting', 'Vibing', 'Wandering', 'Whatchamacalliting', 'Whatevering',
+  'Wibbling', 'Working'
+];
+
+// Get 3 unique random verbs
+function getRandomVerbs(): [string, string, string] {
+  const shuffled = [...CLAUDE_VERBS].sort(() => Math.random() - 0.5);
+  return [shuffled[0], shuffled[1], shuffled[2]];
+}
 
 // Imperative handle interface for parent to control input
 export interface InputAreaHandle {
@@ -81,6 +105,8 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
   const setAttachments = onAttachmentsChange;
   const [isDragOver, setIsDragOver] = useState(false);
   const [filePickerState, setFilePickerState] = useState<FilePickerState | null>(null);
+  // Random verbs for "Claude is thinking" placeholder
+  const [thinkingVerbs, setThinkingVerbs] = useState<[string, string, string]>(getRandomVerbs);
   // Track @file references for substitution: displayPath -> fullPath
   const [filePathMap, setFilePathMap] = useState<Map<string, string>>(new Map());
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -378,6 +404,13 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
     adjustTextareaHeight();
   }, [inputValue]);
 
+  // Generate new random verbs when sending starts
+  useEffect(() => {
+    if (isSending) {
+      setThinkingVerbs(getRandomVerbs());
+    }
+  }, [isSending]);
+
   // ESC and Ctrl+C handler for cancelling Claude response
   // Use isSending since SendMessage blocks until Claude finishes
   useEffect(() => {
@@ -406,10 +439,22 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
   }, [isSending, onCancel]);
 
-  const isDisabled = isSending || hasPendingQuestion;
+  // Only disable for pending questions - allow typing while Claude is thinking
+  const isDisabled = hasPendingQuestion;
   const isSendDisabled = isSending || (!inputValue.trim() && attachments.length === 0) || hasPendingQuestion;
   // Show Stop when isSending is true - SendMessage blocks until Claude finishes
   const showStopButton = isSending;
+
+  // Diagonal stripe pattern for "waiting" state
+  const waitingBackground = isSending
+    ? `repeating-linear-gradient(
+        -45deg,
+        #0a0a0a,
+        #0a0a0a 8px,
+        #0f0f0f 8px,
+        #0f0f0f 16px
+      )`
+    : '#0a0a0a';
 
   return (
     <div
@@ -479,7 +524,7 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             placeholder={
-              isSending ? 'Sending...' :
+              isSending ? `Claude is ${thinkingVerbs[0]}, ${thinkingVerbs[1]} and ${thinkingVerbs[2]}... type your next message!` :
               hasPendingQuestion ? 'Claude has a question... please answer above ↑' :
               'Type a message... (Shift+Enter for newline)'
             }
@@ -489,9 +534,9 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
               width: '100%',
               padding: '0.75rem 1rem',
               borderRadius: '8px',
-              border: '1px solid #333',
-              background: '#0a0a0a',
-              color: isSending ? '#666' : '#ccc',
+              border: isSending ? '1px solid #444' : '1px solid #333',
+              background: waitingBackground,
+              color: '#ccc',
               fontSize: '0.85rem',
               fontFamily: 'inherit',
               outline: 'none',
@@ -504,6 +549,26 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
               flex: 1
             }}
           />
+          {/* Dancing Clawd watermark - centered in textarea while thinking */}
+          {isSending && (
+            <div style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              opacity: 0.25,
+              pointerEvents: 'none',
+              zIndex: 1
+            }}>
+              <img
+                src="/assets/clawd-dance.gif"
+                width="60"
+                height="60"
+                alt=""
+                style={{ display: 'block' }}
+              />
+            </div>
+          )}
           {/* Floating status chip - bottom right of textarea */}
           {(newSessionMode || planningMode) && (
             <div style={{
