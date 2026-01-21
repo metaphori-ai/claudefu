@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.15] - 2026-01-20
+
+### Added
+- **Update Notifications** - App checks for updates on startup
+  - Checks GitHub Releases API 3 seconds after startup
+  - Shows toast notification when newer version available
+  - Displays `brew upgrade --cask claudefu` command for easy upgrade
+  - Click notification to open GitHub release page
+  - "What's New" expandable section shows release notes in notifications dialog
+
+### Technical
+- New `app_updates.go` with `CheckForUpdates()` bound method
+- Semantic version comparison for update detection
+- Release notes fetched from GitHub API and displayed in UI
+
 ## [0.3.14] - 2026-01-20
 
 ### Added

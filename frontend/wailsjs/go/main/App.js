@@ -26,6 +26,10 @@ export function CancelSession(arg1, arg2) {
   return window['go']['main']['App']['CancelSession'](arg1, arg2);
 }
 
+export function CheckForUpdates() {
+  return window['go']['main']['App']['CheckForUpdates']();
+}
+
 export function ClearAPIKey() {
   return window['go']['main']['App']['ClearAPIKey']();
 }

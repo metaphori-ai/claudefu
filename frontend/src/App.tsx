@@ -28,7 +28,8 @@ import {
   SwitchWorkspace,
   GetSessions,
   AddAgent,
-  GetVersion
+  GetVersion,
+  CheckForUpdates
 } from "../wailsjs/go/main/App";
 import { settings as settingsModel } from "../wailsjs/go/models";
 import { EventsOn, BrowserOpenURL } from "../wailsjs/runtime/runtime";
@@ -80,6 +81,8 @@ function AppContent() {
     type: 'info' | 'success' | 'warning' | 'question';
     message: string;
     title?: string;
+    releaseUrl?: string;  // For update notifications
+    releaseNotes?: string;  // Changelog/what's new
   } | null>(null);
   const [notifications, setNotifications] = useState<Array<{
     id: string;
@@ -89,6 +92,8 @@ function AppContent() {
     fromAgent?: string;
     timestamp: Date;
     read: boolean;
+    releaseUrl?: string;  // For update notifications
+    releaseNotes?: string;  // Changelog/what's new
   }>>([]);
   const [notificationsDialogOpen, setNotificationsDialogOpen] = useState(false);
 
@@ -225,6 +230,50 @@ function AppContent() {
     return () => {
       unsubscribe();
     };
+  }, []);
+
+  // Check for updates on startup (delayed to not block UI)
+  useEffect(() => {
+    const checkUpdates = async () => {
+      try {
+        // Wait a few seconds after startup before checking
+        await new Promise(resolve => setTimeout(resolve, 3000));
+
+        const updateInfo = await CheckForUpdates();
+        if (updateInfo?.available) {
+          // Extract first meaningful line from release notes for toast
+          const notesPreview = updateInfo.releaseNotes
+            ?.split('\n')
+            .find(line => line.trim() && !line.startsWith('#') && !line.startsWith('*'))
+            ?.substring(0, 80) || '';
+
+          setNotification({
+            type: 'info',
+            title: `Update Available: v${updateInfo.latestVersion}`,
+            message: `Run: brew upgrade --cask claudefu`,
+            releaseUrl: updateInfo.releaseUrl,
+            releaseNotes: updateInfo.releaseNotes
+          });
+          setNotifications(prev => [{
+            id: `update-${Date.now()}`,
+            type: 'info' as const,
+            title: `Update Available: v${updateInfo.latestVersion}`,
+            message: `You're on v${updateInfo.currentVersion}.\n\nUpgrade: brew upgrade --cask claudefu`,
+            timestamp: new Date(),
+            read: false,
+            releaseUrl: updateInfo.releaseUrl,
+            releaseNotes: updateInfo.releaseNotes
+          }, ...prev]);
+          // Keep toast longer for updates
+          setTimeout(() => setNotification(null), 8000);
+        }
+      } catch (err) {
+        // Silently ignore update check failures
+        console.debug('Update check failed:', err);
+      }
+    };
+
+    checkUpdates();
   }, []);
 
   // Keyboard shortcuts
@@ -1134,13 +1183,22 @@ function AppContent() {
             notifications.map((notif) => (
               <div
                 key={notif.id}
+                onClick={() => {
+                  if (notif.releaseUrl) {
+                    BrowserOpenURL(notif.releaseUrl);
+                  }
+                }}
                 style={{
                   padding: '0.75rem 1rem',
                   borderBottom: '1px solid #333',
                   display: 'flex',
                   gap: '0.75rem',
-                  alignItems: 'flex-start'
+                  alignItems: 'flex-start',
+                  cursor: notif.releaseUrl ? 'pointer' : 'default',
+                  transition: 'background 0.2s'
                 }}
+                onMouseEnter={(e) => notif.releaseUrl && (e.currentTarget.style.background = '#2a2a2a')}
+                onMouseLeave={(e) => notif.releaseUrl && (e.currentTarget.style.background = 'transparent')}
               >
                 <div style={{
                   color: notif.type === 'success' ? '#22c55e' :
@@ -1172,9 +1230,39 @@ function AppContent() {
                       {notif.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
                   </div>
-                  <div style={{ color: '#aaa', fontSize: '0.85rem', wordBreak: 'break-word' }}>
+                  <div style={{ color: '#aaa', fontSize: '0.85rem', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
                     {notif.message}
+                    {notif.releaseUrl && (
+                      <span style={{ color: '#d97757', marginLeft: '0.5rem' }}>
+                        View Release →
+                      </span>
+                    )}
                   </div>
+                  {notif.releaseNotes && (
+                    <details style={{ marginTop: '0.5rem' }}>
+                      <summary style={{
+                        color: '#888',
+                        fontSize: '0.8rem',
+                        cursor: 'pointer',
+                        userSelect: 'none'
+                      }}>
+                        What's New
+                      </summary>
+                      <div style={{
+                        marginTop: '0.5rem',
+                        padding: '0.5rem',
+                        background: '#1a1a1a',
+                        borderRadius: '6px',
+                        fontSize: '0.8rem',
+                        color: '#999',
+                        maxHeight: '150px',
+                        overflowY: 'auto',
+                        whiteSpace: 'pre-wrap'
+                      }}>
+                        {notif.releaseNotes}
+                      </div>
+                    </details>
+                  )}
                 </div>
                 <button
                   onClick={() => setNotifications(prev => prev.filter(n => n.id !== notif.id))}
@@ -1201,6 +1289,12 @@ function AppContent() {
       {/* MCP Notification Toast */}
       {notification && (
         <div
+          onClick={() => {
+            if (notification.releaseUrl) {
+              BrowserOpenURL(notification.releaseUrl);
+              setNotification(null);
+            }
+          }}
           style={{
             position: 'fixed',
             top: '2rem',
@@ -1220,7 +1314,8 @@ function AppContent() {
             zIndex: 200,
             display: 'flex',
             alignItems: 'flex-start',
-            gap: '0.75rem'
+            gap: '0.75rem',
+            cursor: notification.releaseUrl ? 'pointer' : 'default'
           }}
         >
           <div style={{

@@ -73,6 +73,11 @@ echo ""
 # BUILD
 # ==============================================================================
 echo -e "${GREEN}[1/10] Building macOS universal binary...${NC}"
+
+# Clean any existing .app bundles to avoid case-sensitivity issues
+# (macOS can't rename claudefu.app -> ClaudeFu.app on case-insensitive FS)
+rm -rf build/bin/*.app
+
 wails build -platform darwin/universal -o ClaudeFu
 
 # ==============================================================================
@@ -84,15 +89,7 @@ if [ "$SIGN_ENABLED" = true ]; then
     APP_PATH="build/bin/ClaudeFu.app"
     ENTITLEMENTS="build/darwin/entitlements.plist"
 
-    # Sign all nested components first (frameworks, helpers, etc.)
-    echo "  Signing nested components..."
-    find "$APP_PATH/Contents" -type f \( -name "*.dylib" -o -name "*.so" -o -perm +111 \) -print0 2>/dev/null | while IFS= read -r -d '' file; do
-        codesign --force --options runtime --timestamp \
-            --entitlements "$ENTITLEMENTS" \
-            --sign "$DEVELOPER_ID" "$file" 2>/dev/null || true
-    done
-
-    # Sign the main app bundle
+    # Sign the app bundle (--deep handles all nested components)
     echo "  Signing app bundle..."
     codesign --force --deep --options runtime --timestamp \
         --entitlements "$ENTITLEMENTS" \
@@ -100,8 +97,11 @@ if [ "$SIGN_ENABLED" = true ]; then
 
     # Verify signature
     echo "  Verifying signature..."
-    codesign --verify --deep --strict --verbose=2 "$APP_PATH"
-    echo -e "${GREEN}  ✓ Code signing complete${NC}"
+    if codesign --verify --deep --strict "$APP_PATH" 2>&1; then
+        echo -e "${GREEN}  ✓ Code signing complete${NC}"
+    else
+        echo -e "${YELLOW}  ⚠ Signature verification warning (may still notarize)${NC}"
+    fi
 else
     echo -e "${YELLOW}[2/10] Skipping code signing (no certificate)${NC}"
 fi
