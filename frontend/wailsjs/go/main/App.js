@@ -138,6 +138,10 @@ export function GetMCPToolInstructions() {
   return window['go']['main']['App']['GetMCPToolInstructions']();
 }
 
+export function GetMenu() {
+  return window['go']['main']['App']['GetMenu']();
+}
+
 export function GetPendingMCPQuestions() {
   return window['go']['main']['App']['GetPendingMCPQuestions']();
 }
@@ -212,6 +216,10 @@ export function ReadImageAsDataURL(arg1) {
 
 export function ReadPlanFile(arg1) {
   return window['go']['main']['App']['ReadPlanFile'](arg1);
+}
+
+export function RefreshMenu() {
+  return window['go']['main']['App']['RefreshMenu']();
 }
 
 export function RefreshSessions(arg1) {

@@ -5,6 +5,7 @@ import {main} from '../models';
 import {auth} from '../models';
 import {types} from '../models';
 import {mcpserver} from '../models';
+import {menu} from '../models';
 import {settings} from '../models';
 
 export function AddAgent(arg1:string,arg2:string):Promise<workspace.Agent>;
@@ -75,6 +76,8 @@ export function GetMCPToolAvailability():Promise<mcpserver.ToolAvailability>;
 
 export function GetMCPToolInstructions():Promise<mcpserver.ToolInstructions>;
 
+export function GetMenu():Promise<menu.Menu>;
+
 export function GetPendingMCPQuestions():Promise<Array<main.MCPPendingQuestion>>;
 
 export function GetPlanFilePath(arg1:string,arg2:string):Promise<string>;
@@ -112,6 +115,8 @@ export function ReadFileContent(arg1:string):Promise<string>;
 export function ReadImageAsDataURL(arg1:string):Promise<string>;
 
 export function ReadPlanFile(arg1:string):Promise<string>;
+
+export function RefreshMenu():Promise<void>;
 
 export function RefreshSessions(arg1:string):Promise<Array<types.Session>>;
 

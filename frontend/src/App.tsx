@@ -232,6 +232,72 @@ function AppContent() {
     };
   }, []);
 
+  // Subscribe to menu events from native macOS menu
+  useEffect(() => {
+    const handlers = [
+      EventsOn('menu:about', () => {
+        // About is handled by macOS native About panel via mac.AboutInfo
+      }),
+      EventsOn('menu:how-it-works', () => {
+        BrowserOpenURL('https://github.com/metaphori-ai/claudefu#readme');
+      }),
+      EventsOn('menu:settings', () => {
+        // TODO: Open settings dialog when we have one
+        console.log('[Menu] Settings clicked');
+      }),
+      EventsOn('menu:check-updates', async () => {
+        try {
+          const updateInfo = await CheckForUpdates();
+          if (updateInfo?.available) {
+            setNotification({
+              type: 'info',
+              title: `Update Available: v${updateInfo.latestVersion}`,
+              message: `Run: brew upgrade --cask claudefu`,
+              releaseUrl: updateInfo.releaseUrl,
+              releaseNotes: updateInfo.releaseNotes
+            });
+            setTimeout(() => setNotification(null), 8000);
+          } else {
+            setNotification({
+              type: 'success',
+              title: 'Up to Date',
+              message: `You're running the latest version (v${updateInfo?.currentVersion || version})`
+            });
+            setTimeout(() => setNotification(null), 3000);
+          }
+        } catch (err) {
+          console.error('Update check failed:', err);
+        }
+      }),
+      EventsOn('menu:new-session', () => {
+        if (selectedAgentId) {
+          setIsCreatingNewSessionExternally(true);
+        }
+      }),
+      EventsOn('menu:select-session', () => {
+        if (selectedAgentId) {
+          setOpenSessionsForAgentId(selectedAgentId);
+        }
+      }),
+      EventsOn('menu:rename-agent', () => {
+        if (selectedAgent) {
+          // Trigger rename dialog - use the same pattern as sidebar
+          const newName = window.prompt('Rename agent:', selectedAgent.name);
+          if (newName && newName.trim() && newName !== selectedAgent.name) {
+            renameAgent(selectedAgentId!, newName.trim());
+          }
+        }
+      }),
+      EventsOn('menu:new-workspace', () => {
+        handleNewWorkspace();
+      }),
+    ];
+
+    return () => {
+      handlers.forEach(unsub => unsub());
+    };
+  }, [selectedAgentId, selectedAgent, version, renameAgent]);
+
   // Check for updates on startup (delayed to not block UI)
   useEffect(() => {
     const checkUpdates = async () => {

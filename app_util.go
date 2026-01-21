@@ -51,3 +51,8 @@ func (a *App) ReadImageAsDataURL(filePath string) (string, error) {
 func (a *App) GetVersion() string {
 	return strings.TrimSpace(embeddedVersion)
 }
+
+// GetVersionString returns the version as a standalone function (for use in main.go)
+func GetVersionString() string {
+	return strings.TrimSpace(embeddedVersion)
+}
