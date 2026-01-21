@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **AgentMessage Tool** - Now accepts both `target_agent` (singular) and `target_agents` (plural) parameters
+  - Claude sometimes uses singular form despite schema specifying plural
+  - Added comprehensive logging to MCP message handlers for debugging
+
 ## [0.3.15] - 2026-01-20
 
 ### Added

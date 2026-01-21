@@ -21,6 +21,7 @@ import (
 func (s *MCPService) findMCPEnabledAgent(identifier string) *workspace.Agent {
 	ws := s.workspace()
 	if ws == nil {
+		fmt.Printf("[MCP:findAgent] No workspace loaded\n")
 		return nil
 	}
 
@@ -31,11 +32,13 @@ func (s *MCPService) findMCPEnabledAgent(identifier string) *workspace.Agent {
 			continue // Skip agents with MCP disabled
 		}
 		// Match by slug (custom or derived) or case-insensitive name
-		if strings.ToLower(agent.GetSlug()) == identifier ||
-			strings.EqualFold(agent.Name, identifier) {
+		agentSlug := strings.ToLower(agent.GetSlug())
+		if agentSlug == identifier || strings.EqualFold(agent.Name, identifier) {
+			fmt.Printf("[MCP:findAgent] Found '%s' -> %s (ID: %s)\n", identifier, agent.Name, agent.ID)
 			return agent
 		}
 	}
+	fmt.Printf("[MCP:findAgent] No match for '%s' in %d agents\n", identifier, len(ws.Agents))
 	return nil
 }
 
@@ -194,16 +197,25 @@ func (s *MCPService) handleSelfQuery(ctx context.Context, req mcp.CallToolReques
 func (s *MCPService) handleAgentMessage(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	// Check tool availability
 	if !s.toolAvailability.IsEnabled("AgentMessage") {
+		fmt.Println("[MCP:AgentMessage] Tool is disabled")
 		return mcp.NewToolResultError("AgentMessage tool is disabled. Enable in MCP Settings > Tool Availability."), nil
 	}
 
+	// Accept BOTH target_agent (singular) and target_agents (plural) for flexibility
+	// Claude sometimes uses singular even though schema says plural
 	targetAgents, err := req.RequireString("target_agents")
 	if err != nil {
-		return mcp.NewToolResultError("target_agents is required"), nil
+		// Try singular form as fallback
+		targetAgents, err = req.RequireString("target_agent")
+		if err != nil {
+			fmt.Println("[MCP:AgentMessage] Error: neither target_agents nor target_agent provided")
+			return mcp.NewToolResultError("target_agents is required (target_agent also accepted)"), nil
+		}
 	}
 
 	message, err := req.RequireString("message")
 	if err != nil {
+		fmt.Println("[MCP:AgentMessage] Error: message is required")
 		return mcp.NewToolResultError("message is required"), nil
 	}
 
@@ -213,6 +225,8 @@ func (s *MCPService) handleAgentMessage(ctx context.Context, req mcp.CallToolReq
 	if priority == "" {
 		priority = "normal"
 	}
+
+	fmt.Printf("[MCP:AgentMessage] From: %s, To: %s, Priority: %s\n", fromAgent, targetAgents, priority)
 
 	// Parse comma-separated agent list
 	agentIdentifiers := strings.Split(targetAgents, ",")
@@ -228,11 +242,13 @@ func (s *MCPService) handleAgentMessage(ctx context.Context, req mcp.CallToolReq
 		// Find specific agent (must be MCP-enabled)
 		agent := s.findMCPEnabledAgent(identifier)
 		if agent == nil {
+			fmt.Printf("[MCP:AgentMessage] Agent not found: %s\n", identifier)
 			notFound = append(notFound, identifier)
 			continue
 		}
 
 		// Add to inbox
+		fmt.Printf("[MCP:AgentMessage] Adding message to inbox for agent: %s (ID: %s)\n", agent.GetSlug(), agent.ID)
 		s.inbox.AddMessage(agent.ID, "", fromAgent, message, priority)
 		s.emitInboxUpdate(agent.ID)
 		sentTo = append(sentTo, agent.GetSlug())
@@ -241,10 +257,10 @@ func (s *MCPService) handleAgentMessage(ctx context.Context, req mcp.CallToolReq
 	// Build response
 	if len(sentTo) == 0 {
 		available := s.getAvailableAgentSlugs()
-		return mcp.NewToolResultError(fmt.Sprintf(
-			"No valid agents found. Requested: %s. Available agents: %s",
-			targetAgents, strings.Join(available, ", "),
-		)), nil
+		errMsg := fmt.Sprintf("No valid agents found. Requested: %s. Available agents: %s",
+			targetAgents, strings.Join(available, ", "))
+		fmt.Printf("[MCP:AgentMessage] Error: %s\n", errMsg)
+		return mcp.NewToolResultError(errMsg), nil
 	}
 
 	response := fmt.Sprintf("Message sent to: %s", strings.Join(sentTo, ", "))
@@ -252,6 +268,7 @@ func (s *MCPService) handleAgentMessage(ctx context.Context, req mcp.CallToolReq
 		response += fmt.Sprintf(" (not found: %s)", strings.Join(notFound, ", "))
 	}
 
+	fmt.Printf("[MCP:AgentMessage] Success: %s\n", response)
 	return mcp.NewToolResultText(response), nil
 }
 
@@ -260,11 +277,13 @@ func (s *MCPService) handleAgentMessage(ctx context.Context, req mcp.CallToolReq
 func (s *MCPService) handleAgentBroadcast(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	// Check tool availability
 	if !s.toolAvailability.IsEnabled("AgentBroadcast") {
+		fmt.Println("[MCP:AgentBroadcast] Tool is disabled")
 		return mcp.NewToolResultError("AgentBroadcast tool is disabled. Enable in MCP Settings > Tool Availability."), nil
 	}
 
 	message, err := req.RequireString("message")
 	if err != nil {
+		fmt.Println("[MCP:AgentBroadcast] Error: message is required")
 		return mcp.NewToolResultError("message is required"), nil
 	}
 
@@ -275,9 +294,12 @@ func (s *MCPService) handleAgentBroadcast(ctx context.Context, req mcp.CallToolR
 		priority = "normal"
 	}
 
+	fmt.Printf("[MCP:AgentBroadcast] From: %s, Priority: %s\n", fromAgent, priority)
+
 	// Get workspace
 	ws := s.workspace()
 	if ws == nil {
+		fmt.Println("[MCP:AgentBroadcast] Error: no workspace loaded")
 		return mcp.NewToolResultError("no workspace loaded"), nil
 	}
 
@@ -295,10 +317,13 @@ func (s *MCPService) handleAgentBroadcast(ctx context.Context, req mcp.CallToolR
 	}
 
 	if count == 0 {
+		fmt.Println("[MCP:AgentBroadcast] Error: No MCP-enabled agents found")
 		return mcp.NewToolResultError("No MCP-enabled agents found in workspace"), nil
 	}
 
-	return mcp.NewToolResultText(fmt.Sprintf("Broadcast sent to %d agents: %s", count, strings.Join(sentTo, ", "))), nil
+	response := fmt.Sprintf("Broadcast sent to %d agents: %s", count, strings.Join(sentTo, ", "))
+	fmt.Printf("[MCP:AgentBroadcast] Success: %s\n", response)
+	return mcp.NewToolResultText(response), nil
 }
 
 // handleNotifyUser handles the NotifyUser tool call
