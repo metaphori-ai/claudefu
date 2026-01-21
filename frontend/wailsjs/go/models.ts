@@ -249,6 +249,7 @@ export namespace settings {
 	    enterBehavior: string;
 	    defaultWorkingDir: string;
 	    debugLogging: boolean;
+	    claudeEnvVars: Record<string, string>;
 	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -260,6 +261,7 @@ export namespace settings {
 	        this.enterBehavior = source["enterBehavior"];
 	        this.defaultWorkingDir = source["defaultWorkingDir"];
 	        this.debugLogging = source["debugLogging"];
+	        this.claudeEnvVars = source["claudeEnvVars"];
 	    }
 	}
 

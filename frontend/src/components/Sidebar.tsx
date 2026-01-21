@@ -19,6 +19,7 @@ import { AgentMenu } from './AgentMenu';
 import { InputDialog } from './InputDialog';
 import { SessionsDialog } from './SessionsDialog';
 import { InboxDialog } from './InboxDialog';
+import { GlobalSettingsDialog } from './GlobalSettingsDialog';
 import { workspace, types } from '../../wailsjs/go/models';
 import { useWorkspace, useSession, useSessionName, useAgentUnread } from '../hooks';
 
@@ -78,6 +79,7 @@ export function Sidebar({
   const [renameDialogAgent, setRenameDialogAgent] = useState<Agent | null>(null);
   const [renameSessionDialog, setRenameSessionDialog] = useState<{ agent: Agent; session: Session } | null>(null);
   const [sessionsDialogAgent, setSessionsDialogAgent] = useState<Agent | null>(null);
+  const [showGlobalSettings, setShowGlobalSettings] = useState(false);
 
   // Load initial inbox counts for all agents
   useEffect(() => {
@@ -382,43 +384,84 @@ export function Sidebar({
         )}
       </div>
 
-      {/* Add Agent Button */}
-      <div style={{ padding: '0.75rem 1rem', borderTop: '1px solid #222' }}>
-        <button
-          onClick={handleAddAgent}
-          disabled={isLoading}
-          style={{
-            width: '100%',
-            padding: '0.6rem 1rem',
-            borderRadius: '8px',
-            border: '1px solid #333',
-            background: 'transparent',
-            color: '#888',
-            cursor: isLoading ? 'not-allowed' : 'pointer',
-            fontWeight: 500,
-            fontSize: '0.85rem',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '0.5rem',
-            transition: 'all 0.15s ease',
-          }}
-          onMouseEnter={(e) => {
-            if (!isLoading) {
-              e.currentTarget.style.background = '#eb815e';
-              e.currentTarget.style.borderColor = '#eb815e';
-              e.currentTarget.style.color = '#fff';
-            }
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'transparent';
-            e.currentTarget.style.borderColor = '#333';
-            e.currentTarget.style.color = '#888';
-          }}
-        >
-          <span style={{ fontSize: '1.1rem' }}>+</span>
-          {isLoading ? 'Opening...' : 'Claude Code Agent'}
-        </button>
+      {/* Footer with Settings and Add Agent */}
+      <div style={{ borderTop: '1px solid #222' }}>
+        {/* Settings Button */}
+        <div style={{ padding: '0.5rem 1rem 0.25rem' }}>
+          <button
+            onClick={() => setShowGlobalSettings(true)}
+            style={{
+              width: '100%',
+              padding: '0.5rem 1rem',
+              borderRadius: '8px',
+              border: '1px solid #222',
+              background: 'transparent',
+              color: '#666',
+              cursor: 'pointer',
+              fontSize: '0.8rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '0.5rem',
+              transition: 'all 0.15s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = '#1a1a1a';
+              e.currentTarget.style.borderColor = '#333';
+              e.currentTarget.style.color = '#888';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent';
+              e.currentTarget.style.borderColor = '#222';
+              e.currentTarget.style.color = '#666';
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+            Settings
+          </button>
+        </div>
+
+        {/* Add Agent Button */}
+        <div style={{ padding: '0.25rem 1rem 0.75rem' }}>
+          <button
+            onClick={handleAddAgent}
+            disabled={isLoading}
+            style={{
+              width: '100%',
+              padding: '0.6rem 1rem',
+              borderRadius: '8px',
+              border: '1px solid #333',
+              background: 'transparent',
+              color: '#888',
+              cursor: isLoading ? 'not-allowed' : 'pointer',
+              fontWeight: 500,
+              fontSize: '0.85rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '0.5rem',
+              transition: 'all 0.15s ease',
+            }}
+            onMouseEnter={(e) => {
+              if (!isLoading) {
+                e.currentTarget.style.background = '#eb815e';
+                e.currentTarget.style.borderColor = '#eb815e';
+                e.currentTarget.style.color = '#fff';
+              }
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent';
+              e.currentTarget.style.borderColor = '#333';
+              e.currentTarget.style.color = '#888';
+            }}
+          >
+            <span style={{ fontSize: '1.1rem' }}>+</span>
+            {isLoading ? 'Opening...' : 'Claude Code Agent'}
+          </button>
+        </div>
       </div>
 
       {/* Sessions Dialog */}
@@ -487,6 +530,12 @@ export function Sidebar({
           onClose={closeInboxDialog}
         />
       )}
+
+      {/* Global Settings Dialog */}
+      <GlobalSettingsDialog
+        isOpen={showGlobalSettings}
+        onClose={() => setShowGlobalSettings(false)}
+      />
     </aside>
   );
 }

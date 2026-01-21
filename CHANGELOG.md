@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.13] - 2026-01-20
+
+### Added
+- **Global Settings Dialog** - New settings page accessible from sidebar
+  - Click "Settings" button above "Claude Code Agent" in sidebar footer
+  - Configure environment variables passed to all Claude CLI processes
+  - Useful for corporate proxies (e.g., `ANTHROPIC_BASE_URL=http://localhost:9123/mtlsproxy:claudecode`)
+  - Settings persisted to `~/.claudefu/settings.json`
+- **Claude CLI Environment Variables** - Custom env vars injected into all Claude processes
+  - Backend `ClaudeCodeService.SetEnvironment()` method for runtime configuration
+  - `buildEnvironment()` merges parent process env with custom vars (custom takes precedence)
+  - Applied to all three CLI execution paths: `SendMessage`, `sendWithAttachments`, `NewSession`
+  - Changes take effect immediately when saved (no restart required)
+
+### Technical
+- New `ClaudeEnvVars map[string]string` field in `Settings` struct
+- Thread-safe env var storage with `sync.RWMutex` in `ClaudeCodeService`
+- `GlobalSettingsDialog.tsx` component using `DialogBase` pattern
+- Env vars loaded at startup and applied via `SaveSettings` bound method
+
 ## [0.3.12] - 2026-01-20
 
 ### Fixed

@@ -70,6 +70,10 @@ type ClaudeCodeService struct {
 	ctx       context.Context
 	mcpConfig string // JSON config for --mcp-config flag (empty = disabled)
 
+	// Custom environment variables for Claude CLI (e.g., ANTHROPIC_BASE_URL for proxies)
+	envVars   map[string]string
+	envVarsMu sync.RWMutex
+
 	// Process tracking for cancellation support
 	activeProcs   map[string]*exec.Cmd // sessionID -> running command
 	activeProcsMu sync.RWMutex
@@ -103,6 +107,37 @@ func (s *ClaudeCodeService) SetMCPServerPort(port int) {
 // ClearMCPConfig disables MCP config injection
 func (s *ClaudeCodeService) ClearMCPConfig() {
 	s.mcpConfig = ""
+}
+
+// SetEnvironment sets custom environment variables to be passed to Claude CLI processes.
+// These are merged with the parent process environment (custom vars take precedence).
+// Use this for proxies (ANTHROPIC_BASE_URL), custom API keys, or other env-based config.
+func (s *ClaudeCodeService) SetEnvironment(vars map[string]string) {
+	s.envVarsMu.Lock()
+	defer s.envVarsMu.Unlock()
+	s.envVars = vars
+}
+
+// buildEnvironment creates the environment slice for exec.Cmd.
+// It merges the parent process environment with custom vars (custom vars override).
+// Returns nil if no custom vars are set (uses Go's default behavior of inheriting parent env).
+func (s *ClaudeCodeService) buildEnvironment() []string {
+	s.envVarsMu.RLock()
+	defer s.envVarsMu.RUnlock()
+
+	if len(s.envVars) == 0 {
+		return nil // Use default behavior (inherit parent env)
+	}
+
+	// Start with parent environment
+	env := os.Environ()
+
+	// Append custom vars (these override existing vars with same name)
+	for key, value := range s.envVars {
+		env = append(env, fmt.Sprintf("%s=%s", key, value))
+	}
+
+	return env
 }
 
 // trackProcess stores a running command for potential cancellation
@@ -205,6 +240,7 @@ func (s *ClaudeCodeService) SendMessage(folder, sessionId, message string, attac
 
 	cmd := exec.CommandContext(s.ctx, path, args...)
 	cmd.Dir = folder
+	cmd.Env = s.buildEnvironment() // Apply custom env vars (e.g., ANTHROPIC_BASE_URL for proxies)
 
 	// Track the process for potential cancellation
 	s.trackProcess(sessionId, cmd)
@@ -327,6 +363,7 @@ func (s *ClaudeCodeService) sendWithAttachments(claudePath, folder, sessionId, m
 
 	cmd := exec.CommandContext(s.ctx, claudePath, args...)
 	cmd.Dir = folder
+	cmd.Env = s.buildEnvironment() // Apply custom env vars (e.g., ANTHROPIC_BASE_URL for proxies)
 	cmd.Stdin = bytes.NewReader(jsonBytes)
 
 	// Track the process for potential cancellation
@@ -401,6 +438,7 @@ func (s *ClaudeCodeService) NewSession(folder string) (string, error) {
 
 	cmd := exec.CommandContext(s.ctx, path, args...)
 	cmd.Dir = folder
+	cmd.Env = s.buildEnvironment() // Apply custom env vars (e.g., ANTHROPIC_BASE_URL for proxies)
 
 	// Get stdout to parse session ID
 	stdout, err := cmd.StdoutPipe()

@@ -16,10 +16,11 @@ const (
 
 // Settings holds all application settings
 type Settings struct {
-	Theme               string `json:"theme"`               // "dark", "light", "system"
-	EnterBehavior       string `json:"enterBehavior"`       // "send", "newline"
-	DefaultWorkingDir   string `json:"defaultWorkingDir"`   // default working directory for agents
-	DebugLogging        bool   `json:"debugLogging"`        // enable aggregated debug logging on frontend
+	Theme               string            `json:"theme"`               // "dark", "light", "system"
+	EnterBehavior       string            `json:"enterBehavior"`       // "send", "newline"
+	DefaultWorkingDir   string            `json:"defaultWorkingDir"`   // default working directory for agents
+	DebugLogging        bool              `json:"debugLogging"`        // enable aggregated debug logging on frontend
+	ClaudeEnvVars       map[string]string `json:"claudeEnvVars"`       // environment variables passed to Claude CLI (e.g., ANTHROPIC_BASE_URL)
 }
 
 // AuthConfig holds authentication configuration
