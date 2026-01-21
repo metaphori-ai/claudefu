@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.14] - 2026-01-20
+
 ### Added
 - **Apple Notarization Support** - Build configuration for signed and notarized macOS releases
   - `build/darwin/entitlements.plist` with required permissions for spawning claude CLI
