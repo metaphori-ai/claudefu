@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Apple Notarization Support** - Build configuration for signed and notarized macOS releases
+  - `build/darwin/entitlements.plist` with required permissions for spawning claude CLI
+  - `scripts/setup-notarization.sh` interactive setup guide for Developer ID credentials
+  - Release script now includes code signing and notarization steps (gracefully skips if no cert)
+  - GitHub release notes auto-adjust based on signing status
+
+### Changed
+- **Release Script** - Now 10 steps (was 8) with signing/notarization workflow
+  - Detects Developer ID certificate and notarization credentials automatically
+  - Signs app bundle with hardened runtime and entitlements
+  - Submits to Apple notarization service and staples ticket
+  - Re-creates ZIP with stapled app for distribution
+
+### Technical
+- `build/darwin/Info.plist` updated with proper bundle ID (`com.metaphori.claudefu`)
+- Added `NSAppleEventsUsageDescription` for Apple review process
+- `wails.json` now includes company metadata and version info
+- Entitlements include: `allow-unsigned-executable-memory`, `disable-library-validation`, `network.server`
+
 ## [0.3.13] - 2026-01-20
 
 ### Added

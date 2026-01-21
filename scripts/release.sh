@@ -34,27 +34,147 @@ if [ "$BRANCH" != "main" ]; then
     exit 1
 fi
 
-echo -e "${GREEN}[1/8] Building macOS universal binary...${NC}"
+# ==============================================================================
+# CODE SIGNING CONFIGURATION
+# ==============================================================================
+# Check for Developer ID certificate
+DEVELOPER_ID="Developer ID Application: Metaphori, Inc."
+SIGN_ENABLED=false
+
+if security find-identity -v -p codesigning 2>/dev/null | grep -q "$DEVELOPER_ID"; then
+    SIGN_ENABLED=true
+    echo -e "${GREEN}✓ Found Developer ID certificate: $DEVELOPER_ID${NC}"
+else
+    echo -e "${YELLOW}⚠ No Developer ID certificate found - builds will be unsigned${NC}"
+    echo "  To enable signing, install your Apple Developer certificate"
+fi
+
+# Check for notarization credentials (Apple ID in keychain)
+NOTARIZE_ENABLED=false
+KEYCHAIN_PROFILE="ClaudeFu-Notarize"  # Set up with: xcrun notarytool store-credentials
+
+if [ "$SIGN_ENABLED" = true ] && xcrun notarytool history --keychain-profile "$KEYCHAIN_PROFILE" &>/dev/null; then
+    NOTARIZE_ENABLED=true
+    echo -e "${GREEN}✓ Found notarization credentials: $KEYCHAIN_PROFILE${NC}"
+else
+    if [ "$SIGN_ENABLED" = true ]; then
+        echo -e "${YELLOW}⚠ No notarization credentials found - builds will not be notarized${NC}"
+        echo "  To enable notarization, run:"
+        echo "    xcrun notarytool store-credentials $KEYCHAIN_PROFILE \\"
+        echo "      --apple-id your@email.com \\"
+        echo "      --team-id XXXXXXXXXX \\"
+        echo "      --password <app-specific-password>"
+    fi
+fi
+
+echo ""
+
+# ==============================================================================
+# BUILD
+# ==============================================================================
+echo -e "${GREEN}[1/10] Building macOS universal binary...${NC}"
 wails build -platform darwin/universal -o ClaudeFu
 
-echo -e "${GREEN}[2/8] Creating ZIP archive...${NC}"
+# ==============================================================================
+# CODE SIGNING (if certificate available)
+# ==============================================================================
+if [ "$SIGN_ENABLED" = true ]; then
+    echo -e "${GREEN}[2/10] Signing application with Developer ID...${NC}"
+
+    APP_PATH="build/bin/ClaudeFu.app"
+    ENTITLEMENTS="build/darwin/entitlements.plist"
+
+    # Sign all nested components first (frameworks, helpers, etc.)
+    echo "  Signing nested components..."
+    find "$APP_PATH/Contents" -type f \( -name "*.dylib" -o -name "*.so" -o -perm +111 \) -print0 2>/dev/null | while IFS= read -r -d '' file; do
+        codesign --force --options runtime --timestamp \
+            --entitlements "$ENTITLEMENTS" \
+            --sign "$DEVELOPER_ID" "$file" 2>/dev/null || true
+    done
+
+    # Sign the main app bundle
+    echo "  Signing app bundle..."
+    codesign --force --deep --options runtime --timestamp \
+        --entitlements "$ENTITLEMENTS" \
+        --sign "$DEVELOPER_ID" "$APP_PATH"
+
+    # Verify signature
+    echo "  Verifying signature..."
+    codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+    echo -e "${GREEN}  ✓ Code signing complete${NC}"
+else
+    echo -e "${YELLOW}[2/10] Skipping code signing (no certificate)${NC}"
+fi
+
+# ==============================================================================
+# CREATE ZIP FOR NOTARIZATION/DISTRIBUTION
+# ==============================================================================
+echo -e "${GREEN}[3/10] Creating ZIP archive...${NC}"
 cd build/bin
 ZIP_NAME="ClaudeFu-${VERSION}-darwin-universal.zip"
 rm -f "$ZIP_NAME"
 zip -r "$ZIP_NAME" ClaudeFu.app
 cd ../..
 
-echo -e "${GREEN}[3/8] Calculating SHA256...${NC}"
+# ==============================================================================
+# NOTARIZATION (if credentials available)
+# ==============================================================================
+if [ "$NOTARIZE_ENABLED" = true ]; then
+    echo -e "${GREEN}[4/10] Submitting for notarization...${NC}"
+    echo "  This may take several minutes..."
+
+    NOTARIZE_OUTPUT=$(xcrun notarytool submit "build/bin/$ZIP_NAME" \
+        --keychain-profile "$KEYCHAIN_PROFILE" \
+        --wait 2>&1)
+
+    if echo "$NOTARIZE_OUTPUT" | grep -q "status: Accepted"; then
+        echo -e "${GREEN}  ✓ Notarization accepted${NC}"
+
+        # Staple the ticket to the app
+        echo -e "${GREEN}[5/10] Stapling notarization ticket...${NC}"
+        xcrun stapler staple "build/bin/ClaudeFu.app"
+        echo -e "${GREEN}  ✓ Ticket stapled${NC}"
+
+        # Re-create ZIP with stapled app
+        echo "  Re-creating ZIP with stapled app..."
+        cd build/bin
+        rm -f "$ZIP_NAME"
+        zip -r "$ZIP_NAME" ClaudeFu.app
+        cd ../..
+    else
+        echo -e "${YELLOW}  ⚠ Notarization issue - check output:${NC}"
+        echo "$NOTARIZE_OUTPUT"
+        echo ""
+        echo -e "${YELLOW}  Continuing with unsigned release...${NC}"
+    fi
+else
+    if [ "$SIGN_ENABLED" = true ]; then
+        echo -e "${YELLOW}[4/10] Skipping notarization (no credentials)${NC}"
+        echo -e "${YELLOW}[5/10] Skipping stapling (no notarization)${NC}"
+    else
+        echo -e "${YELLOW}[4/10] Skipping notarization (unsigned build)${NC}"
+        echo -e "${YELLOW}[5/10] Skipping stapling (unsigned build)${NC}"
+    fi
+fi
+
+echo -e "${GREEN}[6/10] Calculating SHA256...${NC}"
 SHA256=$(shasum -a 256 "build/bin/$ZIP_NAME" | awk '{print $1}')
 echo "SHA256: $SHA256"
 
-echo -e "${GREEN}[4/8] Creating git tag...${NC}"
+echo -e "${GREEN}[7/10] Creating git tag...${NC}"
 git tag -a "$VERSION" -m "Release $VERSION"
 
-echo -e "${GREEN}[5/8] Pushing tag to GitHub...${NC}"
+echo -e "${GREEN}[8/10] Pushing tag to GitHub...${NC}"
 git push origin "$VERSION"
 
-echo -e "${GREEN}[6/8] Creating GitHub Release...${NC}"
+echo -e "${GREEN}[9/10] Creating GitHub Release...${NC}"
+# Build release notes based on signing status
+if [ "$NOTARIZE_ENABLED" = true ]; then
+    GATEKEEPER_NOTE="This build is signed and notarized by Apple."
+else
+    GATEKEEPER_NOTE="If blocked by Gatekeeper: \`xattr -cr /Applications/ClaudeFu.app\`"
+fi
+
 gh release create "$VERSION" \
     "build/bin/$ZIP_NAME" \
     --title "ClaudeFu $VERSION" \
@@ -69,13 +189,13 @@ brew install --cask claudefu
 **Manual download:**
 1. Download \`$ZIP_NAME\`
 2. Unzip and move \`ClaudeFu.app\` to \`/Applications\`
-3. If blocked by Gatekeeper: \`xattr -cr /Applications/ClaudeFu.app\`
+3. $GATEKEEPER_NOTE
 
 **Requirements:**
 - macOS 11.0 (Big Sur) or later
 - Claude Code CLI: \`npm install -g @anthropic-ai/claude-code\`"
 
-echo -e "${GREEN}[7/8] Updating Homebrew tap...${NC}"
+echo -e "${GREEN}[10/10] Updating Homebrew tap & Slack...${NC}"
 
 # Check if HOMEBREW_TAP_PATH is configured
 if [ -z "$HOMEBREW_TAP_PATH" ]; then
@@ -103,7 +223,7 @@ else
     echo "  sha256 \"$SHA256\""
 fi
 
-echo -e "${GREEN}[8/8] Posting changelog to Slack...${NC}"
+# Post changelog to Slack
 
 # Check if SLACK_WEBHOOK is configured
 if [ -z "$SLACK_WEBHOOK" ]; then
