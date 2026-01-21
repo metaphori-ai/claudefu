@@ -13,6 +13,8 @@ interface WorkspaceDropdownProps {
   onSelectWorkspace: (id: string) => void;
   onNewWorkspace: () => void;
   onRenameWorkspace: () => void;
+  onDeleteWorkspace: () => void;
+  onManageWorkspaces: () => void;
 }
 
 export function WorkspaceDropdown({
@@ -21,7 +23,9 @@ export function WorkspaceDropdown({
   workspaces,
   onSelectWorkspace,
   onNewWorkspace,
-  onRenameWorkspace
+  onRenameWorkspace,
+  onDeleteWorkspace,
+  onManageWorkspaces,
 }: WorkspaceDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -180,6 +184,88 @@ export function WorkspaceDropdown({
                 <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
               </svg>
               Rename Workspace
+            </span>
+          </button>
+
+          {/* Delete Workspace */}
+          <button
+            onClick={() => {
+              if (workspaces.length > 1) {
+                onDeleteWorkspace();
+                setIsOpen(false);
+              }
+            }}
+            disabled={workspaces.length <= 1}
+            style={{
+              ...menuItemStyle,
+              justifyContent: 'space-between',
+              color: workspaces.length > 1 ? '#dc2626' : '#555',
+              cursor: workspaces.length > 1 ? 'pointer' : 'not-allowed',
+              opacity: workspaces.length > 1 ? 1 : 0.6,
+            }}
+            onMouseEnter={(e) => {
+              if (workspaces.length > 1) {
+                e.currentTarget.style.background = '#252525';
+              }
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent';
+            }}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+              </svg>
+              Delete Workspace
+            </span>
+          </button>
+
+          {/* Divider */}
+          <div style={{
+            height: '1px',
+            background: '#333',
+            margin: '0.25rem 0'
+          }} />
+
+          {/* Manage Workspaces */}
+          <button
+            onClick={() => {
+              onManageWorkspaces();
+              setIsOpen(false);
+            }}
+            style={{ ...menuItemStyle, justifyContent: 'space-between' }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = '#252525';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent';
+            }}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
+              Manage Workspaces...
             </span>
           </button>
 

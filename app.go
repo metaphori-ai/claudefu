@@ -81,6 +81,9 @@ func (a *App) startup(ctx context.Context) {
 	// Step 8: Emit initial state to frontend
 	a.emitInitialState()
 
+	// Step 9: Refresh menu now that workspace is loaded
+	a.RefreshMenu()
+
 	wailsrt.LogInfo(ctx, fmt.Sprintf("ClaudeFu initialized. Config path: %s", a.settings.GetConfigPath()))
 }
 

@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.17] - 2026-01-21
+
+### Added
+- **Manage Workspaces Dialog** - Full workspace management accessible from menu and dropdown
+  - Radio selection with deferred switching (click to select, "Switch" button to confirm)
+  - Inline rename via pencil icon → InputDialog
+  - Delete workspace with confirmation dialog
+  - "New Workspace" button in footer
+  - Workspace count display
+- **Manage Agents Dialog** - Full agent management accessible from Agent menu
+  - Radio selection with deferred switching (prevents accidental agent switches)
+  - Displays agent name and folder path for context
+  - Inline rename and remove with confirmation dialogs
+  - "Add Agent" button opens native folder picker
+- **ConfirmDialog Component** - Reusable confirmation dialog for destructive actions
+  - Danger mode with red confirm button
+  - ESC to cancel, Enter to confirm
+- **Native Menu Enhancements** - Expanded Workspace and Agent menus
+  - Workspace menu: Rename, Delete, Manage Workspaces, New Workspace
+  - Agent menu: Rename, Remove, Manage Agents (with radio selection indicators)
+- **WorkspaceDropdown Enhancements** - Added "Delete Workspace" and "Manage Workspaces..." options
+
+### Fixed
+- **Agent Menu Checkmarks** - Now uses `AddRadio` instead of `AddText` for proper selection indicators
+
+### Technical
+- New `RenameWorkspace(id, newName)` method in `internal/workspace/workspace.go` and `app_workspace.go`
+- Deferred selection pattern: local state for visual selection, commit only on explicit action
+- Menu event handlers: `menu:rename-workspace`, `menu:delete-workspace`, `menu:manage-workspaces`, `menu:rename-agent`, `menu:remove-agent`, `menu:manage-agents`
+
 ## [0.3.16] - 2026-01-21
 
 ### Fixed

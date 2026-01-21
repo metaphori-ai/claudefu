@@ -57,6 +57,8 @@ func (a *App) buildMenu() *menu.Menu {
 
 	// Agent menu
 	agentMenu := appMenu.AddSubmenu("Agent")
+	a.populateAgentMenu(agentMenu)
+	agentMenu.AddSeparator()
 	agentMenu.AddText("New Session", keys.Combo("n", keys.CmdOrCtrlKey, keys.ShiftKey), func(_ *menu.CallbackData) {
 		a.emitMenuAction("menu:new-session")
 	})
@@ -66,6 +68,13 @@ func (a *App) buildMenu() *menu.Menu {
 	agentMenu.AddSeparator()
 	agentMenu.AddText("Rename Agent...", nil, func(_ *menu.CallbackData) {
 		a.emitMenuAction("menu:rename-agent")
+	})
+	agentMenu.AddText("Remove Agent...", nil, func(_ *menu.CallbackData) {
+		a.emitMenuAction("menu:remove-agent")
+	})
+	agentMenu.AddSeparator()
+	agentMenu.AddText("Manage Agents...", nil, func(_ *menu.CallbackData) {
+		a.emitMenuAction("menu:manage-agents")
 	})
 
 	// Window menu (standard macOS)
@@ -94,23 +103,65 @@ func (a *App) populateWorkspaceMenu(workspaceMenu *menu.Menu) {
 	currentID, _ := a.GetCurrentWorkspaceID()
 
 	// Add workspace items as radio buttons
+	// NOTE: Menu only emits events - frontend handles state orchestration
 	for _, ws := range workspaces {
 		wsID := ws.ID // Capture for closure
 		wsName := ws.Name
 		isSelected := ws.ID == currentID
 
 		item := workspaceMenu.AddRadio(wsName, isSelected, nil, func(_ *menu.CallbackData) {
-			fmt.Printf("[Menu] Switching to workspace: %s\n", wsID)
-			a.SwitchWorkspace(wsID)
-			a.RefreshMenu() // Update radio selection
+			fmt.Printf("[Menu] Workspace selected: %s\n", wsID)
+			// Emit event - let frontend handle the switch
+			wailsRuntime.EventsEmit(a.ctx, "menu:switch-workspace", map[string]string{
+				"workspaceId": wsID,
+			})
 		})
 		_ = item
 	}
 
 	workspaceMenu.AddSeparator()
+	workspaceMenu.AddText("Rename Workspace...", nil, func(_ *menu.CallbackData) {
+		a.emitMenuAction("menu:rename-workspace")
+	})
+	workspaceMenu.AddText("Delete Workspace...", nil, func(_ *menu.CallbackData) {
+		a.emitMenuAction("menu:delete-workspace")
+	})
+	workspaceMenu.AddSeparator()
+	workspaceMenu.AddText("Manage Workspaces...", nil, func(_ *menu.CallbackData) {
+		a.emitMenuAction("menu:manage-workspaces")
+	})
 	workspaceMenu.AddText("New Workspace...", nil, func(_ *menu.CallbackData) {
 		a.emitMenuAction("menu:new-workspace")
 	})
+}
+
+// populateAgentMenu fills the agent menu with agents from the current workspace
+func (a *App) populateAgentMenu(agentMenu *menu.Menu) {
+	if a.currentWorkspace == nil {
+		return
+	}
+
+	// Get selected agent from workspace's selectedSession
+	selectedAgentID := ""
+	if a.currentWorkspace.SelectedSession != nil {
+		selectedAgentID = a.currentWorkspace.SelectedSession.AgentID
+	}
+
+	// Add agent items as radio buttons (clicking switches to that agent)
+	for _, agent := range a.currentWorkspace.Agents {
+		agentID := agent.ID // Capture for closure
+		agentName := agent.Name
+		isSelected := agent.ID == selectedAgentID
+
+		// Use AddRadio instead of AddText for checkmark
+		agentMenu.AddRadio(agentName, isSelected, nil, func(_ *menu.CallbackData) {
+			fmt.Printf("[Menu] Switching to agent: %s\n", agentID)
+			// Emit event to frontend to switch agent
+			wailsRuntime.EventsEmit(a.ctx, "menu:switch-agent", map[string]string{
+				"agentId": agentID,
+			})
+		})
+	}
 }
 
 // emitMenuAction sends a menu action event to the frontend

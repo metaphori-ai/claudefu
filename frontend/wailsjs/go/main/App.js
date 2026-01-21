@@ -58,6 +58,10 @@ export function DeleteInboxMessage(arg1, arg2) {
   return window['go']['main']['App']['DeleteInboxMessage'](arg1, arg2);
 }
 
+export function DeleteWorkspace(arg1) {
+  return window['go']['main']['App']['DeleteWorkspace'](arg1);
+}
+
 export function GetAgent(arg1) {
   return window['go']['main']['App']['GetAgent'](arg1);
 }
@@ -228,6 +232,10 @@ export function RefreshSessions(arg1) {
 
 export function RemoveAgent(arg1) {
   return window['go']['main']['App']['RemoveAgent'](arg1);
+}
+
+export function RenameWorkspace(arg1, arg2) {
+  return window['go']['main']['App']['RenameWorkspace'](arg1, arg2);
 }
 
 export function ResetMCPToolInstructions() {

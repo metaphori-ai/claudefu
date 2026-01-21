@@ -3,6 +3,9 @@ import './App.css';
 import { Sidebar } from './components/Sidebar';
 import { ChatView } from './components/ChatView';
 import { InputDialog } from './components/InputDialog';
+import { ConfirmDialog } from './components/ConfirmDialog';
+import { ManageWorkspacesDialog } from './components/ManageWorkspacesDialog';
+import { ManageAgentsDialog } from './components/ManageAgentsDialog';
 import { WorkspaceDropdown } from './components/WorkspaceDropdown';
 import { MCPSettingsPane } from './components/MCPSettingsPane';
 import { DialogBase } from './components/DialogBase';
@@ -29,7 +32,12 @@ import {
   GetSessions,
   AddAgent,
   GetVersion,
-  CheckForUpdates
+  CheckForUpdates,
+  RefreshMenu,
+  DeleteWorkspace,
+  RenameWorkspace,
+  RemoveAgent,
+  SelectWorkspaceFolder
 } from "../wailsjs/go/main/App";
 import { settings as settingsModel } from "../wailsjs/go/models";
 import { EventsOn, BrowserOpenURL } from "../wailsjs/runtime/runtime";
@@ -71,6 +79,10 @@ function AppContent() {
   // Local UI state
   const [saveDialogOpen, setSaveDialogOpen] = useState<boolean>(false);
   const [mcpSettingsOpen, setMcpSettingsOpen] = useState<boolean>(false);
+  const [manageWorkspacesOpen, setManageWorkspacesOpen] = useState<boolean>(false);
+  const [manageAgentsOpen, setManageAgentsOpen] = useState<boolean>(false);
+  const [confirmDeleteWorkspaceId, setConfirmDeleteWorkspaceId] = useState<string | null>(null);
+  const [confirmRemoveAgentId, setConfirmRemoveAgentId] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState<number>(0);
   const [pendingInitialMessage, setPendingInitialMessage] = useState<string | null>(null);
   const [openSessionsForAgentId, setOpenSessionsForAgentId] = useState<string | null>(null);
@@ -288,15 +300,98 @@ function AppContent() {
           }
         }
       }),
-      EventsOn('menu:new-workspace', () => {
-        handleNewWorkspace();
+      EventsOn('menu:remove-agent', () => {
+        if (selectedAgentId) {
+          setConfirmRemoveAgentId(selectedAgentId);
+        }
+      }),
+      EventsOn('menu:manage-agents', () => {
+        setManageAgentsOpen(true);
+      }),
+      EventsOn('menu:new-workspace', async () => {
+        // Inline new workspace logic (same as handleNewWorkspace)
+        try {
+          const ws = await CreateWorkspace('New Workspace');
+          if (ws) {
+            await SwitchWorkspace(ws.id);
+            setWorkspace({
+              id: ws.id,
+              name: ws.name,
+              agents: [],
+            });
+            clearSelection();
+            const workspaces = await GetAllWorkspaces();
+            setAllWorkspaces(workspaces || []);
+            await RefreshMenu();
+          }
+        } catch (err) {
+          console.error('Failed to create workspace:', err);
+        }
+      }),
+      EventsOn('menu:rename-workspace', () => {
+        setSaveDialogOpen(true);
+      }),
+      EventsOn('menu:delete-workspace', () => {
+        if (workspaceId && allWorkspaces.length > 1) {
+          setConfirmDeleteWorkspaceId(workspaceId);
+        }
+      }),
+      EventsOn('menu:manage-workspaces', () => {
+        setManageWorkspacesOpen(true);
+      }),
+      EventsOn('menu:switch-workspace', async (data: { workspaceId?: string }) => {
+        if (data?.workspaceId) {
+          // Inline workspace switch logic (same as handleSwitchWorkspace)
+          setView('startup');
+          setLoadingStatus('Switching workspace...');
+          try {
+            const ws = await SwitchWorkspace(data.workspaceId);
+            if (ws) {
+              setWorkspace({
+                id: ws.id,
+                name: ws.name || 'Workspace',
+                agents: ws.agents || [],
+                mcpConfig: ws.mcpConfig,
+                selectedAgentId: ws.selectedSession?.agentId || null,
+              });
+              if (ws.selectedSession?.agentId && ws.selectedSession?.sessionId && ws.selectedSession?.folder) {
+                selectSession(ws.selectedSession.sessionId, ws.selectedSession.folder);
+              } else {
+                clearSelection();
+              }
+            }
+            const workspaces = await GetAllWorkspaces();
+            setAllWorkspaces(workspaces || []);
+            await RefreshMenu();
+            setView('main');
+          } catch (err) {
+            console.error('Failed to switch workspace:', err);
+            setView('main');
+          }
+        }
+      }),
+      EventsOn('menu:switch-agent', (data: { agentId?: string }) => {
+        if (data?.agentId) {
+          // Inline agent selection logic (same as handleAgentSelect)
+          const agent = agents.find(a => a.id === data.agentId);
+          if (agent) {
+            selectAgent(data.agentId);
+            if (agent.selectedSessionId) {
+              selectSession(agent.selectedSessionId, agent.folder);
+            } else {
+              clearSelection();
+            }
+            // Refresh menu to update Agent menu state
+            RefreshMenu();
+          }
+        }
       }),
     ];
 
     return () => {
       handlers.forEach(unsub => unsub());
     };
-  }, [selectedAgentId, selectedAgent, version, renameAgent]);
+  }, [selectedAgentId, selectedAgent, version, renameAgent, agents, selectAgent, selectSession, clearSelection, setView, setLoadingStatus, setWorkspace, setAllWorkspaces, workspaceId, allWorkspaces]);
 
   // Check for updates on startup (delayed to not block UI)
   useEffect(() => {
@@ -586,6 +681,21 @@ function AppContent() {
         selectAgent(newAgent.id);
         clearSelection();
       }
+      // Refresh native menu to show new agent
+      RefreshMenu();
+    } catch (err) {
+      console.error('Failed to add agent:', err);
+    }
+  };
+
+  // Handler for adding agent from ManageAgentsDialog (opens folder picker)
+  const handleAddAgentFromDialog = async () => {
+    try {
+      const folder = await SelectWorkspaceFolder();
+      if (folder) {
+        const name = folder.split('/').pop() || 'Agent';
+        await handleAddAgent(folder, name);
+      }
     } catch (err) {
       console.error('Failed to add agent:', err);
     }
@@ -617,6 +727,8 @@ function AppContent() {
     } else {
       clearSelection();
     }
+    // Refresh native menu to reflect agent selection
+    RefreshMenu();
   };
 
   const handleSaveWorkspaceName = async (newName: string) => {
@@ -649,6 +761,8 @@ function AppContent() {
       }
       const workspaces = await GetAllWorkspaces();
       setAllWorkspaces(workspaces || []);
+      // Refresh native menu to reflect new workspace/agents
+      await RefreshMenu();
       setView('main');
     } catch (err) {
       console.error('Failed to switch workspace:', err);
@@ -671,9 +785,55 @@ function AppContent() {
         clearSelection();
         const workspaces = await GetAllWorkspaces();
         setAllWorkspaces(workspaces || []);
+        // Refresh native menu to show new workspace
+        await RefreshMenu();
       }
     } catch (err) {
       console.error('Failed to create workspace:', err);
+    }
+  };
+
+  const handleDeleteWorkspace = async (wsId: string) => {
+    try {
+      await DeleteWorkspace(wsId);
+      // Refresh workspace list
+      const workspaces = await GetAllWorkspaces();
+      setAllWorkspaces(workspaces || []);
+      // Backend already switches if we deleted current workspace
+      const currentWs = await GetCurrentWorkspace();
+      if (currentWs) {
+        setWorkspace({
+          id: currentWs.id,
+          name: currentWs.name || 'Workspace',
+          agents: currentWs.agents || [],
+          mcpConfig: currentWs.mcpConfig,
+          selectedAgentId: currentWs.selectedSession?.agentId || null,
+        });
+        if (currentWs.selectedSession?.agentId && currentWs.selectedSession?.sessionId && currentWs.selectedSession?.folder) {
+          selectSession(currentWs.selectedSession.sessionId, currentWs.selectedSession.folder);
+        } else {
+          clearSelection();
+        }
+      }
+      await RefreshMenu();
+    } catch (err) {
+      console.error('Failed to delete workspace:', err);
+    }
+  };
+
+  const handleRenameWorkspaceById = async (wsId: string, newName: string) => {
+    try {
+      await RenameWorkspace(wsId, newName);
+      // Refresh workspace list
+      const workspaces = await GetAllWorkspaces();
+      setAllWorkspaces(workspaces || []);
+      // If we renamed the current workspace, update local state
+      if (wsId === workspaceId) {
+        setWorkspaceName(newName);
+      }
+      await RefreshMenu();
+    } catch (err) {
+      console.error('Failed to rename workspace:', err);
     }
   };
 
@@ -941,6 +1101,12 @@ function AppContent() {
             onSelectWorkspace={handleSwitchWorkspace}
             onNewWorkspace={handleNewWorkspace}
             onRenameWorkspace={() => setSaveDialogOpen(true)}
+            onDeleteWorkspace={() => {
+              if (allWorkspaces.length > 1) {
+                setConfirmDeleteWorkspaceId(workspaceId);
+              }
+            }}
+            onManageWorkspaces={() => setManageWorkspacesOpen(true)}
           />
           {selectedAgent && (
             <>
@@ -1196,12 +1362,90 @@ function AppContent() {
       {/* Save Workspace Dialog */}
       <InputDialog
         isOpen={saveDialogOpen}
-        title="Save Workspace"
+        title="Rename Workspace"
         label="Workspace Name"
         value={workspaceName}
         placeholder="Enter workspace name"
         onSubmit={handleSaveWorkspaceName}
         onClose={() => setSaveDialogOpen(false)}
+      />
+
+      {/* Manage Workspaces Dialog */}
+      <ManageWorkspacesDialog
+        isOpen={manageWorkspacesOpen}
+        onClose={() => setManageWorkspacesOpen(false)}
+        workspaces={allWorkspaces}
+        currentWorkspaceId={workspaceId}
+        onSwitchWorkspace={handleSwitchWorkspace}
+        onRenameWorkspace={handleRenameWorkspaceById}
+        onDeleteWorkspace={handleDeleteWorkspace}
+        onNewWorkspace={handleNewWorkspace}
+      />
+
+      {/* Manage Agents Dialog */}
+      <ManageAgentsDialog
+        isOpen={manageAgentsOpen}
+        onClose={() => setManageAgentsOpen(false)}
+        agents={agents}
+        currentAgentId={selectedAgentId || null}
+        onSwitchAgent={(agentId) => {
+          const agent = agents.find(a => a.id === agentId);
+          if (agent) {
+            handleAgentSelect(agentId);
+          }
+        }}
+        onAddAgent={handleAddAgentFromDialog}
+        onAgentRemoved={(agentId) => {
+          removeAgent(agentId);
+          if (agentId === selectedAgentId) {
+            clearSelection();
+          }
+        }}
+        onAgentUpdated={(updatedAgent) => {
+          renameAgent(updatedAgent.id, updatedAgent.name);
+        }}
+      />
+
+      {/* Confirm Delete Workspace Dialog */}
+      <ConfirmDialog
+        isOpen={!!confirmDeleteWorkspaceId}
+        onClose={() => setConfirmDeleteWorkspaceId(null)}
+        onConfirm={async () => {
+          if (confirmDeleteWorkspaceId) {
+            await handleDeleteWorkspace(confirmDeleteWorkspaceId);
+            setConfirmDeleteWorkspaceId(null);
+          }
+        }}
+        title="Delete Workspace"
+        message={`Are you sure you want to delete "${allWorkspaces.find(ws => ws.id === confirmDeleteWorkspaceId)?.name || 'this workspace'}"? This action cannot be undone.`}
+        confirmText="Delete"
+        danger
+      />
+
+      {/* Confirm Remove Agent Dialog */}
+      <ConfirmDialog
+        isOpen={!!confirmRemoveAgentId}
+        onClose={() => setConfirmRemoveAgentId(null)}
+        onConfirm={async () => {
+          if (confirmRemoveAgentId) {
+            try {
+              await RemoveAgent(confirmRemoveAgentId);
+              removeAgent(confirmRemoveAgentId);
+              // Clear selection if removing current agent
+              if (confirmRemoveAgentId === selectedAgentId) {
+                clearSelection();
+              }
+              await RefreshMenu();
+            } catch (err) {
+              console.error('Failed to remove agent:', err);
+            }
+            setConfirmRemoveAgentId(null);
+          }
+        }}
+        title="Remove Agent"
+        message={`Remove "${agents.find(a => a.id === confirmRemoveAgentId)?.name || 'this agent'}" from the workspace?`}
+        confirmText="Remove"
+        danger
       />
 
       {/* MCP Settings Pane */}

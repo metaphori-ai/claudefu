@@ -661,3 +661,46 @@ func (m *Manager) GetSubagentConversation(folder, sessionID, subagentID string) 
 
 	return messages, nil
 }
+
+// DeleteWorkspace removes a workspace by ID.
+// Returns an error if it's the only workspace (cannot delete the last one).
+func (m *Manager) DeleteWorkspace(id string) error {
+	// Don't allow deleting if it's the only workspace
+	workspaces, err := m.GetAllWorkspaces()
+	if err != nil {
+		return fmt.Errorf("failed to check workspaces: %w", err)
+	}
+	if len(workspaces) <= 1 {
+		return fmt.Errorf("cannot delete the only workspace")
+	}
+
+	// Delete the workspace file
+	filePath := filepath.Join(m.configPath, "workspaces", id+".json")
+	if err := os.Remove(filePath); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("workspace not found: %s", id)
+		}
+		return fmt.Errorf("failed to delete workspace: %w", err)
+	}
+
+	return nil
+}
+
+// RenameWorkspace changes a workspace's name by ID.
+func (m *Manager) RenameWorkspace(id string, newName string) error {
+	// Load the workspace
+	ws, err := m.LoadWorkspace(id)
+	if err != nil {
+		return fmt.Errorf("failed to load workspace: %w", err)
+	}
+
+	// Update the name
+	ws.Name = newName
+
+	// Save it back
+	if err := m.SaveWorkspace(ws); err != nil {
+		return fmt.Errorf("failed to save workspace: %w", err)
+	}
+
+	return nil
+}

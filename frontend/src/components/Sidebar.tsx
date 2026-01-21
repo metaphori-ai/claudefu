@@ -20,6 +20,8 @@ import { InputDialog } from './InputDialog';
 import { SessionsDialog } from './SessionsDialog';
 import { InboxDialog } from './InboxDialog';
 import { GlobalSettingsDialog } from './GlobalSettingsDialog';
+import { ConfirmDialog } from './ConfirmDialog';
+import { RefreshMenu } from '../../wailsjs/go/main/App';
 import { workspace, types } from '../../wailsjs/go/models';
 import { useWorkspace, useSession, useSessionName, useAgentUnread } from '../hooks';
 
@@ -80,6 +82,7 @@ export function Sidebar({
   const [renameSessionDialog, setRenameSessionDialog] = useState<{ agent: Agent; session: Session } | null>(null);
   const [sessionsDialogAgent, setSessionsDialogAgent] = useState<Agent | null>(null);
   const [showGlobalSettings, setShowGlobalSettings] = useState(false);
+  const [confirmRemoveAgentId, setConfirmRemoveAgentId] = useState<string | null>(null);
 
   // Load initial inbox counts for all agents
   useEffect(() => {
@@ -369,14 +372,9 @@ export function Sidebar({
                 setMenuAgentId(null);
                 setRenameDialogAgent(a);
               }}
-              onRemove={async (id) => {
+              onRemove={(id) => {
                 setMenuAgentId(null);
-                try {
-                  await RemoveAgent(id);
-                  removeAgent(id);
-                } catch (err) {
-                  console.error('Failed to remove agent:', err);
-                }
+                setConfirmRemoveAgentId(id);
               }}
               onCloseMenu={() => setMenuAgentId(null)}
             />
@@ -535,6 +533,28 @@ export function Sidebar({
       <GlobalSettingsDialog
         isOpen={showGlobalSettings}
         onClose={() => setShowGlobalSettings(false)}
+      />
+
+      {/* Confirm Remove Agent Dialog */}
+      <ConfirmDialog
+        isOpen={!!confirmRemoveAgentId}
+        onClose={() => setConfirmRemoveAgentId(null)}
+        onConfirm={async () => {
+          if (confirmRemoveAgentId) {
+            try {
+              await RemoveAgent(confirmRemoveAgentId);
+              removeAgent(confirmRemoveAgentId);
+              await RefreshMenu();
+            } catch (err) {
+              console.error('Failed to remove agent:', err);
+            }
+            setConfirmRemoveAgentId(null);
+          }
+        }}
+        title="Remove Agent"
+        message={`Are you sure you want to remove "${agents.find(a => a.id === confirmRemoveAgentId)?.name}"? This will remove it from ClaudeFu but won't delete your project files.`}
+        confirmText="Remove"
+        danger
       />
     </aside>
   );

@@ -36,6 +36,8 @@ export function CreateWorkspace(arg1:string):Promise<workspace.Workspace>;
 
 export function DeleteInboxMessage(arg1:string,arg2:string):Promise<boolean>;
 
+export function DeleteWorkspace(arg1:string):Promise<void>;
+
 export function GetAgent(arg1:string):Promise<workspace.Agent>;
 
 export function GetAgentTotalUnread(arg1:string):Promise<number>;
@@ -121,6 +123,8 @@ export function RefreshMenu():Promise<void>;
 export function RefreshSessions(arg1:string):Promise<Array<types.Session>>;
 
 export function RemoveAgent(arg1:string):Promise<void>;
+
+export function RenameWorkspace(arg1:string,arg2:string):Promise<void>;
 
 export function ResetMCPToolInstructions():Promise<void>;
 

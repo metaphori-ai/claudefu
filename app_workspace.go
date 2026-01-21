@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
 	wailsrt "github.com/wailsapp/wails/v2/pkg/runtime"
 
@@ -121,6 +123,63 @@ func (a *App) SaveWorkspaceWithRename(ws workspace.Workspace, oldName string) er
 		return fmt.Errorf("workspace manager not initialized")
 	}
 	return a.workspace.SaveWorkspaceWithRename(&ws, oldName)
+}
+
+// RenameWorkspace renames a workspace by ID
+func (a *App) RenameWorkspace(workspaceID string, newName string) error {
+	if a.workspace == nil {
+		return fmt.Errorf("workspace manager not initialized")
+	}
+	return a.workspace.RenameWorkspace(workspaceID, newName)
+}
+
+// DeleteWorkspace removes a workspace by ID.
+// If deleting the current workspace, switches to another first.
+// Also cleans up the MCP inbox database for the deleted workspace.
+func (a *App) DeleteWorkspace(workspaceID string) error {
+	if a.workspace == nil {
+		return fmt.Errorf("workspace manager not initialized")
+	}
+
+	// If deleting current workspace, switch to another first
+	currentID, _ := a.GetCurrentWorkspaceID()
+	if workspaceID == currentID {
+		// Find another workspace to switch to
+		workspaces, err := a.GetAllWorkspaces()
+		if err != nil {
+			return fmt.Errorf("failed to list workspaces: %w", err)
+		}
+
+		var targetWorkspace string
+		for _, ws := range workspaces {
+			if ws.ID != workspaceID {
+				targetWorkspace = ws.ID
+				break
+			}
+		}
+
+		if targetWorkspace == "" {
+			return fmt.Errorf("cannot delete the only workspace")
+		}
+
+		// Switch to another workspace first
+		if _, err := a.SwitchWorkspace(targetWorkspace); err != nil {
+			return fmt.Errorf("failed to switch before delete: %w", err)
+		}
+	}
+
+	// Delete the workspace
+	if err := a.workspace.DeleteWorkspace(workspaceID); err != nil {
+		return err
+	}
+
+	// Clean up MCP inbox database (ignore errors if doesn't exist)
+	if a.settings != nil {
+		inboxPath := filepath.Join(a.settings.GetConfigPath(), "inbox", workspaceID+".db")
+		os.Remove(inboxPath) // Ignore error if file doesn't exist
+	}
+
+	return nil
 }
 
 // SelectWorkspaceFolder opens folder picker and returns selected path
