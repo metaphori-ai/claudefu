@@ -37,8 +37,15 @@ export function MessageList({
   onQuestionAnswer,
   onQuestionSkip
 }: MessageListProps) {
-  // Filter out tool_result_carrier messages
-  const displayableMessages = messages.filter(msg => msg.type !== 'tool_result_carrier');
+  // Filter out tool_result_carrier messages and sort by timestamp
+  const displayableMessages = messages
+    .filter(msg => msg.type !== 'tool_result_carrier')
+    .sort((a, b) => {
+      // Sort by timestamp (ascending - oldest first)
+      const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+      const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+      return timeA - timeB;
+    });
 
   return (
     <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>

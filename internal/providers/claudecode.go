@@ -77,13 +77,18 @@ type ClaudeCodeService struct {
 	// Process tracking for cancellation support
 	activeProcs   map[string]*exec.Cmd // sessionID -> running command
 	activeProcsMu sync.RWMutex
+
+	// Cancellation tracking - distinguishes user cancellation from errors
+	cancelledSessions   map[string]bool
+	cancelledSessionsMu sync.RWMutex
 }
 
 // NewClaudeCodeService creates a new Claude Code service
 func NewClaudeCodeService(ctx context.Context) *ClaudeCodeService {
 	return &ClaudeCodeService{
-		ctx:         ctx,
-		activeProcs: make(map[string]*exec.Cmd),
+		ctx:               ctx,
+		activeProcs:       make(map[string]*exec.Cmd),
+		cancelledSessions: make(map[string]bool),
 	}
 }
 
@@ -170,6 +175,11 @@ func (s *ClaudeCodeService) CancelSession(sessionID string) error {
 		return nil
 	}
 
+	// Mark as cancelled BEFORE sending signal (so WasCancelled knows it was intentional)
+	s.cancelledSessionsMu.Lock()
+	s.cancelledSessions[sessionID] = true
+	s.cancelledSessionsMu.Unlock()
+
 	// Send SIGINT for graceful termination (like Ctrl+C in terminal)
 	// This allows Claude CLI to clean up properly
 	fmt.Printf("[DEBUG] CancelSession: sending SIGINT to session %s (PID %d)\n", sessionID, cmd.Process.Pid)
@@ -180,6 +190,17 @@ func (s *ClaudeCodeService) CancelSession(sessionID string) error {
 	}
 
 	return nil
+}
+
+// WasCancelled checks if a session was cancelled via CancelSession.
+// This is used to distinguish user-initiated cancellation from errors.
+// Calling this method clears the cancelled flag (single-use check).
+func (s *ClaudeCodeService) WasCancelled(sessionID string) bool {
+	s.cancelledSessionsMu.Lock()
+	defer s.cancelledSessionsMu.Unlock()
+	wasCancelled := s.cancelledSessions[sessionID]
+	delete(s.cancelledSessions, sessionID) // Clear after checking
+	return wasCancelled
 }
 
 // getMCPArgs returns the --mcp-config, --allowed-tools, and --disallowed-tools args if MCP is configured

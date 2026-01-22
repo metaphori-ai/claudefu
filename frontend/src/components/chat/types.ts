@@ -67,6 +67,7 @@ export interface Message {
   isFailed?: boolean;   // True if send failed
   pendingQuestion?: PendingQuestion;  // Non-null if this message contains a failed AskUserQuestion
   isSynthetic?: boolean;  // True if model="<synthetic>" (e.g., "No response requested.")
+  stopReason?: string;  // "stop_sequence" (JSONL) or "end_turn" (streaming) when complete, null/undefined when tools pending
 }
 
 // Props for ChatView component

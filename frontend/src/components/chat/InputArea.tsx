@@ -2,6 +2,8 @@ import React, { useRef, useEffect, useState, useImperativeHandle, forwardRef, us
 import type { Attachment } from './types';
 import { ATTACHMENT_LIMITS } from './types';
 import { FilePicker } from './FilePicker';
+import { SplitButton } from './SplitButton';
+import { QueuedMessage } from '../../context/SessionContext';
 import { ReadFileContent } from '../../../wailsjs/go/main/App';
 
 // Fun verbs for the "Claude is thinking" placeholder
@@ -50,6 +52,11 @@ interface InputAreaProps {
   // Lifted attachment state (managed by parent, displayed in ControlButtonsRow)
   attachments: Attachment[];
   onAttachmentsChange: React.Dispatch<React.SetStateAction<Attachment[]>>;
+  // Message queue props (for queuing messages while Claude is responding)
+  queue: QueuedMessage[];
+  onQueue: (content: string, attachments: Attachment[]) => void;
+  onRemoveFromQueue: (id: string) => void;
+  onEditQueueMessage: (message: QueuedMessage) => void;
 }
 
 // File picker state
@@ -97,7 +104,11 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
   newSessionMode = false,
   planningMode = false,
   attachments,
-  onAttachmentsChange
+  onAttachmentsChange,
+  queue,
+  onQueue,
+  onRemoveFromQueue,
+  onEditQueueMessage
 }, ref) {
   // Input state lives here - isolated from parent re-renders
   const [inputValue, setInputValue] = useState('');
@@ -352,16 +363,55 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
     onSend(message, toSend);
   };
 
-  // Handle Enter key to send, Shift+Enter for newline
+  // Handle queue action - add message to queue and clear input
+  const handleQueue = useCallback(() => {
+    const message = inputValue.trim();
+    if (!message && attachments.length === 0) return;
+
+    // Substitute @display paths before queueing (same as handleSend)
+    let processedMessage = message;
+    filePathMap.forEach((fullPath, displayPath) => {
+      processedMessage = processedMessage.split(displayPath).join(`[file:${fullPath}]`);
+    });
+
+    onQueue(processedMessage, [...attachments]);
+    setInputValue('');
+    setAttachments([]);
+    setFilePathMap(new Map());
+  }, [inputValue, attachments, filePathMap, onQueue]);
+
+  // Handle Enter key to send/queue, Shift+Enter for newline, ArrowUp to edit queue
   // Don't submit if FilePicker is open (it handles Enter for selection)
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // ArrowUp: Edit last queued message if cursor is on first line
+    if (e.key === 'ArrowUp' && queue.length > 0) {
+      const textarea = e.target as HTMLTextAreaElement;
+      const cursorLine = inputValue.substring(0, textarea.selectionStart).split('\n').length;
+
+      if (cursorLine === 1) {
+        e.preventDefault();
+        const lastQueued = queue[queue.length - 1];
+        onEditQueueMessage(lastQueued);
+        // Load content into textarea
+        setInputValue(lastQueued.content);
+        setAttachments(lastQueued.attachments || []);
+        return;
+      }
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       // If FilePicker is open, don't submit - let FilePicker handle Enter
       if (filePickerState?.isOpen) {
         return; // FilePicker's global handler will catch this
       }
       e.preventDefault();
-      handleSend();
+
+      // If Claude is responding, queue instead of send
+      if (isSending) {
+        handleQueue();
+      } else {
+        handleSend();
+      }
     }
   };
 
@@ -442,8 +492,10 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
   // Only disable for pending questions - allow typing while Claude is thinking
   const isDisabled = hasPendingQuestion;
   const isSendDisabled = isSending || (!inputValue.trim() && attachments.length === 0) || hasPendingQuestion;
-  // Show Stop when isSending is true - SendMessage blocks until Claude finishes
-  const showStopButton = isSending;
+  // Show split button (Stop + Queue) when isSending is true
+  const showSplitButton = isSending;
+  // Queue button is disabled if input is empty
+  const isQueueDisabled = (!inputValue.trim() && attachments.length === 0);
 
   // Diagonal stripe pattern for "waiting" state
   const waitingBackground = isSending
@@ -470,7 +522,104 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
         margin: isDragOver ? '-0.5rem' : '0'
       }}
     >
-      {/* Attachments are displayed in ControlButtonsRow (above input area) */}
+      {/* Queue display - styled exactly like YOU messages */}
+      {queue.length > 0 && (
+        <div style={{ marginBottom: '12px' }}>
+          {queue.map((msg, index) => (
+            <div key={msg.id} style={{ marginBottom: index < queue.length - 1 ? '12px' : '0' }}>
+              {/* Header exactly like user message: YOU in orange, then gray text */}
+              <div style={{
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                marginBottom: '0.5rem',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem'
+              }}>
+                <span style={{ color: '#d97757' }}>You</span>
+                <span style={{
+                  fontWeight: 400,
+                  color: '#444',
+                  textTransform: 'none',
+                  letterSpacing: 'normal'
+                }}>
+                  Queued #{index + 1}
+                </span>
+                {msg.attachments && msg.attachments.length > 0 && (
+                  <span style={{ color: '#666', display: 'flex', alignItems: 'center', gap: '2px', fontWeight: 400 }}>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <rect x="3" y="3" width="18" height="18" rx="2" />
+                      <circle cx="9" cy="9" r="2" />
+                      <path d="M21 15l-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+                    </svg>
+                    {msg.attachments.length}
+                  </span>
+                )}
+              </div>
+              {/* Message bubble exactly like user message */}
+              <div
+                onClick={() => {
+                  onEditQueueMessage(msg);
+                  setInputValue(msg.content);
+                  setAttachments(msg.attachments || []);
+                }}
+                style={{
+                  color: '#ccc',
+                  fontSize: '0.9rem',
+                  lineHeight: '1.6',
+                  padding: '0.75rem 1rem',
+                  background: '#1a1a1a',
+                  borderRadius: '8px',
+                  borderLeft: '3px solid #d97757',
+                  cursor: 'pointer',
+                  position: 'relative',
+                  textAlign: 'left'
+                }}
+              >
+                <div style={{ whiteSpace: 'pre-wrap', textAlign: 'left' }}>
+                  {msg.content || '(empty)'}
+                </div>
+                {/* Delete button - top right corner */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRemoveFromQueue(msg.id);
+                  }}
+                  title="Remove from queue"
+                  style={{
+                    position: 'absolute',
+                    top: '6px',
+                    right: '6px',
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#444',
+                    cursor: 'pointer',
+                    padding: '4px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: '4px',
+                    transition: 'color 0.15s ease'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.color = '#ef4444';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.color = '#444';
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Hidden file input */}
       <input
@@ -608,47 +757,13 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
             </div>
           )}
         </div>
-        {showStopButton ? (
-          <button
-            onClick={onCancel}
-            disabled={isCancelling}
-            title="Stop Claude (ESC)"
-            style={{
-              width: '70px',
-              minHeight: '100px',
-              borderRadius: '8px',
-              border: 'none',
-              background: isCancelling ? '#444' : '#ef4444',
-              color: isCancelling ? '#888' : '#fff',
-              cursor: isCancelling ? 'not-allowed' : 'pointer',
-              fontWeight: 500,
-              transition: 'background 0.15s ease',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '0.25rem',
-              flexShrink: 0,
-              boxSizing: 'border-box'
-            }}
-          >
-            {isCancelling ? (
-              <div style={{
-                width: '16px',
-                height: '16px',
-                border: '2px solid #666',
-                borderTopColor: '#ef4444',
-                borderRadius: '50%',
-                animation: 'spin 1s linear infinite'
-              }} />
-            ) : (
-              <>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                  <rect x="4" y="4" width="16" height="16" rx="2" />
-                </svg>
-                Stop
-              </>
-            )}
-          </button>
+        {showSplitButton ? (
+          <SplitButton
+            onStop={onCancel || (() => {})}
+            onQueue={handleQueue}
+            queueDisabled={isQueueDisabled}
+            isCancelling={isCancelling}
+          />
         ) : (
           <button
             onClick={handleSend}

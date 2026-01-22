@@ -238,6 +238,7 @@ func convertAssistantToMessage(event *AssistantEvent) *Message {
 		Timestamp:     event.Timestamp,
 		UUID:          event.UUID,
 		IsSynthetic:   isSynthetic,
+		StopReason:    event.Message.StopReason,
 	}
 }
 

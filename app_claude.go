@@ -17,6 +17,7 @@ import (
 // SendMessage sends a message to Claude Code, optionally with image attachments.
 // If attachments are provided, uses stdin with stream-json format.
 // If planMode is true, forces Claude into planning mode.
+// Emits "response_complete" event when the Claude CLI process exits.
 func (a *App) SendMessage(agentID, sessionID, message string, attachments []types.Attachment, planMode bool) error {
 	if a.claude == nil {
 		return fmt.Errorf("claude service not initialized")
@@ -36,7 +37,24 @@ func (a *App) SendMessage(agentID, sessionID, message string, attachments []type
 		a.rt.SetLastSendTime(agentID, sessionID, time.Now())
 	}
 
-	return a.claude.SendMessage(agent.Folder, sessionID, message, attachments, planMode)
+	// Call Claude - BLOCKS until CLI process exits
+	err := a.claude.SendMessage(agent.Folder, sessionID, message, attachments, planMode)
+
+	// Emit response_complete event AFTER Claude finishes
+	// This is the authoritative signal that the response is complete
+	if a.rt != nil {
+		wasCancelled := a.claude.WasCancelled(sessionID)
+		payload := map[string]any{
+			"success":   err == nil,
+			"cancelled": wasCancelled,
+		}
+		if err != nil && !wasCancelled {
+			payload["error"] = err.Error()
+		}
+		a.rt.Emit("response_complete", agentID, sessionID, payload)
+	}
+
+	return err
 }
 
 // NewSession creates a new Claude Code session
@@ -91,6 +109,7 @@ func (a *App) GetPlanFilePath(agentID, sessionID string) string {
 
 // AnswerQuestion answers a pending AskUserQuestion by patching the JSONL and resuming the session.
 // This enables interactive question handling even when Claude Code runs in --print mode.
+// Emits "response_complete" event when the Claude CLI process exits.
 func (a *App) AnswerQuestion(agentID, sessionID, toolUseID string, questions []map[string]any, answers map[string]string) error {
 	if a.claude == nil {
 		return fmt.Errorf("claude service not initialized")
@@ -124,7 +143,22 @@ func (a *App) AnswerQuestion(agentID, sessionID, toolUseID string, questions []m
 	}
 
 	// Step 4: Resume the session with "question answered" to trigger Claude continuation
-	return a.claude.SendMessage(agent.Folder, sessionID, "question answered", nil, false)
+	err := a.claude.SendMessage(agent.Folder, sessionID, "question answered", nil, false)
+
+	// Emit response_complete event AFTER Claude finishes
+	if a.rt != nil {
+		wasCancelled := a.claude.WasCancelled(sessionID)
+		payload := map[string]any{
+			"success":   err == nil,
+			"cancelled": wasCancelled,
+		}
+		if err != nil && !wasCancelled {
+			payload["error"] = err.Error()
+		}
+		a.rt.Emit("response_complete", agentID, sessionID, payload)
+	}
+
+	return err
 }
 
 // CancelSession cancels a running Claude process for a session.

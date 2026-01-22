@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { GetConversationPaged, SetActiveSession, SendMessage, MarkSessionViewed, NewSession, ReadPlanFile, GetPlanFilePath, AnswerQuestion, CancelSession, AppendCancellationMarker } from '../../wailsjs/go/main/App';
+import { GetConversationPaged, SetActiveSession, ClearActiveSession, SendMessage, MarkSessionViewed, NewSession, ReadPlanFile, GetPlanFilePath, AnswerQuestion, CancelSession, AppendCancellationMarker } from '../../wailsjs/go/main/App';
 import { types } from '../../wailsjs/go/models';
 
 // Extracted components
@@ -22,6 +22,7 @@ import { PermissionsDialog } from './PermissionsDialog';
 import { useScrollManagement } from '../hooks/useScrollManagement';
 import { useMessages } from '../hooks/useMessages';
 import { useSession } from '../hooks/useSession';
+import { QueuedMessage } from '../context/SessionContext';
 
 // Utilities
 import { buildToolResultMap, buildPendingQuestionMap, computeDebugStats, filterMessagesToRender } from '../utils/messageUtils';
@@ -74,8 +75,9 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
   const isLoading = localLoading || isContextLoading;
 
   // Per-agent "responding" state from context (survives agent switching)
-  const { setAgentResponding, isAgentResponding } = useSession();
+  const { setAgentResponding, isAgentResponding, addToQueue, removeFromQueue, shiftQueue, getQueue, setLastSessionId } = useSession();
   const isSending = isAgentResponding(agentId);
+  const queue = getQueue(agentId);
 
   // UI state
   const [showDebugStats, setShowDebugStats] = useState(false);
@@ -213,6 +215,9 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
         return;
       }
 
+      // Track this session as the last viewed for this agent (for global queue auto-submit)
+      setLastSessionId(agentId, sessionId);
+
       try {
         await MarkSessionViewed(agentId, sessionId);
       } catch (err) {
@@ -223,6 +228,14 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
     };
 
     initSession();
+
+    // Cleanup: Clear active session when unmounting (user switches agents)
+    // This ensures the backend doesn't think we're still viewing this session
+    return () => {
+      ClearActiveSession().catch(err => {
+        console.error('Failed to clear active session:', err);
+      });
+    };
   }, [agentId, sessionId]);
 
   // Clear chat when creating new session externally (from SessionsDialog + button)
@@ -393,6 +406,9 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
     });
     if ((!message && attachments.length === 0) || isSending) return;
 
+    // Track this session as the last used for this agent (for global queue auto-submit)
+    setLastSessionId(agentId, sessionId);
+
     // Start debug cycle for this prompt
     startDebugCycle(message, {
       agentId,
@@ -474,7 +490,9 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
       inputAreaRef.current?.setValue(message);
       setIsWaitingForResponse(false);
     } finally {
-      setAgentResponding(agentId, false);
+      // NOTE: Don't clear respondingAgents here - use event-driven approach instead
+      // The useWailsEvents hook clears respondingAgents when assistant message arrives
+      // This ensures correct state even when user switches agents during a response
     }
   };
 
@@ -489,6 +507,41 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
       console.error('Failed to read plan file:', err);
     }
   };
+
+  // ===== MESSAGE QUEUE HANDLERS =====
+
+  // Add message to queue (called when user presses Enter/Queue while Claude is responding)
+  const handleQueue = (content: string, queueAttachments: Attachment[]) => {
+    addToQueue(agentId, {
+      id: `queue-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      content,
+      attachments: queueAttachments,
+      createdAt: Date.now()
+    });
+  };
+
+  // Remove message from queue
+  const handleRemoveFromQueue = (messageId: string) => {
+    removeFromQueue(agentId, messageId);
+  };
+
+  // Edit queued message (removes from queue - content is loaded into InputArea by InputArea itself)
+  const handleEditQueueMessage = (message: QueuedMessage) => {
+    removeFromQueue(agentId, message.id);
+  };
+
+  // NOTE: Auto-submit from queue is DISABLED in ChatView
+  // Frontend cannot reliably detect when Claude's response is complete:
+  // - stop_reason signals are unreliable (can appear mid-response during tool use)
+  // - Race conditions when switching agents
+  // - Frontend doesn't know true process state
+  //
+  // Queue is now DISPLAY ONLY. Users can:
+  // 1. See queued messages in QueueDisplay
+  // 2. Edit or remove queued messages
+  // 3. Manually send when ready
+  //
+  // Future: Backend should emit "response_complete" event for reliable auto-submit
 
   // Loading state
   if (isLoading) {
@@ -589,6 +642,10 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
           planningMode={planningMode}
           attachments={attachments}
           onAttachmentsChange={setAttachments}
+          queue={queue}
+          onQueue={handleQueue}
+          onRemoveFromQueue={handleRemoveFromQueue}
+          onEditQueueMessage={handleEditQueueMessage}
         />
       </div>
 

@@ -1,6 +1,7 @@
 import { useContext, useCallback } from 'react';
-import { SessionContext, SessionAction, MCPPendingQuestion } from '../context/SessionContext';
+import { SessionContext, SessionAction, MCPPendingQuestion, QueuedMessage } from '../context/SessionContext';
 import { mcpserver } from '../../wailsjs/go/models';
+import { Attachment } from '../components/chat/types';
 
 type InboxMessage = mcpserver.InboxMessage;
 
@@ -78,6 +79,40 @@ export function useSession() {
     return state.respondingAgents.get(agentId) ?? false;
   }, [state.respondingAgents]);
 
+  // Message Queue action creators
+  const addToQueue = useCallback((agentId: string, message: QueuedMessage) => {
+    dispatch({ type: 'ADD_TO_QUEUE', payload: { agentId, message } });
+  }, [dispatch]);
+
+  const removeFromQueue = useCallback((agentId: string, messageId: string) => {
+    dispatch({ type: 'REMOVE_FROM_QUEUE', payload: { agentId, messageId } });
+  }, [dispatch]);
+
+  const updateQueueMessage = useCallback((agentId: string, messageId: string, content: string, attachments?: Attachment[]) => {
+    dispatch({ type: 'UPDATE_QUEUE_MESSAGE', payload: { agentId, messageId, content, attachments } });
+  }, [dispatch]);
+
+  const shiftQueue = useCallback((agentId: string) => {
+    dispatch({ type: 'SHIFT_QUEUE', payload: { agentId } });
+  }, [dispatch]);
+
+  const clearQueue = useCallback((agentId: string) => {
+    dispatch({ type: 'CLEAR_QUEUE', payload: { agentId } });
+  }, [dispatch]);
+
+  const getQueue = useCallback((agentId: string): QueuedMessage[] => {
+    return state.messageQueues.get(agentId) || [];
+  }, [state.messageQueues]);
+
+  // Last session tracking (for global auto-submit)
+  const setLastSessionId = useCallback((agentId: string, sessionId: string) => {
+    dispatch({ type: 'SET_LAST_SESSION_ID', payload: { agentId, sessionId } });
+  }, [dispatch]);
+
+  const getLastSessionId = useCallback((agentId: string): string | undefined => {
+    return state.lastSessionIds.get(agentId);
+  }, [state.lastSessionIds]);
+
   const reset = useCallback(() => {
     dispatch({ type: 'RESET' });
   }, [dispatch]);
@@ -93,6 +128,8 @@ export function useSession() {
     inboxDialogAgentId: state.inboxDialogAgentId,
     mcpPendingQuestion: state.mcpPendingQuestion,
     respondingAgents: state.respondingAgents,
+    messageQueues: state.messageQueues,
+    lastSessionIds: state.lastSessionIds,
 
     // Actions
     selectSession,
@@ -111,6 +148,16 @@ export function useSession() {
     setMCPPendingQuestion,
     setAgentResponding,
     isAgentResponding,
+    // Message Queue actions
+    addToQueue,
+    removeFromQueue,
+    updateQueueMessage,
+    shiftQueue,
+    clearQueue,
+    getQueue,
+    // Last session tracking
+    setLastSessionId,
+    getLastSessionId,
     reset,
 
     // Raw dispatch for advanced usage

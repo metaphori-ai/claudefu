@@ -502,6 +502,7 @@ export namespace types {
 	    compactionPreview?: string;
 	    pendingQuestion?: PendingQuestion;
 	    isSynthetic?: boolean;
+	    stopReason?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Message(source);
@@ -518,6 +519,7 @@ export namespace types {
 	        this.compactionPreview = source["compactionPreview"];
 	        this.pendingQuestion = this.convertValues(source["pendingQuestion"], PendingQuestion);
 	        this.isSynthetic = source["isSynthetic"];
+	        this.stopReason = source["stopReason"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

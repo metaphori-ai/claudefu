@@ -213,20 +213,12 @@ func (fw *FileWatcher) handleFileChange(path string) {
 		return
 	}
 
-	// Find which agent (if any) has this session as active
-	// Only ONE agent can be viewing at a time, so at most one will match
-	var activeAgentID string
-	for _, agentID := range agentIDs {
-		if rt.IsActiveSession(agentID, sessionID) {
-			activeAgentID = agentID
-			break
-		}
-	}
-	if activeAgentID == "" {
-		// No agent is actively viewing this session
-		return
-	}
-	agentID := activeAgentID
+	// Use the first agent that owns this folder
+	// (Multiple agents can share a folder, but they share session state)
+	// IMPORTANT: Always emit events regardless of "active" status
+	// The frontend handles displaying only relevant sessions
+	// This fixes state sync issues when user switches agents during a response
+	agentID := agentIDs[0]
 
 	// Get or create session state in runtime
 	session := rt.GetOrCreateSessionState(agentID, sessionID)

@@ -1,7 +1,16 @@
 import { createContext, useReducer, ReactNode, Dispatch } from 'react';
 import { mcpserver } from '../../wailsjs/go/models';
+import { Attachment } from '../components/chat/types';
 
 type InboxMessage = mcpserver.InboxMessage;
+
+// Queued message for sending when Claude finishes responding
+export interface QueuedMessage {
+  id: string;              // UUID for key/delete
+  content: string;         // Message text
+  attachments: Attachment[];  // Optional attachments
+  createdAt: number;       // Timestamp for ordering
+}
 
 // MCP Pending Question from backend event
 export interface MCPPendingQuestion {
@@ -32,6 +41,10 @@ export interface SessionState {
   mcpPendingQuestion: MCPPendingQuestion | null;
   // Per-agent "Claude is responding" state (survives agent switching)
   respondingAgents: Map<string, boolean>;
+  // Per-agent message queue (for queuing messages while Claude is responding)
+  messageQueues: Map<string, QueuedMessage[]>;
+  // Per-agent last session ID (for global auto-submit to know which session to send to)
+  lastSessionIds: Map<string, string>;
 }
 
 export type SessionAction =
@@ -50,6 +63,14 @@ export type SessionAction =
   | { type: 'REMOVE_INBOX_MESSAGE'; payload: string }
   | { type: 'SET_MCP_PENDING_QUESTION'; payload: MCPPendingQuestion | null }
   | { type: 'SET_AGENT_RESPONDING'; payload: { agentId: string; isResponding: boolean } }
+  // Message Queue actions
+  | { type: 'ADD_TO_QUEUE'; payload: { agentId: string; message: QueuedMessage } }
+  | { type: 'REMOVE_FROM_QUEUE'; payload: { agentId: string; messageId: string } }
+  | { type: 'UPDATE_QUEUE_MESSAGE'; payload: { agentId: string; messageId: string; content: string; attachments?: Attachment[] } }
+  | { type: 'SHIFT_QUEUE'; payload: { agentId: string } }
+  | { type: 'CLEAR_QUEUE'; payload: { agentId: string } }
+  // Last session tracking (for global auto-submit)
+  | { type: 'SET_LAST_SESSION_ID'; payload: { agentId: string; sessionId: string } }
   | { type: 'RESET' };
 
 const initialState: SessionState = {
@@ -62,6 +83,8 @@ const initialState: SessionState = {
   inboxDialogAgentId: null,
   mcpPendingQuestion: null,
   respondingAgents: new Map(),
+  messageQueues: new Map(),
+  lastSessionIds: new Map(),
 };
 
 function sessionReducer(state: SessionState, action: SessionAction): SessionState {
@@ -175,6 +198,58 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
         newRespondingAgents.delete(action.payload.agentId);
       }
       return { ...state, respondingAgents: newRespondingAgents };
+    }
+
+    // Message Queue actions
+    case 'ADD_TO_QUEUE': {
+      const { agentId, message } = action.payload;
+      const newQueues = new Map(state.messageQueues);
+      const currentQueue = newQueues.get(agentId) || [];
+      newQueues.set(agentId, [...currentQueue, message]);
+      return { ...state, messageQueues: newQueues };
+    }
+
+    case 'REMOVE_FROM_QUEUE': {
+      const { agentId, messageId } = action.payload;
+      const newQueues = new Map(state.messageQueues);
+      const currentQueue = newQueues.get(agentId) || [];
+      newQueues.set(agentId, currentQueue.filter(m => m.id !== messageId));
+      return { ...state, messageQueues: newQueues };
+    }
+
+    case 'UPDATE_QUEUE_MESSAGE': {
+      const { agentId, messageId, content, attachments } = action.payload;
+      const newQueues = new Map(state.messageQueues);
+      const currentQueue = newQueues.get(agentId) || [];
+      newQueues.set(agentId, currentQueue.map(m =>
+        m.id === messageId
+          ? { ...m, content, attachments: attachments ?? m.attachments }
+          : m
+      ));
+      return { ...state, messageQueues: newQueues };
+    }
+
+    case 'SHIFT_QUEUE': {
+      const { agentId } = action.payload;
+      const newQueues = new Map(state.messageQueues);
+      const currentQueue = newQueues.get(agentId) || [];
+      newQueues.set(agentId, currentQueue.slice(1));
+      return { ...state, messageQueues: newQueues };
+    }
+
+    case 'CLEAR_QUEUE': {
+      const { agentId } = action.payload;
+      const newQueues = new Map(state.messageQueues);
+      newQueues.set(agentId, []);
+      return { ...state, messageQueues: newQueues };
+    }
+
+    // Last session tracking (for global auto-submit)
+    case 'SET_LAST_SESSION_ID': {
+      const { agentId, sessionId } = action.payload;
+      const newLastSessionIds = new Map(state.lastSessionIds);
+      newLastSessionIds.set(agentId, sessionId);
+      return { ...state, lastSessionIds: newLastSessionIds };
     }
 
     case 'RESET':

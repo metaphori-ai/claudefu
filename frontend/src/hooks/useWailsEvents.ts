@@ -16,8 +16,8 @@ type Session = types.Session;
  * Should be rendered once at the app root level.
  */
 export function useWailsEvents() {
-  const { addDiscoveredSession } = useWorkspace();
-  const { setUnreadTotal, setInboxCounts, setMCPPendingQuestion } = useSession();
+  const { workspaceId, addDiscoveredSession } = useWorkspace();
+  const { setUnreadTotal, setInboxCounts, setMCPPendingQuestion, setAgentResponding } = useSession();
   const {
     appendMessages,
     isMessageProcessed,
@@ -121,10 +121,57 @@ export function useWailsEvents() {
     };
   }, [setInboxCounts]);
 
+  // Subscribe to response_complete events (backend signals when Claude CLI process exits)
+  // This is the AUTHORITATIVE signal that a response is complete - much more reliable than stop_reason
+  useEffect(() => {
+    const handleResponseComplete = (envelope: {
+      workspaceId?: string;
+      agentId?: string;
+      sessionId?: string;
+      payload?: { success?: boolean; cancelled?: boolean; error?: string };
+    }) => {
+      // Ignore events from different workspace
+      if (envelope.workspaceId !== workspaceId) return;
+      if (!envelope?.agentId || !envelope?.sessionId) return;
+
+      const { agentId, sessionId, payload } = envelope;
+      const success = payload?.success ?? false;
+      const cancelled = payload?.cancelled ?? false;
+
+      logDebug('WailsEvents', 'RESPONSE_COMPLETE', {
+        agentId: agentId.substring(0, 8),
+        sessionId: sessionId.substring(0, 8),
+        success,
+        cancelled,
+      });
+
+      // Clear responding state - this is the authoritative signal that response is done
+      setAgentResponding(agentId, false);
+
+      // Trigger queue auto-submit if successful and not cancelled
+      if (success && !cancelled) {
+        window.dispatchEvent(new CustomEvent('claudefu:queue-autosubmit', {
+          detail: { agentId, sessionId }
+        }));
+      }
+    };
+
+    EventsOn('response_complete', handleResponseComplete);
+    return () => {
+      EventsOff('response_complete');
+    };
+  }, [workspaceId, setAgentResponding]);
+
   // Subscribe to session:messages events
   useEffect(() => {
     const processMessages = (agentId: string, sessionId: string, messages: Message[]) => {
-      // Check if this session has done initial load (if not, ignore - ChatView will handle it)
+      // NOTE: Responding state is now cleared by response_complete event, not by stop_reason.
+      // The response_complete event is emitted by backend AFTER cmd.Wait() returns,
+      // which is the authoritative signal that the Claude CLI process has exited.
+      // stop_reason signals were unreliable (can appear mid-response between tool batches).
+
+      // Check if this session has done initial load
+      // If not, skip storing messages - ChatView will load them when it mounts
       const sessionData = getSessionMessages(agentId, sessionId);
       if (!sessionData?.initialLoadDone) {
         logDebug('WailsEvents', 'SKIP_MESSAGES_INITIAL_LOAD_NOT_DONE', {

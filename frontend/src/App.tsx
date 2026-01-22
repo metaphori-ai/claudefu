@@ -12,6 +12,7 @@ import { DialogBase } from './components/DialogBase';
 import { MCPQuestionDialog } from './components/MCPQuestionDialog';
 import { WorkspaceProvider, SessionProvider, MessagesProvider } from './context';
 import { useWorkspace, useSession, useSelectedAgent, useSessionName, WailsEventHub } from './hooks';
+import { QueueWatcher } from './components/QueueWatcher';
 import { Tooltip } from './components/Tooltip';
 import { debugLogger } from './utils/debugLogger';
 import {
@@ -1678,6 +1679,7 @@ function App() {
       <SessionProvider>
         <MessagesProvider>
           <WailsEventHub />
+          <QueueWatcher />
           <AppContent />
         </MessagesProvider>
       </SessionProvider>

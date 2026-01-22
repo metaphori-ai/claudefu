@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.18] - 2026-01-21
+
+### Added
+- **Backend-Controlled `response_complete` Event** - Authoritative signal for when Claude CLI exits
+  - Backend emits event AFTER `cmd.Wait()` returns (CLI process exit)
+  - Distinguishes user cancellation from errors via `cancelledSessions` tracking
+  - Frontend subscribes and dispatches `claudefu:queue-autosubmit` custom event
+  - Much more reliable than `stop_reason` which fires mid-response between tool batches
+- **Reliable Queue Auto-Submit** - Revived QueueWatcher with backend-driven timing
+  - Queue items submitted only after previous response definitively completes
+  - Multiple queued messages now process sequentially (was broken before)
+  - Cancellation prevents queue processing (correct behavior)
+
+### Changed
+- **Queue Display Location** - Moved from MessageList to InputArea
+  - Fixed "jiggling" issue caused by rendering in scrolling container
+  - Queue items now styled exactly like YOU messages (orange label, gray "Queued #N")
+  - Click to edit, X button to remove
+
+### Fixed
+- **Queue Processing Race Condition** - Only first queued item was being sent
+  - Removed `processingRef` that blocked subsequent items
+  - `shiftQueue()` already provides atomic protection against double-processing
+- **Responding State Clearing** - Now uses `response_complete` event instead of `stop_reason`
+  - `stop_reason: "stop_sequence"` fires mid-response, causing premature state clearing
+  - `response_complete` fires only when CLI process actually exits
+
+### Technical
+- New `cancelledSessions map[string]bool` in `ClaudeCodeService` with mutex protection
+- New `WasCancelled(sessionID)` method clears flag after checking (one-shot)
+- `response_complete` event payload: `{ success, cancelled?, error? }`
+- Custom DOM event `claudefu:queue-autosubmit` bridges Wails events to QueueWatcher
+
 ## [0.3.17] - 2026-01-21
 
 ### Added

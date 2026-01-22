@@ -33,23 +33,9 @@ func (a *App) buildMenu() *menu.Menu {
 		// Hide/Show/Quit are automatically added by macOS
 	}
 
-	// Edit menu (standard - needed for copy/paste to work)
-	editMenu := appMenu.AddSubmenu("Edit")
-	editMenu.AddText("Undo", keys.CmdOrCtrl("z"), func(_ *menu.CallbackData) {
-		// Standard edit operations are handled by the webview
-	})
-	editMenu.AddText("Redo", keys.Combo("z", keys.CmdOrCtrlKey, keys.ShiftKey), func(_ *menu.CallbackData) {
-	})
-	editMenu.AddSeparator()
-	editMenu.AddText("Cut", keys.CmdOrCtrl("x"), func(_ *menu.CallbackData) {
-	})
-	editMenu.AddText("Copy", keys.CmdOrCtrl("c"), func(_ *menu.CallbackData) {
-	})
-	editMenu.AddText("Paste", keys.CmdOrCtrl("v"), func(_ *menu.CallbackData) {
-	})
-	editMenu.AddSeparator()
-	editMenu.AddText("Select All", keys.CmdOrCtrl("a"), func(_ *menu.CallbackData) {
-	})
+	// Edit menu - use Wails' built-in EditMenu for proper webview integration
+	// This ensures CMD-A, CMD-C, CMD-V, CMD-X work correctly in text fields
+	appMenu.Append(menu.EditMenu())
 
 	// Workspace menu (dynamic)
 	workspaceMenu := appMenu.AddSubmenu("Workspace")
