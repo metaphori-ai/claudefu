@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"claudefu/internal/types"
+	"claudefu/internal/workspace"
 )
 
 // =============================================================================
@@ -169,6 +170,32 @@ func (a *App) SetActiveSession(agentID, sessionID string) error {
 	// This saves resources - we don't need 100+ fsnotify watches
 	if a.watcher != nil {
 		a.watcher.SetActiveSessionWatch(agentID, sessionID)
+	}
+
+	// Persist the selected session to workspace JSON so it survives reload
+	if a.currentWorkspace != nil {
+		// Find the agent and update its per-agent SelectedSessionID
+		var folder string
+		for i := range a.currentWorkspace.Agents {
+			if a.currentWorkspace.Agents[i].ID == agentID {
+				a.currentWorkspace.Agents[i].SelectedSessionID = sessionID
+				folder = a.currentWorkspace.Agents[i].Folder
+				break
+			}
+		}
+
+		// Update workspace-level SelectedSession (tracks THE active agent+session)
+		a.currentWorkspace.SelectedSession = &workspace.SelectedSession{
+			AgentID:   agentID,
+			SessionID: sessionID,
+			Folder:    folder,
+		}
+
+		// Save workspace to persist both selections
+		if err := a.workspace.SaveWorkspace(a.currentWorkspace); err != nil {
+			fmt.Printf("[WARN] Failed to save workspace after SetActiveSession: %v\n", err)
+			// Don't return error - selection still works in memory
+		}
 	}
 
 	return nil

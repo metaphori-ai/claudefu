@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Agent/Session Selection Not Persisting** - Selections now survive reload
+  - `SetActiveSession` was updating runtime state but never persisting to workspace JSON
+  - Now persists both workspace-level `SelectedSession` (active agent+session) and per-agent `SelectedSessionID`
+  - Switching agents or sessions is now saved immediately to `~/.claudefu/workspaces/{id}.json`
+  - On reload, app correctly restores exact agent AND session you were viewing
+
 ## [0.3.18] - 2026-01-21
 
 ### Added
