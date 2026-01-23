@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { DialogBase } from './DialogBase';
 import {
-  GetAgentPermissions,
+  GetAgentPermissionsOrGlobal,
   SaveAgentPermissions,
   GetOrderedPermissionSets,
   HasExistingClaudeSettings,
@@ -104,7 +104,7 @@ export function PermissionsDialog({
       }
 
       // Load permissions (will return global template if no agent-specific exists)
-      const perms = await GetAgentPermissions(folder);
+      const perms = await GetAgentPermissionsOrGlobal(folder);
       // Convert to plain object (v2 format - explicit tool arrays)
       const plainPerms: ClaudeFuPermissions = {
         version: perms.version || 2,

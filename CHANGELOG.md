@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Hide ClaudeFu (⌘H)
   - Quit ClaudeFu (⌘Q)
 
+### Fixed
+- **Permissions Dialog Crash on New Agents** - Fixed "null is not an object" error
+  - Was calling `GetAgentPermissions` (returns null for new agents)
+  - Now calls `GetAgentPermissionsOrGlobal` (falls back to global template)
+
 ### Changed
 - **Button Label Clarity** - Renamed confusing "Import from Claude" / "Sync to Claude" buttons
   - Now "Import from settings.local" and "Sync to settings.local"
