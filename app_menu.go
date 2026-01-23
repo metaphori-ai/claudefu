@@ -30,7 +30,17 @@ func (a *App) buildMenu() *menu.Menu {
 			a.emitMenuAction("menu:check-updates")
 		})
 		claudeFuMenu.AddSeparator()
-		// Hide/Show/Quit are automatically added by macOS
+		claudeFuMenu.AddText("Hide ClaudeFu", keys.CmdOrCtrl("h"), func(_ *menu.CallbackData) {
+			wailsRuntime.Hide(a.ctx)
+		})
+		claudeFuMenu.AddText("Hide Others", keys.Combo("h", keys.CmdOrCtrlKey, keys.OptionOrAltKey), func(_ *menu.CallbackData) {
+			// macOS handles this natively, but we add it for completeness
+			wailsRuntime.Hide(a.ctx)
+		})
+		claudeFuMenu.AddSeparator()
+		claudeFuMenu.AddText("Quit ClaudeFu", keys.CmdOrCtrl("q"), func(_ *menu.CallbackData) {
+			wailsRuntime.Quit(a.ctx)
+		})
 	}
 
 	// Edit menu - use Wails' built-in EditMenu for proper webview integration
