@@ -7,12 +7,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.19] - 2026-01-22
+
+### Added
+- **Layered Directories Model** - Effective directories = global ∪ agent
+  - Global directories (from Global Settings) automatically included for ALL agents
+  - Agent-specific directories are additive on top of global
+  - `CompileDirectories()` backend method unions both sets for CLI args
+  - Useful for shared resources like documentation repos that all agents need
+- **Custom Permission Set** - Add your own Bash patterns (e.g., `Bash(wails:*)`)
+  - New "Custom" set at bottom of permission sets sidebar
+  - Add/remove custom permissions to any tier (🟢 Common, 🟡 Permissive, 🔴 YOLO)
+  - Type pattern in input field and click Add (or press Enter)
+  - Remove with X button next to each permission
+- **Directories Tab Redesign** - Clear global vs agent separation
+  - Global Directories section (read-only, shows lock icon, "Edit in Global Settings" hint)
+  - Agent Directories section (editable with Add/Browse/Remove)
+  - "Effective directories at runtime" summary showing total count
+- **Action Buttons in Tools Tab** - Tool-specific operations now in context
+  - "Merge from Global" - Additively add global tools without removing agent's
+  - "Replace with Global" - Reset tools to match global template (directories preserved!)
+  - "Import from Claude" - Import from `settings.local.json`
+  - "Sync to Claude" - Write permissions to `settings.local.json`
+- **Preview Diff Methods** (Backend) - Foundation for showing changes before operations
+  - `PreviewRevertTools()` and `PreviewMergeTools()` return `PermissionsDiff`
+  - Shows tools that would be added/removed (UI not yet wired up)
+
+### Changed
+- **Permission Format v2 - Explicit Tool Arrays** - Complete redesign of permission storage format
+  - **Before (v1):** `{ "level": "common+permissive" }` - implicit level-based
+  - **After (v2):** `{ "common": [...], "permissive": [...], "yolo": [...] }` - explicit tool arrays
+  - Self-documenting JSON - see exactly which tools are enabled at each tier
+  - Partial tier support - enable some tools in a tier without enabling all
+  - Direct toggle state - UI maps directly to stored arrays (no level↔tier conversion)
+  - Removed `customBashPermissions` and `customDenyList` fields (no longer needed)
+  - Automatic v1→v2 migration when loading old permission files
+- **Revert Preserves Directories** - "Replace with Global" only resets tools
+  - Previously `RevertAgentToGlobal` wiped EVERYTHING including directories
+  - Renamed to `RevertToolsToGlobal` to reflect semantic intent
+  - Agent's `additionalDirectories` now preserved during revert
+- **Dialog Footer Simplified** - Only Save button remains in footer
+  - Action buttons moved to Tools tab where they belong contextually
+  - Cleaner separation: Tools tab has tool operations, Directories tab has directory editing
+
 ### Fixed
 - **Agent/Session Selection Not Persisting** - Selections now survive reload
   - `SetActiveSession` was updating runtime state but never persisting to workspace JSON
   - Now persists both workspace-level `SelectedSession` (active agent+session) and per-agent `SelectedSessionID`
   - Switching agents or sessions is now saved immediately to `~/.claudefu/workspaces/{id}.json`
   - On reload, app correctly restores exact agent AND session you were viewing
+
+### Technical
+- **Backend Permission Changes**
+  - `ToolPermission` struct changed from `{ Level string }` to `{ Common, Permissive, YOLO []string }`
+  - `ClaudeFuPermissions` removed `CustomBashPermissions` and `CustomDenyList` fields
+  - Added `migrateV1ToV2()` for transparent backward-compatible migration
+  - Simplified `CompileAllowList()` - iterates arrays directly instead of level parsing
+  - `CompileDenyList()` now returns empty (individual tool toggles handle this)
+  - New `CompileDirectories()` unions global + agent directories
+  - New `MergeToolsFromGlobal()` for additive tool merging
+  - New `PermissionsDiff` type with `ToolsAdded`/`ToolsRemoved` arrays
+  - Renamed `RevertAgentToGlobal` → `RevertToolsToGlobal`
+- **Frontend Permission Changes**
+  - Removed `PermissionLevel` type and `getEnabledTiers()`/`tiersToLevel()` helpers
+  - `ToolsTabContent.tsx` rewritten with direct array manipulation
+  - `PresetListItem.tsx` status color from array lengths instead of level string
+  - Removed `CustomPatternsEditor` component (no longer needed)
+  - `DirectoriesTabContent.tsx` redesigned with two-section layout
+  - `RiskLevelGroup.tsx` supports custom permission add/remove for Custom set
+  - Action buttons added to `ToolsTabContent.tsx` (moved from dialog footer)
 
 ## [0.3.18] - 2026-01-21
 

@@ -17,7 +17,7 @@ type Session = types.Session;
  */
 export function useWailsEvents() {
   const { workspaceId, addDiscoveredSession } = useWorkspace();
-  const { setUnreadTotal, setInboxCounts, setMCPPendingQuestion, setAgentResponding } = useSession();
+  const { setUnreadTotal, setInboxCounts, setMCPPendingQuestion, setMCPPendingPermission, setAgentResponding } = useSession();
   const {
     appendMessages,
     isMessageProcessed,
@@ -91,6 +91,37 @@ export function useWailsEvents() {
       EventsOff('mcp:askuser');
     };
   }, [setMCPPendingQuestion]);
+
+  // Subscribe to mcp:permission-request events (MCP-based RequestToolPermission)
+  useEffect(() => {
+    const handlePermissionRequest = (envelope: {
+      payload?: {
+        id?: string;
+        agentSlug?: string;
+        permission?: string;
+        reason?: string;
+        createdAt?: string;
+      };
+    }) => {
+      if (!envelope?.payload?.id || !envelope?.payload?.permission) {
+        return;
+      }
+
+      console.log('[MCP:PermissionRequest] Received permission request:', envelope.payload.id?.substring(0, 8));
+      setMCPPendingPermission({
+        id: envelope.payload.id,
+        agentSlug: envelope.payload.agentSlug || 'unknown',
+        permission: envelope.payload.permission,
+        reason: envelope.payload.reason || '',
+        createdAt: envelope.payload.createdAt || new Date().toISOString(),
+      });
+    };
+
+    EventsOn('mcp:permission-request', handlePermissionRequest);
+    return () => {
+      EventsOff('mcp:permission-request');
+    };
+  }, [setMCPPendingPermission]);
 
   // Subscribe to mcp:inbox events
   useEffect(() => {

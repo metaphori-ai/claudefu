@@ -15,19 +15,20 @@ import (
 
 // MCPService provides an MCP server for inter-agent communication
 type MCPService struct {
-	server           *server.MCPServer
-	claude           *providers.ClaudeCodeService
-	workspace        func() *workspace.Workspace
-	emitFunc         func(types.EventEnvelope)
-	inbox            *InboxManager
-	toolInstructions *ToolInstructionsManager
-	toolAvailability *ToolAvailabilityManager
-	pendingQuestions *PendingQuestionManager
-	port             int
-	ctx              context.Context
-	cancel           context.CancelFunc
-	mu               sync.RWMutex
-	running          bool
+	server             *server.MCPServer
+	claude             *providers.ClaudeCodeService
+	workspace          func() *workspace.Workspace
+	emitFunc           func(types.EventEnvelope)
+	inbox              *InboxManager
+	toolInstructions   *ToolInstructionsManager
+	toolAvailability   *ToolAvailabilityManager
+	pendingQuestions   *PendingQuestionManager
+	pendingPermissions *PendingPermissionRequestManager
+	port               int
+	ctx                context.Context
+	cancel             context.CancelFunc
+	mu                 sync.RWMutex
+	running            bool
 }
 
 // NewMCPService creates a new MCP service on the specified port
@@ -35,11 +36,12 @@ type MCPService struct {
 // inboxConfigPath is the path to store inbox databases (e.g., ~/.claudefu/inbox)
 func NewMCPService(port int, configPath string, inboxConfigPath string) *MCPService {
 	return &MCPService{
-		port:             port,
-		inbox:            NewInboxManager(inboxConfigPath),
-		toolInstructions: NewToolInstructionsManager(configPath),
-		toolAvailability: NewToolAvailabilityManager(configPath),
-		pendingQuestions: NewPendingQuestionManager(),
+		port:               port,
+		inbox:              NewInboxManager(inboxConfigPath),
+		toolInstructions:   NewToolInstructionsManager(configPath),
+		toolAvailability:   NewToolAvailabilityManager(configPath),
+		pendingQuestions:   NewPendingQuestionManager(),
+		pendingPermissions: NewPendingPermissionRequestManager(),
 	}
 }
 
@@ -83,6 +85,11 @@ func (s *MCPService) GetToolAvailability() *ToolAvailabilityManager {
 	return s.toolAvailability
 }
 
+// GetPendingPermissions returns the pending permission requests manager
+func (s *MCPService) GetPendingPermissions() *PendingPermissionRequestManager {
+	return s.pendingPermissions
+}
+
 // Start starts the MCP server
 func (s *MCPService) Start() error {
 	s.mu.Lock()
@@ -118,6 +125,7 @@ func (s *MCPService) Start() error {
 	mcpServer.AddTool(CreateAskUserQuestionTool(instructions.AskUserQuestion), s.handleAskUserQuestion)
 	mcpServer.AddTool(CreateSelfQueryTool(instructions.SelfQuery), s.handleSelfQuery)
 	mcpServer.AddTool(CreateBrowserAgentTool(instructions.BrowserAgent), s.handleBrowserAgent)
+	mcpServer.AddTool(CreateRequestToolPermissionTool(instructions.RequestToolPermission), s.handleRequestToolPermission)
 
 	s.server = mcpServer
 
@@ -169,6 +177,11 @@ func (s *MCPService) Stop() {
 	// Cancel all pending questions
 	if s.pendingQuestions != nil {
 		s.pendingQuestions.CancelAll()
+	}
+
+	// Cancel all pending permission requests
+	if s.pendingPermissions != nil {
+		s.pendingPermissions.CancelAll()
 	}
 
 	// Close inbox database

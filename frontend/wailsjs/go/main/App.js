@@ -14,6 +14,10 @@ export function AnswerMCPQuestion(arg1, arg2) {
   return window['go']['main']['App']['AnswerMCPQuestion'](arg1, arg2);
 }
 
+export function AnswerPermissionRequest(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['AnswerPermissionRequest'](arg1, arg2, arg3, arg4);
+}
+
 export function AnswerQuestion(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['main']['App']['AnswerQuestion'](arg1, arg2, arg3, arg4, arg5);
 }
@@ -64,6 +68,14 @@ export function DeleteWorkspace(arg1) {
 
 export function GetAgent(arg1) {
   return window['go']['main']['App']['GetAgent'](arg1);
+}
+
+export function GetAgentPermissions(arg1) {
+  return window['go']['main']['App']['GetAgentPermissions'](arg1);
+}
+
+export function GetAgentPermissionsOrGlobal(arg1) {
+  return window['go']['main']['App']['GetAgentPermissionsOrGlobal'](arg1);
 }
 
 export function GetAgentTotalUnread(arg1) {
@@ -118,6 +130,18 @@ export function GetDefaultMCPToolInstructions() {
   return window['go']['main']['App']['GetDefaultMCPToolInstructions']();
 }
 
+export function GetDefaultPermissionSets() {
+  return window['go']['main']['App']['GetDefaultPermissionSets']();
+}
+
+export function GetGlobalDirectories() {
+  return window['go']['main']['App']['GetGlobalDirectories']();
+}
+
+export function GetGlobalPermissions() {
+  return window['go']['main']['App']['GetGlobalPermissions']();
+}
+
 export function GetInboxMessages(arg1) {
   return window['go']['main']['App']['GetInboxMessages'](arg1);
 }
@@ -146,8 +170,20 @@ export function GetMenu() {
   return window['go']['main']['App']['GetMenu']();
 }
 
+export function GetOrderedPermissionSets() {
+  return window['go']['main']['App']['GetOrderedPermissionSets']();
+}
+
 export function GetPendingMCPQuestions() {
   return window['go']['main']['App']['GetPendingMCPQuestions']();
+}
+
+export function GetPendingPermissionRequests() {
+  return window['go']['main']['App']['GetPendingPermissionRequests']();
+}
+
+export function GetPermissionSets() {
+  return window['go']['main']['App']['GetPermissionSets']();
 }
 
 export function GetPlanFilePath(arg1, arg2) {
@@ -160,6 +196,10 @@ export function GetSessionName(arg1, arg2) {
 
 export function GetSessions(arg1) {
   return window['go']['main']['App']['GetSessions'](arg1);
+}
+
+export function GetSetByCommand(arg1) {
+  return window['go']['main']['App']['GetSetByCommand'](arg1);
 }
 
 export function GetSettings() {
@@ -176,6 +216,18 @@ export function GetUnreadCounts(arg1) {
 
 export function GetVersion() {
   return window['go']['main']['App']['GetVersion']();
+}
+
+export function HasAgentPermissions(arg1) {
+  return window['go']['main']['App']['HasAgentPermissions'](arg1);
+}
+
+export function HasExistingClaudeSettings(arg1) {
+  return window['go']['main']['App']['HasExistingClaudeSettings'](arg1);
+}
+
+export function ImportFromClaudeSettings(arg1) {
+  return window['go']['main']['App']['ImportFromClaudeSettings'](arg1);
 }
 
 export function InjectInboxMessage(arg1, arg2, arg3) {
@@ -206,8 +258,20 @@ export function MarkSessionViewed(arg1, arg2) {
   return window['go']['main']['App']['MarkSessionViewed'](arg1, arg2);
 }
 
+export function MergeToolsFromGlobal(arg1) {
+  return window['go']['main']['App']['MergeToolsFromGlobal'](arg1);
+}
+
 export function NewSession(arg1) {
   return window['go']['main']['App']['NewSession'](arg1);
+}
+
+export function PreviewMergeTools(arg1) {
+  return window['go']['main']['App']['PreviewMergeTools'](arg1);
+}
+
+export function PreviewRevertTools(arg1) {
+  return window['go']['main']['App']['PreviewRevertTools'](arg1);
 }
 
 export function ReadFileContent(arg1) {
@@ -242,6 +306,14 @@ export function ResetMCPToolInstructions() {
   return window['go']['main']['App']['ResetMCPToolInstructions']();
 }
 
+export function RevertAgentToGlobal(arg1) {
+  return window['go']['main']['App']['RevertAgentToGlobal'](arg1);
+}
+
+export function SaveAgentPermissions(arg1, arg2) {
+  return window['go']['main']['App']['SaveAgentPermissions'](arg1, arg2);
+}
+
 export function SaveClaudeMD(arg1, arg2) {
   return window['go']['main']['App']['SaveClaudeMD'](arg1, arg2);
 }
@@ -250,8 +322,16 @@ export function SaveClaudePermissions(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['SaveClaudePermissions'](arg1, arg2, arg3, arg4);
 }
 
+export function SaveDefaultPermissionSets(arg1) {
+  return window['go']['main']['App']['SaveDefaultPermissionSets'](arg1);
+}
+
 export function SaveFile(arg1) {
   return window['go']['main']['App']['SaveFile'](arg1);
+}
+
+export function SaveGlobalPermissions(arg1) {
+  return window['go']['main']['App']['SaveGlobalPermissions'](arg1);
 }
 
 export function SaveMCPToolAvailability(arg1) {
@@ -312,6 +392,10 @@ export function StartHyperLogin() {
 
 export function SwitchWorkspace(arg1) {
   return window['go']['main']['App']['SwitchWorkspace'](arg1);
+}
+
+export function SyncToClaudeSettings(arg1) {
+  return window['go']['main']['App']['SyncToClaudeSettings'](arg1);
 }
 
 export function UpdateAgent(arg1) {

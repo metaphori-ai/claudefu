@@ -1,7 +1,24 @@
 import { useState, useEffect, useCallback } from 'react';
 import { DialogBase } from './DialogBase';
-import { GetClaudePermissions, SaveClaudePermissions } from '../../wailsjs/go/main/App';
+import {
+  GetAgentPermissions,
+  SaveAgentPermissions,
+  GetOrderedPermissionSets,
+  HasExistingClaudeSettings,
+  ImportFromClaudeSettings,
+  SyncToClaudeSettings,
+  RevertAgentToGlobal,
+  HasAgentPermissions,
+  GetGlobalDirectories,
+  MergeToolsFromGlobal,
+} from '../../wailsjs/go/main/App';
 import { useSaveShortcut } from '../hooks';
+import {
+  ToolsTabContent,
+  DirectoriesTabContent,
+  ClaudeFuPermissions,
+  PermissionSet,
+} from './permissions';
 
 interface PermissionsDialogProps {
   isOpen: boolean;
@@ -9,60 +26,34 @@ interface PermissionsDialogProps {
   folder: string;
 }
 
-// Core Claude Code tools (the 18 built-in tools)
-const CORE_TOOLS = [
-  { id: 'Read', label: 'Read', description: 'Read files' },
-  { id: 'Write', label: 'Write', description: 'Write/create files' },
-  { id: 'Edit', label: 'Edit', description: 'Edit existing files' },
-  { id: 'Glob', label: 'Glob', description: 'Find files by pattern' },
-  { id: 'Grep', label: 'Grep', description: 'Search file contents' },
-  { id: 'Bash', label: 'Bash', description: 'Run shell commands' },
-  { id: 'Task', label: 'Task', description: 'Launch subagents' },
-  { id: 'WebSearch', label: 'WebSearch', description: 'Search the web' },
-  { id: 'WebFetch', label: 'WebFetch', description: 'Fetch web content' },
-  { id: 'NotebookEdit', label: 'NotebookEdit', description: 'Edit Jupyter notebooks' },
-  { id: 'LSP', label: 'LSP', description: 'Language Server Protocol' },
-  { id: 'TodoWrite', label: 'TodoWrite', description: 'Track task progress' },
-  { id: 'EnterPlanMode', label: 'EnterPlanMode', description: 'Start planning mode' },
-  { id: 'ExitPlanMode', label: 'ExitPlanMode', description: 'Submit plan for approval' },
-  { id: 'AskUserQuestion', label: 'AskUserQuestion', description: 'Ask clarifying questions' },
-  { id: 'Skill', label: 'Skill', description: 'Execute slash commands' },
-  { id: 'KillShell', label: 'KillShell', description: 'Kill background shells' },
-  { id: 'TaskOutput', label: 'TaskOutput', description: 'Get output from tasks' },
-];
-
-// Check if a permission is a core tool
-function isCoreTool(perm: string): boolean {
-  return CORE_TOOLS.some(t => t.id === perm);
-}
-
-// Check if a permission is a Bash pattern
-function isBashPattern(perm: string): boolean {
-  return perm.startsWith('Bash(') && perm.endsWith(')');
-}
+type TabId = 'tools' | 'directories';
 
 export function PermissionsDialog({
   isOpen,
   onClose,
   folder,
 }: PermissionsDialogProps) {
+  // Tab state
+  const [activeTab, setActiveTab] = useState<TabId>('tools');
+
   // Permissions state
-  const [allowList, setAllowList] = useState<string[]>([]);
-  const [denyList, setDenyList] = useState<string[]>([]);
-  const [additionalDirs, setAdditionalDirs] = useState<string[]>([]);
+  const [permissions, setPermissions] = useState<ClaudeFuPermissions | null>(null);
+  const [orderedSets, setOrderedSets] = useState<PermissionSet[]>([]);
+  const [globalDirectories, setGlobalDirectories] = useState<string[]>([]);
+
+  // Loading and saving state
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
-  // New bash permission input
-  const [newBashPerm, setNewBashPerm] = useState('');
-  // New additional directory input
-  const [newDir, setNewDir] = useState('');
+  // Import banner state
+  const [showImportBanner, setShowImportBanner] = useState(false);
+  const [hasBlanketBash, setHasBlanketBash] = useState(false);
 
   // Load data when dialog opens
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && folder) {
       loadPermissions();
     }
   }, [isOpen, folder]);
@@ -78,514 +69,278 @@ export function PermissionsDialog({
   const loadPermissions = async () => {
     setLoading(true);
     setError(null);
+    setShowImportBanner(false);
+    setHasBlanketBash(false);
+
     try {
-      const result = await GetClaudePermissions(folder);
-      setAllowList(result.allow || []);
-      setDenyList(result.deny || []);
-      setAdditionalDirs(result.additionalDirectories || []);
+      // Load global directories (for layered directory model)
+      const globalDirs = await GetGlobalDirectories();
+      setGlobalDirectories(globalDirs || []);
+
+      // Load permission sets first
+      const sets = await GetOrderedPermissionSets();
+      // Convert Wails classes to plain objects
+      const plainSets: PermissionSet[] = sets.map(s => ({
+        id: s.id,
+        name: s.name,
+        description: s.description,
+        permissions: {
+          common: s.permissions?.common || [],
+          permissive: s.permissions?.permissive || [],
+          yolo: s.permissions?.yolo || [],
+        },
+      }));
+      setOrderedSets(plainSets);
+
+      // Check if agent has its own permissions
+      const hasAgentPerms = await HasAgentPermissions(folder);
+
+      if (!hasAgentPerms) {
+        // No ClaudeFu permissions yet - check if Claude settings exist
+        const hasClaudeSettings = await HasExistingClaudeSettings(folder);
+        if (hasClaudeSettings) {
+          setShowImportBanner(true);
+        }
+      }
+
+      // Load permissions (will return global template if no agent-specific exists)
+      const perms = await GetAgentPermissions(folder);
+      // Convert to plain object (v2 format - explicit tool arrays)
+      const plainPerms: ClaudeFuPermissions = {
+        version: perms.version || 2,
+        inheritFromGlobal: perms.inheritFromGlobal,
+        toolPermissions: perms.toolPermissions || {},
+        additionalDirectories: perms.additionalDirectories || [],
+      };
+      setPermissions(plainPerms);
+
+      // Check for blanket Bash in claude-builtin yolo tier
+      const builtinPerm = plainPerms.toolPermissions?.['claude-builtin'];
+      const hasBlanket = builtinPerm?.yolo?.includes('Bash') || false;
+      setHasBlanketBash(hasBlanket);
     } catch (err) {
-      setError(`Failed to load: ${err}`);
+      setError(`Failed to load permissions: ${err}`);
     } finally {
       setLoading(false);
     }
   };
 
   const handleSave = useCallback(async () => {
+    if (!permissions) return;
+
     setSaving(true);
     setError(null);
     try {
-      // Sort by groups: Core Tools first, then Bash, then Others (each alphabetized)
-      const coreTools = allowList.filter(isCoreTool).sort((a, b) => a.localeCompare(b));
-      const bashPerms = allowList.filter(isBashPattern).sort((a, b) => a.localeCompare(b));
-      const others = allowList.filter(p => !isCoreTool(p) && !isBashPattern(p)).sort((a, b) => a.localeCompare(b));
-      const sortedAllow = [...coreTools, ...bashPerms, ...others];
-      const sortedDeny = [...denyList].sort((a, b) => a.localeCompare(b));
-      const sortedDirs = [...additionalDirs].sort((a, b) => a.localeCompare(b));
-
-      await SaveClaudePermissions(folder, sortedAllow, sortedDeny, sortedDirs);
+      await SaveAgentPermissions(folder, permissions as any);
       setSaved(true);
     } catch (err) {
       setError(`Failed to save: ${err}`);
     } finally {
       setSaving(false);
     }
-  }, [folder, allowList, denyList, additionalDirs]);
+  }, [folder, permissions]);
 
   // CMD-S to save
   useSaveShortcut(isOpen, handleSave);
 
-  // Toggle a core tool
-  const toggleCoreTool = (toolId: string) => {
-    setAllowList(prev => {
-      if (prev.includes(toolId)) {
-        return prev.filter(p => p !== toolId);
-      } else {
-        return [...prev, toolId];
+  // Handle import from Claude settings
+  const handleImport = async () => {
+    try {
+      const result = await ImportFromClaudeSettings(folder);
+      if (result.found && result.imported) {
+        // Convert to plain object (v2 format)
+        const plainPerms: ClaudeFuPermissions = {
+          version: result.imported.version || 2,
+          inheritFromGlobal: result.imported.inheritFromGlobal,
+          toolPermissions: result.imported.toolPermissions || {},
+          additionalDirectories: result.imported.additionalDirectories || [],
+        };
+        setPermissions(plainPerms);
+        setShowImportBanner(false);
+        setHasBlanketBash(result.hasBlanketBash || false);
       }
+    } catch (err) {
+      setError(`Failed to import: ${err}`);
+    }
+  };
+
+  // Handle sync to Claude settings
+  const handleSyncToClaude = async () => {
+    try {
+      // Save first to ensure we're syncing latest
+      if (permissions) {
+        await SaveAgentPermissions(folder, permissions as any);
+      }
+      await SyncToClaudeSettings(folder);
+      setSaved(true);
+    } catch (err) {
+      setError(`Failed to sync: ${err}`);
+    }
+  };
+
+  // Handle revert to global (only resets tools, preserves directories)
+  const handleRevertToGlobal = async () => {
+    try {
+      await RevertAgentToGlobal(folder);
+      // Reload permissions
+      await loadPermissions();
+    } catch (err) {
+      setError(`Failed to revert: ${err}`);
+    }
+  };
+
+  // Handle merge from global (additive - adds global tools without removing agent's)
+  const handleMergeFromGlobal = async () => {
+    try {
+      await MergeToolsFromGlobal(folder);
+      // Reload permissions
+      await loadPermissions();
+    } catch (err) {
+      setError(`Failed to merge: ${err}`);
+    }
+  };
+
+  // Handle convert blanket bash to permission sets (v2 format)
+  const handleConvertBlanketBash = () => {
+    if (!permissions) return;
+
+    // Build new tool permissions with common + permissive enabled for all sets
+    // and remove Bash from claude-builtin's yolo tier
+    const newToolPermissions = { ...permissions.toolPermissions };
+
+    orderedSets.forEach(set => {
+      const currentPerm = newToolPermissions[set.id] || { common: [], permissive: [], yolo: [] };
+
+      if (set.id === 'claude-builtin') {
+        // Remove Bash from yolo tier
+        newToolPermissions[set.id] = {
+          common: [...set.permissions.common],
+          permissive: [...set.permissions.permissive],
+          yolo: (currentPerm.yolo || []).filter((t: string) => t !== 'Bash'),
+        };
+      } else {
+        // Enable common + permissive for other sets
+        newToolPermissions[set.id] = {
+          common: [...set.permissions.common],
+          permissive: [...set.permissions.permissive],
+          yolo: [], // Don't enable yolo by default
+        };
+      }
+    });
+
+    setPermissions({
+      ...permissions,
+      toolPermissions: newToolPermissions,
+    });
+    setHasBlanketBash(false);
+  };
+
+  // Handle permissions change from ToolsTabContent
+  const handlePermissionsChange = (newPerms: ClaudeFuPermissions) => {
+    setPermissions(newPerms);
+  };
+
+  // Handle directories change
+  const handleDirectoriesChange = (dirs: string[]) => {
+    if (!permissions) return;
+    setPermissions({
+      ...permissions,
+      additionalDirectories: dirs,
     });
   };
 
-  // Add a bash permission
-  const addBashPermission = () => {
-    const trimmed = newBashPerm.trim();
-    if (!trimmed) return;
-    const formatted = trimmed.startsWith('Bash(') ? trimmed : `Bash(${trimmed})`;
-    if (!allowList.includes(formatted)) {
-      setAllowList(prev => [...prev, formatted]);
-    }
-    setNewBashPerm('');
-  };
-
-  // Add an additional directory
-  const addDirectory = () => {
-    const trimmed = newDir.trim();
-    if (!trimmed) return;
-    if (!additionalDirs.includes(trimmed)) {
-      setAdditionalDirs(prev => [...prev, trimmed]);
-    }
-    setNewDir('');
-  };
-
-  // Remove a permission
-  const removePermission = (perm: string) => {
-    setAllowList(prev => prev.filter(p => p !== perm));
-  };
-
-  // Remove a directory
-  const removeDirectory = (dir: string) => {
-    setAdditionalDirs(prev => prev.filter(d => d !== dir));
-  };
-
-  // Get bash permissions (filtered and sorted)
-  const bashPermissions = allowList
-    .filter(isBashPattern)
-    .sort((a, b) => a.localeCompare(b));
-
-  // Get other permissions (not core tools and not bash patterns)
-  const otherPermissions = allowList
-    .filter(p => !isCoreTool(p) && !isBashPattern(p))
-    .sort((a, b) => a.localeCompare(b));
+  // Extract folder name for title
+  const folderName = folder.split('/').pop() || folder;
 
   return (
     <DialogBase
       isOpen={isOpen}
       onClose={onClose}
-      title="Claude Permissions"
-      width="600px"
+      title={`Permissions: ${folderName}`}
+      width="900px"
       height="700px"
     >
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        {/* Header with path */}
+        {/* Tab Bar */}
         <div style={{
-          padding: '0.5rem 1rem',
+          display: 'flex',
           borderBottom: '1px solid #333',
-          background: '#1a1a1a',
+          background: '#0d0d0d',
+          flexShrink: 0,
         }}>
-          <div style={{
-            fontSize: '0.7rem',
-            color: '#666',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}>
-            {folder}/.claude/settings.local.json
-          </div>
+          {(['tools', 'directories'] as TabId[]).map(tab => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              style={{
+                padding: '0.6rem 1.25rem',
+                background: 'transparent',
+                border: 'none',
+                borderBottom: activeTab === tab ? '2px solid #d97757' : '2px solid transparent',
+                color: activeTab === tab ? '#fff' : '#666',
+                fontSize: '0.8rem',
+                fontWeight: activeTab === tab ? 500 : 400,
+                cursor: 'pointer',
+                textTransform: 'capitalize',
+              }}
+            >
+              {tab}
+            </button>
+          ))}
         </div>
 
         {/* Content */}
-        <div style={{ flex: 1, overflow: 'auto', padding: '0.75rem' }}>
+        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           {loading ? (
-            <div style={{ padding: '1rem', color: '#666', textAlign: 'center' }}>
-              Loading...
+            <div style={{ padding: '2rem', color: '#666', textAlign: 'center' }}>
+              Loading permissions...
             </div>
           ) : error ? (
             <div style={{ padding: '1rem', color: '#f87171', fontSize: '0.85rem' }}>
               {error}
             </div>
-          ) : (
+          ) : permissions ? (
             <>
-              {/* Core Tools Section */}
-              <div style={{ marginBottom: '1.25rem' }}>
-                <div style={{
-                  fontSize: '0.7rem',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
-                  color: '#888',
-                  marginBottom: '0.5rem',
-                  fontWeight: 600,
-                }}>
-                  Core Tools
-                </div>
-                <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 1fr 1fr',
-                  gap: '0.35rem',
-                }}>
-                  {CORE_TOOLS.map(tool => {
-                    const isEnabled = allowList.includes(tool.id);
-                    return (
-                      <label
-                        key={tool.id}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.4rem',
-                          padding: '0.35rem 0.5rem',
-                          borderRadius: '4px',
-                          background: isEnabled ? '#1a2e1a' : '#1a1a1a',
-                          border: `1px solid ${isEnabled ? '#2d5a2d' : '#2a2a2a'}`,
-                          cursor: 'pointer',
-                          transition: 'all 0.15s ease',
-                        }}
-                        title={tool.description}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isEnabled}
-                          onChange={() => toggleCoreTool(tool.id)}
-                          style={{
-                            accentColor: '#d97757',
-                            width: '14px',
-                            height: '14px',
-                            cursor: 'pointer',
-                          }}
-                        />
-                        <span style={{
-                          fontSize: '0.72rem',
-                          color: isEnabled ? '#9fdf9f' : '#888',
-                          fontFamily: 'monospace',
-                        }}>
-                          {tool.label}
-                        </span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Bash Permissions Section */}
-              <div style={{ marginBottom: '1.25rem' }}>
-                <div style={{
-                  fontSize: '0.7rem',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
-                  color: '#888',
-                  marginBottom: '0.5rem',
-                  fontWeight: 600,
-                }}>
-                  Bash Permissions ({bashPermissions.length})
-                </div>
-
-                {/* Add new bash permission */}
-                <div style={{
-                  display: 'flex',
-                  gap: '0.35rem',
-                  marginBottom: '0.5rem',
-                }}>
-                  <input
-                    type="text"
-                    value={newBashPerm}
-                    onChange={(e) => setNewBashPerm(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && addBashPermission()}
-                    placeholder="git status*"
-                    style={{
-                      flex: 1,
-                      padding: '0.4rem 0.6rem',
-                      borderRadius: '4px',
-                      border: '1px solid #333',
-                      background: '#0d0d0d',
-                      color: '#ccc',
-                      fontSize: '0.75rem',
-                      fontFamily: 'monospace',
-                      outline: 'none',
-                    }}
-                  />
-                  <button
-                    onClick={addBashPermission}
-                    style={{
-                      padding: '0.4rem 0.75rem',
-                      borderRadius: '4px',
-                      border: 'none',
-                      background: '#d97757',
-                      color: '#fff',
-                      fontSize: '0.75rem',
-                      fontWeight: 500,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Add
-                  </button>
-                </div>
-
-                {/* Bash permissions list */}
-                <div style={{
-                  maxHeight: '120px',
-                  overflowY: 'auto',
-                  border: '1px solid #2a2a2a',
-                  borderRadius: '4px',
-                  background: '#0d0d0d',
-                }}>
-                  {bashPermissions.length === 0 ? (
-                    <div style={{
-                      padding: '0.75rem',
-                      color: '#555',
-                      fontSize: '0.75rem',
-                      textAlign: 'center',
-                    }}>
-                      No Bash permissions configured
-                    </div>
-                  ) : (
-                    bashPermissions.map(perm => (
-                      <div
-                        key={perm}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          padding: '0.3rem 0.5rem',
-                          borderBottom: '1px solid #1a1a1a',
-                        }}
-                      >
-                        <span style={{
-                          fontSize: '0.7rem',
-                          color: '#aaa',
-                          fontFamily: 'monospace',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}>
-                          {perm}
-                        </span>
-                        <button
-                          onClick={() => removePermission(perm)}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            color: '#666',
-                            cursor: 'pointer',
-                            padding: '0.15rem',
-                            display: 'flex',
-                            alignItems: 'center',
-                            flexShrink: 0,
-                          }}
-                          onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
-                          onMouseLeave={(e) => e.currentTarget.style.color = '#666'}
-                          title="Remove"
-                        >
-                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <line x1="18" y1="6" x2="6" y2="18" />
-                            <line x1="6" y1="6" x2="18" y2="18" />
-                          </svg>
-                        </button>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-
-              {/* Additional Directories Section */}
-              <div style={{ marginBottom: '1.25rem' }}>
-                <div style={{
-                  fontSize: '0.7rem',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
-                  color: '#888',
-                  marginBottom: '0.5rem',
-                  fontWeight: 600,
-                }}>
-                  Additional Directories ({additionalDirs.length})
-                </div>
-
-                {/* Add new directory */}
-                <div style={{
-                  display: 'flex',
-                  gap: '0.35rem',
-                  marginBottom: '0.5rem',
-                }}>
-                  <input
-                    type="text"
-                    value={newDir}
-                    onChange={(e) => setNewDir(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && addDirectory()}
-                    placeholder="/path/to/directory"
-                    style={{
-                      flex: 1,
-                      padding: '0.4rem 0.6rem',
-                      borderRadius: '4px',
-                      border: '1px solid #333',
-                      background: '#0d0d0d',
-                      color: '#ccc',
-                      fontSize: '0.75rem',
-                      fontFamily: 'monospace',
-                      outline: 'none',
-                    }}
-                  />
-                  <button
-                    onClick={addDirectory}
-                    style={{
-                      padding: '0.4rem 0.75rem',
-                      borderRadius: '4px',
-                      border: 'none',
-                      background: '#d97757',
-                      color: '#fff',
-                      fontSize: '0.75rem',
-                      fontWeight: 500,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Add
-                  </button>
-                </div>
-
-                {/* Directories list */}
-                <div style={{
-                  maxHeight: '120px',
-                  overflowY: 'auto',
-                  border: '1px solid #2a2a2a',
-                  borderRadius: '4px',
-                  background: '#0d0d0d',
-                }}>
-                  {additionalDirs.length === 0 ? (
-                    <div style={{
-                      padding: '0.75rem',
-                      color: '#555',
-                      fontSize: '0.75rem',
-                      textAlign: 'center',
-                    }}>
-                      No additional directories configured
-                    </div>
-                  ) : (
-                    additionalDirs.map(dir => (
-                      <div
-                        key={dir}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          padding: '0.3rem 0.5rem',
-                          borderBottom: '1px solid #1a1a1a',
-                        }}
-                      >
-                        <span style={{
-                          fontSize: '0.7rem',
-                          color: '#aaa',
-                          fontFamily: 'monospace',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}>
-                          {dir}
-                        </span>
-                        <button
-                          onClick={() => removeDirectory(dir)}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            color: '#666',
-                            cursor: 'pointer',
-                            padding: '0.15rem',
-                            display: 'flex',
-                            alignItems: 'center',
-                            flexShrink: 0,
-                          }}
-                          onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
-                          onMouseLeave={(e) => e.currentTarget.style.color = '#666'}
-                          title="Remove"
-                        >
-                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <line x1="18" y1="6" x2="6" y2="18" />
-                            <line x1="6" y1="6" x2="18" y2="18" />
-                          </svg>
-                        </button>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-
-              {/* Other Permissions Section */}
-              {otherPermissions.length > 0 && (
-                <div>
-                  <div style={{
-                    fontSize: '0.7rem',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
-                    color: '#888',
-                    marginBottom: '0.5rem',
-                    fontWeight: 600,
-                  }}>
-                    Other ({otherPermissions.length})
-                  </div>
-                  <div style={{
-                    maxHeight: '100px',
-                    overflowY: 'auto',
-                    border: '1px solid #2a2a2a',
-                    borderRadius: '4px',
-                    background: '#0d0d0d',
-                  }}>
-                    {otherPermissions.map(perm => (
-                      <div
-                        key={perm}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          padding: '0.3rem 0.5rem',
-                          borderBottom: '1px solid #1a1a1a',
-                        }}
-                      >
-                        <span style={{
-                          fontSize: '0.7rem',
-                          color: '#aaa',
-                          fontFamily: 'monospace',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}>
-                          {perm}
-                        </span>
-                        <button
-                          onClick={() => removePermission(perm)}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            color: '#666',
-                            cursor: 'pointer',
-                            padding: '0.15rem',
-                            display: 'flex',
-                            alignItems: 'center',
-                            flexShrink: 0,
-                          }}
-                          onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
-                          onMouseLeave={(e) => e.currentTarget.style.color = '#666'}
-                          title="Remove"
-                        >
-                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <line x1="18" y1="6" x2="6" y2="18" />
-                            <line x1="6" y1="6" x2="18" y2="18" />
-                          </svg>
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+              {activeTab === 'tools' && (
+                <ToolsTabContent
+                  permissions={permissions}
+                  onChange={handlePermissionsChange}
+                  orderedSets={orderedSets}
+                  showImportBanner={showImportBanner}
+                  onImportClick={handleImport}
+                  showBlanketBashWarning={hasBlanketBash}
+                  onConvertBlanketBash={handleConvertBlanketBash}
+                  onMergeFromGlobal={handleMergeFromGlobal}
+                  onReplaceWithGlobal={handleRevertToGlobal}
+                  onImportFromClaude={handleImport}
+                  onSyncToClaude={handleSyncToClaude}
+                />
+              )}
+              {activeTab === 'directories' && (
+                <DirectoriesTabContent
+                  globalDirectories={globalDirectories}
+                  agentDirectories={permissions.additionalDirectories || []}
+                  onChange={handleDirectoriesChange}
+                />
               )}
             </>
-          )}
+          ) : null}
         </div>
 
-        {/* Footer */}
+        {/* Footer - only Save button (action buttons moved to Tools tab) */}
         <div style={{
           padding: '0.75rem 1rem',
           borderTop: '1px solid #333',
           display: 'flex',
           justifyContent: 'flex-end',
+          alignItems: 'center',
+          flexShrink: 0,
         }}>
           <button
             onClick={handleSave}
             disabled={saving}
             style={{
-              padding: '0.5rem 1rem',
+              padding: '0.5rem 1.25rem',
               borderRadius: '6px',
               border: 'none',
               background: saved ? '#16a34a' : '#d97757',
@@ -608,7 +363,7 @@ export function PermissionsDialog({
             ) : saving ? (
               'Saving...'
             ) : (
-              'Save Permissions'
+              'Save'
             )}
           </button>
         </div>

@@ -10,6 +10,7 @@ import { WorkspaceDropdown } from './components/WorkspaceDropdown';
 import { MCPSettingsPane } from './components/MCPSettingsPane';
 import { DialogBase } from './components/DialogBase';
 import { MCPQuestionDialog } from './components/MCPQuestionDialog';
+import { PermissionRequestDialog } from './components/PermissionRequestDialog';
 import { WorkspaceProvider, SessionProvider, MessagesProvider } from './context';
 import { useWorkspace, useSession, useSelectedAgent, useSessionName, WailsEventHub } from './hooks';
 import { QueueWatcher } from './components/QueueWatcher';
@@ -1668,6 +1669,9 @@ function AppContent() {
 
       {/* MCP AskUserQuestion Dialog */}
       <MCPQuestionDialog />
+
+      {/* MCP Permission Request Dialog */}
+      <PermissionRequestDialog />
     </div>
   );
 }

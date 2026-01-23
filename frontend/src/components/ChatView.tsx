@@ -17,6 +17,7 @@ import { ToolDetailPane } from './ToolDetailPane';
 import { SlideInPane } from './SlideInPane';
 import { ClaudeSettingsDialog } from './ClaudeSettingsDialog';
 import { PermissionsDialog } from './PermissionsDialog';
+import { AddPermissionWizard } from './AddPermissionWizard';
 
 // Hooks
 import { useScrollManagement } from '../hooks/useScrollManagement';
@@ -99,6 +100,11 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
   const [planContent, setPlanContent] = useState<string | null>(null);
   const [claudeSettingsOpen, setClaudeSettingsOpen] = useState(false);
   const [permissionsDialogOpen, setPermissionsDialogOpen] = useState(false);
+
+  // Permission wizard state (triggered from failed tool calls)
+  const [permissionWizardOpen, setPermissionWizardOpen] = useState(false);
+  const [permissionWizardTool, setPermissionWizardTool] = useState<string>('');
+  const [permissionWizardCommand, setPermissionWizardCommand] = useState<string | undefined>(undefined);
 
   // Attachment state (lifted from InputArea, displayed in ControlButtonsRow)
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -508,6 +514,13 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
     }
   };
 
+  // Handle opening permission wizard from tool failure
+  const handleAddPermission = (toolName: string, command?: string) => {
+    setPermissionWizardTool(toolName);
+    setPermissionWizardCommand(command);
+    setPermissionWizardOpen(true);
+  };
+
   // ===== MESSAGE QUEUE HANDLERS =====
 
   // Add message to queue (called when user presses Enter/Queue while Claude is responding)
@@ -607,6 +620,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
         onViewToolDetails={handleViewToolDetails}
         onQuestionAnswer={handleQuestionAnswer}
         onQuestionSkip={handleQuestionSkip}
+        onAddPermission={handleAddPermission}
       />
 
       {/* Input Area */}
@@ -703,6 +717,19 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
         isOpen={permissionsDialogOpen}
         onClose={() => setPermissionsDialogOpen(false)}
         folder={folder}
+      />
+
+      {/* Add Permission Wizard (from tool failure) */}
+      <AddPermissionWizard
+        isOpen={permissionWizardOpen}
+        onClose={() => {
+          setPermissionWizardOpen(false);
+          setPermissionWizardTool('');
+          setPermissionWizardCommand(undefined);
+        }}
+        folder={folder}
+        toolName={permissionWizardTool}
+        command={permissionWizardCommand}
       />
     </div>
   );

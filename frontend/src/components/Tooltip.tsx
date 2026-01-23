@@ -4,6 +4,7 @@ import {
   offset,
   flip,
   shift,
+  size,
   autoUpdate,
   FloatingPortal,
   useHover,
@@ -39,6 +40,16 @@ export function Tooltip({
       offset(8),
       flip({ fallbackPlacements: ['bottom', 'left', 'right'] }),
       shift({ padding: 8 }),
+      size({
+        apply({ availableHeight, elements }) {
+          // Constrain tooltip height to available viewport space
+          Object.assign(elements.floating.style, {
+            maxHeight: `${Math.max(100, availableHeight - 16)}px`,
+            overflowY: 'auto'
+          });
+        },
+        padding: 8
+      }),
       arrow({ element: arrowRef })
     ],
     whileElementsMounted: autoUpdate
@@ -71,7 +82,6 @@ export function Tooltip({
               borderRadius: '4px',
               border: '1px solid #333',
               boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-              pointerEvents: 'none'
             }}
             {...getFloatingProps()}
           >

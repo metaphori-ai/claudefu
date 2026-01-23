@@ -166,3 +166,52 @@ func (a *App) SaveMCPToolAvailability(ta mcpserver.ToolAvailability) error {
 func (a *App) GetDefaultMCPToolAvailability() mcpserver.ToolAvailability {
 	return *mcpserver.DefaultToolAvailability()
 }
+
+// =============================================================================
+// MCP PERMISSION REQUEST METHODS (Bound to frontend)
+// =============================================================================
+
+// MCPPendingPermission represents a pending permission request for the frontend
+type MCPPendingPermission struct {
+	ID         string `json:"id"`
+	AgentSlug  string `json:"agentSlug"`
+	Permission string `json:"permission"`
+	Reason     string `json:"reason"`
+	CreatedAt  string `json:"createdAt"`
+}
+
+// AnswerPermissionRequest responds to a pending MCP permission request
+func (a *App) AnswerPermissionRequest(requestID string, granted bool, permanent bool, denyReason string) error {
+	if a.mcpServer == nil {
+		return fmt.Errorf("MCP server not initialized")
+	}
+	ppm := a.mcpServer.GetPendingPermissions()
+	if ppm == nil {
+		return fmt.Errorf("pending permissions manager not initialized")
+	}
+	return ppm.Respond(requestID, granted, permanent, denyReason)
+}
+
+// GetPendingPermissionRequests returns all pending MCP permission requests (for UI state recovery)
+func (a *App) GetPendingPermissionRequests() []MCPPendingPermission {
+	if a.mcpServer == nil {
+		return nil
+	}
+	ppm := a.mcpServer.GetPendingPermissions()
+	if ppm == nil {
+		return nil
+	}
+
+	pending := ppm.GetAll()
+	result := make([]MCPPendingPermission, len(pending))
+	for i, pr := range pending {
+		result[i] = MCPPendingPermission{
+			ID:         pr.ID,
+			AgentSlug:  pr.AgentSlug,
+			Permission: pr.Permission,
+			Reason:     pr.Reason,
+			CreatedAt:  pr.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		}
+	}
+	return result
+}

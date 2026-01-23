@@ -16,11 +16,12 @@ const (
 
 // Settings holds all application settings
 type Settings struct {
-	Theme               string            `json:"theme"`               // "dark", "light", "system"
-	EnterBehavior       string            `json:"enterBehavior"`       // "send", "newline"
-	DefaultWorkingDir   string            `json:"defaultWorkingDir"`   // default working directory for agents
-	DebugLogging        bool              `json:"debugLogging"`        // enable aggregated debug logging on frontend
-	ClaudeEnvVars       map[string]string `json:"claudeEnvVars"`       // environment variables passed to Claude CLI (e.g., ANTHROPIC_BASE_URL)
+	Theme                 string            `json:"theme"`                 // "dark", "light", "system"
+	EnterBehavior         string            `json:"enterBehavior"`         // "send", "newline"
+	DefaultWorkingDir     string            `json:"defaultWorkingDir"`     // default working directory for agents
+	DebugLogging          bool              `json:"debugLogging"`          // enable aggregated debug logging on frontend
+	ClaudeEnvVars         map[string]string `json:"claudeEnvVars"`         // environment variables passed to Claude CLI (e.g., ANTHROPIC_BASE_URL)
+	DefaultPermissionSets map[string]string `json:"defaultPermissionSets"` // setId -> risk level ("common", "common+permissive", "all")
 }
 
 // AuthConfig holds authentication configuration
@@ -88,6 +89,9 @@ func defaultSettings() *Settings {
 	return &Settings{
 		Theme:         "dark",
 		EnterBehavior: "send",
+		DefaultPermissionSets: map[string]string{
+			"git": "common", // Git Common enabled by default
+		},
 	}
 }
 

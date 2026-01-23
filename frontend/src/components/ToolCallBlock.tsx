@@ -48,6 +48,33 @@ interface ToolCallBlockProps {
   pendingQuestion?: PendingQuestion;
   onAnswer?: (toolUseId: string, questions: any[], answers: Record<string, string>) => void;
   onSkip?: (toolUseId: string) => void;
+  onAddPermission?: (toolName: string, command?: string) => void;
+}
+
+// Permission failure detection patterns
+const PERMISSION_DENIED_PATTERNS = [
+  'No such tool available',
+  'tool is not allowed',
+  'Permission denied',
+  'not in the allow list',
+];
+
+// Detect if a tool result indicates a permission failure
+function isPermissionFailure(result?: ContentBlock): boolean {
+  if (!result?.is_error) return false;
+  const content = contentToString(result.content).toLowerCase();
+  return PERMISSION_DENIED_PATTERNS.some(pattern =>
+    content.toLowerCase().includes(pattern.toLowerCase())
+  );
+}
+
+// Extract command from Bash tool input for smart suggestions
+function extractBashCommand(input: any): string | undefined {
+  if (!input?.command) return undefined;
+  const cmd = input.command as string;
+  // Extract base command (first word)
+  const parts = cmd.trim().split(/\s+/);
+  return parts[0];
 }
 
 // Tool colors
@@ -526,88 +553,127 @@ function AskUserQuestionBlock({ block, result, pendingQuestion, onAnswer, onSkip
   );
 }
 
-export function ToolCallBlock({ block, result, onViewDetails, pendingQuestion, onAnswer, onSkip }: ToolCallBlockProps) {
+export function ToolCallBlock({ block, result, onViewDetails, pendingQuestion, onAnswer, onSkip, onAddPermission }: ToolCallBlockProps) {
   const config = getToolConfig(block.name || '');
   const summary = getToolSummary(block.name || '', block.input);
   const resultStr = result ? contentToString(result.content) : undefined;
   const resultSummary = result ? getResultSummary(block.name || '', resultStr, result.is_error || false) : null;
+  const permissionDenied = isPermissionFailure(result);
+  const bashCommand = block.name === 'Bash' ? extractBashCommand(block.input) : undefined;
 
   // Special rendering for AskUserQuestion
   if (block.name === 'AskUserQuestion') {
     return <AskUserQuestionBlock block={block} result={result} pendingQuestion={pendingQuestion} onAnswer={onAnswer} onSkip={onSkip} />;
   }
 
+  // Handle Add Permission click
+  const handleAddPermission = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Don't trigger view details
+    if (onAddPermission) {
+      onAddPermission(block.name || '', bashCommand);
+    }
+  };
+
   return (
-    <button
-      onClick={() => onViewDetails(block, result)}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '0.5rem',
-        padding: '0.5rem 0.75rem',
-        margin: '0.5rem 0',
-        background: '#1a1a1a',
-        border: '1px solid #333',
-        borderRadius: '6px',
-        cursor: 'pointer',
-        textAlign: 'left',
-        width: '100%',
-        maxWidth: '600px',
-        transition: 'all 0.15s ease'
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.background = '#252525';
-        e.currentTarget.style.borderColor = '#444';
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.background = '#1a1a1a';
-        e.currentTarget.style.borderColor = '#333';
-      }}
-    >
-      {/* Tool Name */}
-      <span style={{
-        color: config.color,
-        fontWeight: 500,
-        fontSize: '0.85rem',
-        flexShrink: 0
-      }}>
-        {config.label}
-      </span>
-
-      {/* Summary */}
-      <span style={{
-        color: '#888',
-        fontSize: '0.8rem',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap',
-        flex: 1
-      }}>
-        {summary}
-      </span>
-
-      {/* Result indicator */}
-      {resultSummary && (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: '0.5rem 0' }}>
+      <button
+        onClick={() => onViewDetails(block, result)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+          padding: '0.5rem 0.75rem',
+          background: permissionDenied ? '#2a1515' : '#1a1a1a',
+          border: `1px solid ${permissionDenied ? '#7f1d1d' : '#333'}`,
+          borderRadius: '6px',
+          cursor: 'pointer',
+          textAlign: 'left',
+          flex: 1,
+          maxWidth: '600px',
+          transition: 'all 0.15s ease'
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = permissionDenied ? '#3a2020' : '#252525';
+          e.currentTarget.style.borderColor = permissionDenied ? '#991b1b' : '#444';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = permissionDenied ? '#2a1515' : '#1a1a1a';
+          e.currentTarget.style.borderColor = permissionDenied ? '#7f1d1d' : '#333';
+        }}
+      >
+        {/* Tool Name */}
         <span style={{
-          color: result?.is_error ? '#f87171' : '#666',
-          fontSize: '0.75rem',
-          flexShrink: 0,
-          padding: '0.15rem 0.5rem',
-          background: result?.is_error ? '#2a1a1a' : '#222',
-          borderRadius: '4px'
+          color: permissionDenied ? '#f87171' : config.color,
+          fontWeight: 500,
+          fontSize: '0.85rem',
+          flexShrink: 0
         }}>
-          {resultSummary}
+          {config.label}
         </span>
-      )}
 
-      {/* Expand arrow */}
-      <span style={{
-        color: '#555',
-        fontSize: '0.7rem',
-        flexShrink: 0
-      }}>
-        ▶
-      </span>
-    </button>
+        {/* Summary */}
+        <span style={{
+          color: '#888',
+          fontSize: '0.8rem',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          flex: 1
+        }}>
+          {summary}
+        </span>
+
+        {/* Result indicator */}
+        {resultSummary && (
+          <span style={{
+            color: result?.is_error ? '#f87171' : '#666',
+            fontSize: '0.75rem',
+            flexShrink: 0,
+            padding: '0.15rem 0.5rem',
+            background: result?.is_error ? '#2a1a1a' : '#222',
+            borderRadius: '4px'
+          }}>
+            {permissionDenied ? '🔒 Denied' : resultSummary}
+          </span>
+        )}
+
+        {/* Expand arrow */}
+        <span style={{
+          color: '#555',
+          fontSize: '0.7rem',
+          flexShrink: 0
+        }}>
+          ▶
+        </span>
+      </button>
+
+      {/* Add Permission button - only show when permission denied */}
+      {permissionDenied && onAddPermission && (
+        <button
+          onClick={handleAddPermission}
+          style={{
+            padding: '0.4rem 0.6rem',
+            borderRadius: '4px',
+            border: 'none',
+            background: '#d97757',
+            color: '#fff',
+            fontSize: '0.7rem',
+            fontWeight: 500,
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.3rem',
+            transition: 'background 0.15s ease',
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.background = '#eb815e'}
+          onMouseLeave={(e) => e.currentTarget.style.background = '#d97757'}
+          title="Add permission to allow this tool"
+        >
+          <span>+</span>
+          <span>Add Permission</span>
+        </button>
+      )}
+    </div>
   );
 }

@@ -18,6 +18,7 @@ interface MessageListProps {
   onViewToolDetails: (toolCall: ContentBlock, result?: ContentBlock) => void;
   onQuestionAnswer?: (toolUseId: string, questions: any[], answers: Record<string, string>) => void;
   onQuestionSkip?: (toolUseId: string) => void;
+  onAddPermission?: (toolName: string, command?: string) => void;
 }
 
 export function MessageList({
@@ -35,7 +36,8 @@ export function MessageList({
   onCompactionClick,
   onViewToolDetails,
   onQuestionAnswer,
-  onQuestionSkip
+  onQuestionSkip,
+  onAddPermission
 }: MessageListProps) {
   // Filter out tool_result_carrier messages and sort by timestamp
   const displayableMessages = messages
@@ -154,6 +156,7 @@ export function MessageList({
               onViewToolDetails={onViewToolDetails}
               onQuestionAnswer={onQuestionAnswer}
               onQuestionSkip={onQuestionSkip}
+              onAddPermission={onAddPermission}
             />
           </div>
         ))}

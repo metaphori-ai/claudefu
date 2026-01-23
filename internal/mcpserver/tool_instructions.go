@@ -13,15 +13,16 @@ const (
 
 // ToolInstructions holds the configurable instructions for each MCP tool
 type ToolInstructions struct {
-	AgentQuery             string `json:"agentQuery"`
-	AgentQuerySystemPrompt string `json:"agentQuerySystemPrompt"` // System prompt appended to AgentQuery calls
-	AgentMessage           string `json:"agentMessage"`
-	AgentBroadcast         string `json:"agentBroadcast"`
-	NotifyUser             string `json:"notifyUser"`
-	AskUserQuestion        string `json:"askUserQuestion"`
-	SelfQuery              string `json:"selfQuery"`
-	SelfQuerySystemPrompt  string `json:"selfQuerySystemPrompt"` // System prompt appended to SelfQuery calls
-	BrowserAgent           string `json:"browserAgent"`          // BrowserAgent tool description
+	AgentQuery              string `json:"agentQuery"`
+	AgentQuerySystemPrompt  string `json:"agentQuerySystemPrompt"`  // System prompt appended to AgentQuery calls
+	AgentMessage            string `json:"agentMessage"`
+	AgentBroadcast          string `json:"agentBroadcast"`
+	NotifyUser              string `json:"notifyUser"`
+	AskUserQuestion         string `json:"askUserQuestion"`
+	SelfQuery               string `json:"selfQuery"`
+	SelfQuerySystemPrompt   string `json:"selfQuerySystemPrompt"`   // System prompt appended to SelfQuery calls
+	BrowserAgent            string `json:"browserAgent"`            // BrowserAgent tool description
+	RequestToolPermission   string `json:"requestToolPermission"`   // RequestToolPermission tool description
 }
 
 // ToolInstructionsManager handles loading and saving tool instructions
@@ -110,6 +111,20 @@ Use this when you need:
 
 Note: This tool requires the Chrome extension bridge to be running.
 Timeout defaults to 10 minutes - complex investigations take time.`,
+
+		RequestToolPermission: `Request permission to use a tool or command that isn't pre-approved.
+
+Use this when:
+- You need to run a bash command that requires explicit approval (e.g., git push, npm publish)
+- You want to use a tool that was denied in the permission settings
+- You need elevated permissions for a one-time operation
+
+The user can:
+- Grant permission for this one time
+- Grant permission permanently (adds to allow list)
+- Deny the permission
+
+Always explain WHY you need the permission so the user can make an informed decision.`,
 	}
 }
 
@@ -200,6 +215,10 @@ func (m *ToolInstructionsManager) load() error {
 	}
 	if ti.BrowserAgent == "" {
 		ti.BrowserAgent = defaults.BrowserAgent
+		needsSave = true
+	}
+	if ti.RequestToolPermission == "" {
+		ti.RequestToolPermission = defaults.RequestToolPermission
 		needsSave = true
 	}
 

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 
+	"claudefu/internal/permissions"
 	"claudefu/internal/types"
 )
 
@@ -215,6 +216,75 @@ func (s *ClaudeCodeService) getMCPArgs() []string {
 	}
 }
 
+// buildPermissionArgs compiles ClaudeFu permissions into CLI flags for spawning Claude.
+// This is the key integration point where our permission system controls Claude's behavior.
+//
+// Flag semantics:
+//   - --tools: Which built-in tools are AVAILABLE (the pool/universe)
+//   - --allowedTools: Which tools/patterns are AUTO-APPROVED (no permission prompt)
+//   - --disallowedTools: Patterns to BLOCK
+//   - --add-dir: Additional directories to allow access to
+//
+// Note: We intentionally omit --setting-sources to allow Claude's global settings
+// to still apply. Our explicit flags take precedence.
+func (s *ClaudeCodeService) buildPermissionArgs(folder string) []string {
+	if folder == "" {
+		return nil
+	}
+
+	mgr, err := permissions.NewManager()
+	if err != nil {
+		fmt.Printf("[DEBUG] buildPermissionArgs: failed to create permissions manager: %v\n", err)
+		return nil
+	}
+
+	perms, err := mgr.GetAgentPermissionsOrGlobal(folder)
+	if err != nil {
+		fmt.Printf("[DEBUG] buildPermissionArgs: failed to load permissions: %v\n", err)
+		return nil
+	}
+
+	if perms == nil {
+		fmt.Printf("[DEBUG] buildPermissionArgs: no permissions found, using defaults\n")
+		return nil
+	}
+
+	var args []string
+
+	// 1. --tools: Set which built-in tools are AVAILABLE (the pool)
+	availableTools := mgr.CompileAvailableTools(perms)
+	if len(availableTools) > 0 {
+		args = append(args, "--tools", strings.Join(availableTools, ","))
+	}
+
+	// 2. --allowedTools: Auto-approve these (no permission prompt)
+	// This includes enabled built-in tools + Bash patterns from sets
+	allowedPatterns := mgr.CompileAllowList(perms)
+	if len(allowedPatterns) > 0 {
+		args = append(args, "--allowedTools", strings.Join(allowedPatterns, ","))
+	}
+
+	// 3. --disallowedTools: Always deny these
+	denyPatterns := mgr.CompileDenyList(perms)
+	if len(denyPatterns) > 0 {
+		args = append(args, "--disallowedTools", strings.Join(denyPatterns, ","))
+	}
+
+	// 4. --add-dir: Additional directories (union of global + agent dirs)
+	dirs, err := mgr.CompileDirectories(folder)
+	if err == nil {
+		for _, dir := range dirs {
+			args = append(args, "--add-dir", dir)
+		}
+	}
+
+	if len(args) > 0 {
+		fmt.Printf("[DEBUG] buildPermissionArgs: generated %d permission args\n", len(args))
+	}
+
+	return args
+}
+
 // SendMessage sends a message to Claude Code in the specified folder/session.
 // It uses --resume to continue an existing session.
 // If attachments are provided, uses stdin with --input-format stream-json.
@@ -255,6 +325,9 @@ func (s *ClaudeCodeService) SendMessage(folder, sessionId, message string, attac
 		"--resume", sessionId,
 		"-p", message,
 	}
+
+	// Add permission args (tools, allowedTools, disallowedTools, add-dir)
+	args = append(args, s.buildPermissionArgs(folder)...)
 
 	// Add MCP config if configured (enables inter-agent communication)
 	args = append(args, s.getMCPArgs()...)
@@ -378,6 +451,10 @@ func (s *ClaudeCodeService) sendWithAttachments(claudePath, folder, sessionId, m
 		"--permission-mode", permissionMode,
 		"--resume", sessionId,
 	}
+
+	// Add permission args (tools, allowedTools, disallowedTools, add-dir)
+	args = append(args, s.buildPermissionArgs(folder)...)
+
 	args = append(args, s.getMCPArgs()...)
 
 	fmt.Printf("[DEBUG] sendWithAttachments: running command: %s %v\n", claudePath, args)
@@ -454,6 +531,10 @@ func (s *ClaudeCodeService) NewSession(folder string) (string, error) {
 		"--output-format", "stream-json",
 		"-p", "Hello! Starting a new session.",
 	}
+
+	// Add permission args (tools, allowedTools, disallowedTools, add-dir)
+	args = append(args, s.buildPermissionArgs(folder)...)
+
 	// Add MCP config if configured (enables inter-agent communication)
 	args = append(args, s.getMCPArgs()...)
 

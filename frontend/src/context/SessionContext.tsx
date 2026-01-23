@@ -25,6 +25,15 @@ export interface MCPPendingQuestion {
   createdAt: string;
 }
 
+// MCP Pending Permission Request from backend event
+export interface MCPPendingPermission {
+  id: string;
+  agentSlug: string;
+  permission: string;
+  reason: string;
+  createdAt: string;
+}
+
 // SessionState: state that changes frequently via events
 export interface SessionState {
   selectedSessionId: string | null;
@@ -39,6 +48,8 @@ export interface SessionState {
   inboxDialogAgentId: string | null;
   // MCP AskUserQuestion dialog state
   mcpPendingQuestion: MCPPendingQuestion | null;
+  // MCP Permission Request dialog state
+  mcpPendingPermission: MCPPendingPermission | null;
   // Per-agent "Claude is responding" state (survives agent switching)
   respondingAgents: Map<string, boolean>;
   // Per-agent message queue (for queuing messages while Claude is responding)
@@ -62,6 +73,7 @@ export type SessionAction =
   | { type: 'UPDATE_INBOX_MESSAGE'; payload: { messageId: string; updates: Partial<InboxMessage> } }
   | { type: 'REMOVE_INBOX_MESSAGE'; payload: string }
   | { type: 'SET_MCP_PENDING_QUESTION'; payload: MCPPendingQuestion | null }
+  | { type: 'SET_MCP_PENDING_PERMISSION'; payload: MCPPendingPermission | null }
   | { type: 'SET_AGENT_RESPONDING'; payload: { agentId: string; isResponding: boolean } }
   // Message Queue actions
   | { type: 'ADD_TO_QUEUE'; payload: { agentId: string; message: QueuedMessage } }
@@ -82,6 +94,7 @@ const initialState: SessionState = {
   inboxMessages: [],
   inboxDialogAgentId: null,
   mcpPendingQuestion: null,
+  mcpPendingPermission: null,
   respondingAgents: new Map(),
   messageQueues: new Map(),
   lastSessionIds: new Map(),
@@ -188,6 +201,12 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
       return {
         ...state,
         mcpPendingQuestion: action.payload,
+      };
+
+    case 'SET_MCP_PENDING_PERMISSION':
+      return {
+        ...state,
+        mcpPendingPermission: action.payload,
       };
 
     case 'SET_AGENT_RESPONDING': {

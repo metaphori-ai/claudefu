@@ -15,6 +15,7 @@ interface ContentBlockRendererProps {
   onViewToolDetails: (toolCall: ContentBlock, result?: ContentBlock) => void;
   onQuestionAnswer?: (toolUseId: string, questions: any[], answers: Record<string, string>) => void;
   onQuestionSkip?: (toolUseId: string) => void;
+  onAddPermission?: (toolName: string, command?: string) => void;
 }
 
 // Markdown components configuration for consistent styling
@@ -187,7 +188,8 @@ export function ContentBlockRenderer({
   globalPendingQuestionMap,
   onViewToolDetails,
   onQuestionAnswer,
-  onQuestionSkip
+  onQuestionSkip,
+  onAddPermission
 }: ContentBlockRendererProps) {
   // If no blocks, fall back to plain content
   if (!blocks || blocks.length === 0) {
@@ -264,6 +266,7 @@ export function ContentBlockRenderer({
               pendingQuestion={pendingQ}
               onAnswer={pendingQ ? onQuestionAnswer : undefined}
               onSkip={pendingQ ? onQuestionSkip : undefined}
+              onAddPermission={onAddPermission}
             />
           );
         }

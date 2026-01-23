@@ -169,3 +169,22 @@ func CreateBrowserAgentTool(instruction string) mcp.Tool {
 		),
 	)
 }
+
+// CreateRequestToolPermissionTool creates the RequestToolPermission tool definition
+// This tool allows Claude to request runtime permission for a tool/command that isn't pre-approved
+func CreateRequestToolPermissionTool(instruction string) mcp.Tool {
+	return mcp.NewTool("RequestToolPermission",
+		mcp.WithDescription(instruction),
+		mcp.WithString("permission",
+			mcp.Required(),
+			mcp.Description("The permission pattern being requested (e.g., 'Bash(git push:*)' or 'Bash(npm publish:*)')"),
+		),
+		mcp.WithString("reason",
+			mcp.Required(),
+			mcp.Description("Why this permission is needed - explain what you want to do and why"),
+		),
+		mcp.WithString("from_agent",
+			mcp.Description("Your agent name/slug for identification (optional but recommended)"),
+		),
+	)
+}

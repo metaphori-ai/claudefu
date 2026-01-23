@@ -581,3 +581,90 @@ Navigate to %s and submit your findings in the form.
 
 	return mcp.NewToolResultText(response.Content), nil
 }
+
+// handleRequestToolPermission handles the RequestToolPermission tool call
+// This blocks until the user grants/denies the permission
+func (s *MCPService) handleRequestToolPermission(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// Check tool availability
+	if !s.toolAvailability.IsEnabled("RequestToolPermission") {
+		return mcp.NewToolResultError("RequestToolPermission tool is disabled. Enable in MCP Settings > Tool Availability."), nil
+	}
+
+	permission, err := req.RequireString("permission")
+	if err != nil {
+		return mcp.NewToolResultError("permission is required"), nil
+	}
+
+	reason, err := req.RequireString("reason")
+	if err != nil {
+		return mcp.NewToolResultError("reason is required"), nil
+	}
+
+	// Optional: get from_agent for logging
+	args, _ := req.Params.Arguments.(map[string]any)
+	fromAgent, _ := args["from_agent"].(string)
+	if fromAgent == "" {
+		fromAgent = "unknown"
+	}
+
+	fmt.Printf("[MCP:RequestToolPermission] Request from %s for '%s': %s\n", fromAgent, permission, reason)
+
+	// Create pending permission request with response channel
+	pr := s.pendingPermissions.Create(fromAgent, permission, reason)
+
+	// Emit event to frontend to show dialog
+	s.emitFunc(types.EventEnvelope{
+		EventType: "mcp:permission-request",
+		Payload: map[string]any{
+			"id":         pr.ID,
+			"agentSlug":  pr.AgentSlug,
+			"permission": pr.Permission,
+			"reason":     pr.Reason,
+			"createdAt":  pr.CreatedAt.Format(time.RFC3339),
+		},
+	})
+
+	// Block waiting for response, timeout, or context cancellation
+	timeout := s.pendingPermissions.GetTimeout()
+	select {
+	case response, ok := <-pr.ResponseCh:
+		if !ok {
+			// Channel was closed (cancelled)
+			return mcp.NewToolResultError("Permission request was cancelled"), nil
+		}
+		if !response.Granted {
+			msg := "Permission denied by user"
+			if response.DenyReason != "" {
+				msg += ": " + response.DenyReason
+			}
+			return mcp.NewToolResultError(msg), nil
+		}
+		// Permission granted
+		result := map[string]any{
+			"granted":   true,
+			"permanent": response.Permanent,
+			"message":   fmt.Sprintf("Permission '%s' granted", permission),
+		}
+		if response.Permanent {
+			result["message"] = fmt.Sprintf("Permission '%s' granted and added to allow list", permission)
+		}
+		resultJSON, _ := json.Marshal(result)
+		fmt.Printf("[MCP:RequestToolPermission] Permission granted for %s: permanent=%v\n", permission, response.Permanent)
+		return mcp.NewToolResultText(string(resultJSON)), nil
+
+	case <-ctx.Done():
+		// Context cancelled (e.g., Claude disconnected)
+		s.pendingPermissions.Cancel(pr.ID)
+		return mcp.NewToolResultError("Request cancelled"), nil
+
+	case <-s.ctx.Done():
+		// Server shutting down
+		s.pendingPermissions.Cancel(pr.ID)
+		return mcp.NewToolResultError("Server shutting down"), nil
+
+	case <-time.After(timeout):
+		// Timeout
+		s.pendingPermissions.Cancel(pr.ID)
+		return mcp.NewToolResultError(fmt.Sprintf("Permission request timed out after %v", timeout)), nil
+	}
+}

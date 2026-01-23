@@ -15,6 +15,7 @@ interface MessageRowProps {
   onViewToolDetails: (toolCall: ContentBlock, result?: ContentBlock) => void;
   onQuestionAnswer?: (toolUseId: string, questions: any[], answers: Record<string, string>) => void;
   onQuestionSkip?: (toolUseId: string) => void;
+  onAddPermission?: (toolName: string, command?: string) => void;
 }
 
 // Styled file reference component
@@ -131,7 +132,8 @@ export function MessageRow({
   onCompactionClick,
   onViewToolDetails,
   onQuestionAnswer,
-  onQuestionSkip
+  onQuestionSkip,
+  onAddPermission
 }: MessageRowProps) {
   // Expand/collapse state for long user messages
   const [isExpanded, setIsExpanded] = useState(false);
@@ -322,6 +324,7 @@ export function MessageRow({
                   onViewToolDetails={onViewToolDetails}
                   onQuestionAnswer={onQuestionAnswer}
                   onQuestionSkip={onQuestionSkip}
+                  onAddPermission={onAddPermission}
                 />
               </div>
               {/* Copy button for individual assistant message (show on hover, only if has text) */}

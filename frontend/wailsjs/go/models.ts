@@ -138,6 +138,60 @@ export namespace main {
 	        this.ext = source["ext"];
 	    }
 	}
+	export class ImportResult {
+	    found: boolean;
+	    hasBlanketBash: boolean;
+	    imported?: permissions.ClaudeFuPermissions;
+	
+	    static createFrom(source: any = {}) {
+	        return new ImportResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.found = source["found"];
+	        this.hasBlanketBash = source["hasBlanketBash"];
+	        this.imported = this.convertValues(source["imported"], permissions.ClaudeFuPermissions);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class MCPPendingPermission {
+	    id: string;
+	    agentSlug: string;
+	    permission: string;
+	    reason: string;
+	    createdAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new MCPPendingPermission(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.agentSlug = source["agentSlug"];
+	        this.permission = source["permission"];
+	        this.reason = source["reason"];
+	        this.createdAt = source["createdAt"];
+	    }
+	}
 	export class MCPPendingQuestion {
 	    id: string;
 	    agentSlug: string;
@@ -155,6 +209,38 @@ export namespace main {
 	        this.questions = source["questions"];
 	        this.createdAt = source["createdAt"];
 	    }
+	}
+	export class PermissionSetMatch {
+	    set?: permissions.PermissionSet;
+	    baseCommand: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new PermissionSetMatch(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.set = this.convertValues(source["set"], permissions.PermissionSet);
+	        this.baseCommand = source["baseCommand"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class UpdateInfo {
 	    available: boolean;
@@ -236,6 +322,7 @@ export namespace mcpserver {
 	    askUserQuestion: boolean;
 	    selfQuery: boolean;
 	    browserAgent: boolean;
+	    requestToolPermission: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new ToolAvailability(source);
@@ -250,6 +337,7 @@ export namespace mcpserver {
 	        this.askUserQuestion = source["askUserQuestion"];
 	        this.selfQuery = source["selfQuery"];
 	        this.browserAgent = source["browserAgent"];
+	        this.requestToolPermission = source["requestToolPermission"];
 	    }
 	}
 	export class ToolInstructions {
@@ -262,6 +350,7 @@ export namespace mcpserver {
 	    selfQuery: string;
 	    selfQuerySystemPrompt: string;
 	    browserAgent: string;
+	    requestToolPermission: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ToolInstructions(source);
@@ -278,6 +367,7 @@ export namespace mcpserver {
 	        this.selfQuery = source["selfQuery"];
 	        this.selfQuerySystemPrompt = source["selfQuerySystemPrompt"];
 	        this.browserAgent = source["browserAgent"];
+	        this.requestToolPermission = source["requestToolPermission"];
 	    }
 	}
 
@@ -362,6 +452,132 @@ export namespace menu {
 
 }
 
+export namespace permissions {
+	
+	export class ToolPermission {
+	    common: string[];
+	    permissive: string[];
+	    yolo: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new ToolPermission(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.common = source["common"];
+	        this.permissive = source["permissive"];
+	        this.yolo = source["yolo"];
+	    }
+	}
+	export class ClaudeFuPermissions {
+	    version: number;
+	    inheritFromGlobal?: boolean;
+	    toolPermissions: Record<string, ToolPermission>;
+	    additionalDirectories: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new ClaudeFuPermissions(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.version = source["version"];
+	        this.inheritFromGlobal = source["inheritFromGlobal"];
+	        this.toolPermissions = this.convertValues(source["toolPermissions"], ToolPermission, true);
+	        this.additionalDirectories = source["additionalDirectories"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class PermissionTiers {
+	    common: string[];
+	    permissive: string[];
+	    yolo: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new PermissionTiers(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.common = source["common"];
+	        this.permissive = source["permissive"];
+	        this.yolo = source["yolo"];
+	    }
+	}
+	export class PermissionSet {
+	    id: string;
+	    name: string;
+	    description?: string;
+	    permissions: PermissionTiers;
+	
+	    static createFrom(source: any = {}) {
+	        return new PermissionSet(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.description = source["description"];
+	        this.permissions = this.convertValues(source["permissions"], PermissionTiers);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
+	export class PermissionsDiff {
+	    toolsAdded: string[];
+	    toolsRemoved: string[];
+	    hasChanges: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new PermissionsDiff(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.toolsAdded = source["toolsAdded"];
+	        this.toolsRemoved = source["toolsRemoved"];
+	        this.hasChanges = source["hasChanges"];
+	    }
+	}
+
+}
+
 export namespace settings {
 	
 	export class Settings {
@@ -370,6 +586,7 @@ export namespace settings {
 	    defaultWorkingDir: string;
 	    debugLogging: boolean;
 	    claudeEnvVars: Record<string, string>;
+	    defaultPermissionSets: Record<string, string>;
 	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -382,6 +599,7 @@ export namespace settings {
 	        this.defaultWorkingDir = source["defaultWorkingDir"];
 	        this.debugLogging = source["debugLogging"];
 	        this.claudeEnvVars = source["claudeEnvVars"];
+	        this.defaultPermissionSets = source["defaultPermissionSets"];
 	    }
 	}
 

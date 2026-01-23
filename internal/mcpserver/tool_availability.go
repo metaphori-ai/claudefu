@@ -13,13 +13,14 @@ const (
 
 // ToolAvailability holds the enabled/disabled state for each MCP tool
 type ToolAvailability struct {
-	AgentQuery      bool `json:"agentQuery"`
-	AgentMessage    bool `json:"agentMessage"`
-	AgentBroadcast  bool `json:"agentBroadcast"`
-	NotifyUser      bool `json:"notifyUser"`
-	AskUserQuestion bool `json:"askUserQuestion"`
-	SelfQuery       bool `json:"selfQuery"`
-	BrowserAgent    bool `json:"browserAgent"` // Disabled by default, password-protected
+	AgentQuery            bool `json:"agentQuery"`
+	AgentMessage          bool `json:"agentMessage"`
+	AgentBroadcast        bool `json:"agentBroadcast"`
+	NotifyUser            bool `json:"notifyUser"`
+	AskUserQuestion       bool `json:"askUserQuestion"`
+	SelfQuery             bool `json:"selfQuery"`
+	BrowserAgent          bool `json:"browserAgent"`          // Disabled by default, password-protected
+	RequestToolPermission bool `json:"requestToolPermission"` // Enabled by default
 }
 
 // ToolAvailabilityManager handles loading and saving tool availability settings
@@ -43,13 +44,14 @@ func NewToolAvailabilityManager(configPath string) *ToolAvailabilityManager {
 // DefaultToolAvailability returns the default availability for all MCP tools
 func DefaultToolAvailability() *ToolAvailability {
 	return &ToolAvailability{
-		AgentQuery:      true,
-		AgentMessage:    true,
-		AgentBroadcast:  true,
-		NotifyUser:      true,
-		AskUserQuestion: true,
-		SelfQuery:       true,
-		BrowserAgent:    false, // Disabled by default - requires password to enable
+		AgentQuery:            true,
+		AgentMessage:          true,
+		AgentBroadcast:        true,
+		NotifyUser:            true,
+		AskUserQuestion:       true,
+		SelfQuery:             true,
+		BrowserAgent:          false, // Disabled by default - requires password to enable
+		RequestToolPermission: true,  // Enabled by default
 	}
 }
 
@@ -80,6 +82,8 @@ func (m *ToolAvailabilityManager) IsEnabled(toolName string) bool {
 		return m.availability.SelfQuery
 	case "BrowserAgent":
 		return m.availability.BrowserAgent
+	case "RequestToolPermission":
+		return m.availability.RequestToolPermission
 	default:
 		return false
 	}
