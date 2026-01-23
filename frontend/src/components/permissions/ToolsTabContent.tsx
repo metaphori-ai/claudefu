@@ -332,7 +332,7 @@ export function ToolsTabContent({
                   Existing permissions found
                 </div>
                 <div style={{ fontSize: '0.65rem', color: '#93c5fd', marginTop: '0.15rem' }}>
-                  Import from Claude's settings.local.json
+                  Import from .claude/settings.local.json
                 </div>
               </div>
               <button
@@ -423,16 +423,16 @@ export function ToolsTabContent({
               <ActionButton
                 onClick={onImportFromClaude}
                 icon={<ImportIcon />}
-                label="Import from Claude"
-                title="Import from Claude's settings.local.json"
+                label="Import from settings.local"
+                title="Import from .claude/settings.local.json"
               />
             )}
             {onSyncToClaude && (
               <ActionButton
                 onClick={onSyncToClaude}
                 icon={<SyncIcon />}
-                label="Sync to Claude"
-                title="Write permissions to Claude's settings.local.json"
+                label="Sync to settings.local"
+                title="Write permissions to .claude/settings.local.json"
               />
             )}
           </div>
