@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Permissions Dialog Crash on New Agents** - Fixed "null is not an object" error
   - Was calling `GetAgentPermissions` (returns null for new agents)
   - Now calls `GetAgentPermissionsOrGlobal` (falls back to global template)
+- **Cancellation Breaking Conversation Context** - Stop writing to Claude's JSONL
+  - ClaudeFu was inserting `[CANCELLED]` user messages on STOP
+  - This broke the parentUuid chain, causing Claude to lose conversation thread
+  - Fix: Just kill the process, don't write anything - let Claude handle its own state
 
 ### Changed
 - **Button Label Clarity** - Renamed confusing "Import from Claude" / "Sync to Claude" buttons

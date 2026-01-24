@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { GetConversationPaged, SetActiveSession, ClearActiveSession, SendMessage, MarkSessionViewed, NewSession, ReadPlanFile, GetPlanFilePath, AnswerQuestion, CancelSession, AppendCancellationMarker } from '../../wailsjs/go/main/App';
+import { GetConversationPaged, SetActiveSession, ClearActiveSession, SendMessage, MarkSessionViewed, NewSession, ReadPlanFile, GetPlanFilePath, AnswerQuestion, CancelSession } from '../../wailsjs/go/main/App';
 import { types } from '../../wailsjs/go/models';
 
 // Extracted components
@@ -381,14 +381,10 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
       // Clear pending spinner immediately on cancel
       clearAllPendingInSession(agentId, sessionId);
 
-      // Append cancellation marker to JSONL for history
-      try {
-        await AppendCancellationMarker(agentId, sessionId);
-        console.log('[ChatView] Cancellation marker appended');
-      } catch (markerErr) {
-        console.warn('[ChatView] Failed to append cancellation marker:', markerErr);
-        // Non-fatal - continue anyway
-      }
+      // NOTE: We do NOT append a cancellation marker to the JSONL.
+      // Writing to Claude Code's JSONL breaks the parentUuid chain and causes
+      // Claude to lose conversation context. Just kill the process and let
+      // Claude Code handle its own state.
 
       // Don't clear isWaitingForResponse here - let it clear when the assistant message arrives
       // or after a short timeout if no response comes
