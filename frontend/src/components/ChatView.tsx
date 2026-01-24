@@ -26,7 +26,7 @@ import { useSession } from '../hooks/useSession';
 import { QueuedMessage } from '../context/SessionContext';
 
 // Utilities
-import { buildToolResultMap, buildPendingQuestionMap, computeDebugStats, filterMessagesToRender } from '../utils/messageUtils';
+import { buildToolResultMap, buildPendingQuestionMap, computeDebugStats, filterMessagesToRender, computeTokenMetrics, type SessionTokenMetrics } from '../utils/messageUtils';
 import { debugLogger, startDebugCycle, logDebug, endDebugCycle } from '../utils/debugLogger';
 
 // CSS keyframes for spinner animation
@@ -132,6 +132,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
   const globalToolResultMap = useMemo(() => buildToolResultMap(messages), [messages]);
   const globalPendingQuestionMap = useMemo(() => buildPendingQuestionMap(messages), [messages]);
   const hasPendingQuestion = globalPendingQuestionMap.size > 0;
+  const tokenMetrics = useMemo(() => computeTokenMetrics(messages), [messages]);
   const messagesToRender = useMemo(
     () => filterMessagesToRender(messages, globalPendingQuestionMap, globalToolResultMap),
     [messages, globalPendingQuestionMap, globalToolResultMap]
@@ -650,6 +651,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
           hasPendingQuestion={hasPendingQuestion}
           newSessionMode={newSessionMode}
           planningMode={planningMode}
+          tokenMetrics={tokenMetrics}
           attachments={attachments}
           onAttachmentsChange={setAttachments}
           queue={queue}

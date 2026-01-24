@@ -629,6 +629,20 @@ export namespace types {
 	        this.extension = source["extension"];
 	    }
 	}
+	export class CacheCreation {
+	    ephemeral_5m_input_tokens: number;
+	    ephemeral_1h_input_tokens: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new CacheCreation(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ephemeral_5m_input_tokens = source["ephemeral_5m_input_tokens"];
+	        this.ephemeral_1h_input_tokens = source["ephemeral_1h_input_tokens"];
+	    }
+	}
 	export class ImageSource {
 	    type: string;
 	    media_type: string;
@@ -696,6 +710,46 @@ export namespace types {
 		}
 	}
 	
+	export class TokenUsage {
+	    input_tokens: number;
+	    output_tokens: number;
+	    cache_creation_input_tokens: number;
+	    cache_read_input_tokens: number;
+	    service_tier?: string;
+	    cache_creation?: CacheCreation;
+	
+	    static createFrom(source: any = {}) {
+	        return new TokenUsage(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.input_tokens = source["input_tokens"];
+	        this.output_tokens = source["output_tokens"];
+	        this.cache_creation_input_tokens = source["cache_creation_input_tokens"];
+	        this.cache_read_input_tokens = source["cache_read_input_tokens"];
+	        this.service_tier = source["service_tier"];
+	        this.cache_creation = this.convertValues(source["cache_creation"], CacheCreation);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class PendingQuestion {
 	    toolUseId: string;
 	    questions: any[];
@@ -721,6 +775,7 @@ export namespace types {
 	    pendingQuestion?: PendingQuestion;
 	    isSynthetic?: boolean;
 	    stopReason?: string;
+	    usage?: TokenUsage;
 	
 	    static createFrom(source: any = {}) {
 	        return new Message(source);
@@ -738,6 +793,7 @@ export namespace types {
 	        this.pendingQuestion = this.convertValues(source["pendingQuestion"], PendingQuestion);
 	        this.isSynthetic = source["isSynthetic"];
 	        this.stopReason = source["stopReason"];
+	        this.usage = this.convertValues(source["usage"], TokenUsage);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

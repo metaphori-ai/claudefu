@@ -20,6 +20,7 @@ type Message struct {
 	PendingQuestion   *PendingQuestion `json:"pendingQuestion,omitempty"` // Non-nil if AskUserQuestion failed (interactive mode)
 	IsSynthetic       bool             `json:"isSynthetic,omitempty"`     // True if model="<synthetic>" (e.g., "No response requested.")
 	StopReason        string           `json:"stopReason,omitempty"`      // "stop_sequence" when complete (JSONL), "end_turn" (streaming), null when tools pending
+	Usage             *TokenUsage      `json:"usage,omitempty"`           // Token usage for assistant messages (input/output/cache tokens)
 }
 
 // PendingQuestion tracks a failed AskUserQuestion tool call that needs user interaction.

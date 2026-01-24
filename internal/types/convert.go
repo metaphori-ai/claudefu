@@ -231,6 +231,12 @@ func convertAssistantToMessage(event *AssistantEvent) *Message {
 	// Check if this is a synthetic message (model="<synthetic>")
 	isSynthetic := event.Message.Model == "<synthetic>"
 
+	// Preserve token usage for tracking (only if non-zero)
+	var usage *TokenUsage
+	if event.Message.Usage.InputTokens > 0 || event.Message.Usage.OutputTokens > 0 {
+		usage = &event.Message.Usage
+	}
+
 	return &Message{
 		Type:          "assistant",
 		Content:       content,
@@ -239,6 +245,7 @@ func convertAssistantToMessage(event *AssistantEvent) *Message {
 		UUID:          event.UUID,
 		IsSynthetic:   isSynthetic,
 		StopReason:    event.Message.StopReason,
+		Usage:         usage,
 	}
 }
 

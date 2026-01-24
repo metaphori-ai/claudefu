@@ -54,6 +54,14 @@ export interface PendingQuestion {
   questions: any[];
 }
 
+// Token usage from Claude's response (mirrors Go types.TokenUsage)
+export interface TokenUsage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_input_tokens?: number;
+  cache_read_input_tokens?: number;
+}
+
 // Message type with UI-specific fields
 export interface Message {
   uuid: string;
@@ -68,6 +76,7 @@ export interface Message {
   pendingQuestion?: PendingQuestion;  // Non-null if this message contains a failed AskUserQuestion
   isSynthetic?: boolean;  // True if model="<synthetic>" (e.g., "No response requested.")
   stopReason?: string;  // "stop_sequence" (JSONL) or "end_turn" (streaming) when complete, null/undefined when tools pending
+  usage?: TokenUsage;  // Token usage for assistant messages (v0.3.21 - from JSONL event.message.usage)
 }
 
 // Props for ChatView component

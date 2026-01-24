@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.21] - 2026-01-23
+
+### Added
+- **Instant Session Creation** - New sessions are created instantly without waiting for Claude CLI
+  - Previous: Clicking "New Session" spawned Claude CLI with a dummy prompt, waited 15-30+ seconds
+  - Now: Writes starter exchange to JSONL + updates `sessions-index.json` (instant!)
+  - Starter exchange: User "Starting a new session with Claude." → Assistant "I'm ready for action..."
+  - Claude CLI's `--resume` picks up from the starter exchange seamlessly
+  - New `internal/session/` package with `SessionService` for programmatic session management
+  - Key discovery: Assistant messages require `content` as array of content blocks, not plain string
+
+- **Token Metrics Display** - Show context size and output tokens in InputArea status chip
+  - `ctx`: Current context window size (latest `input_tokens` from API)
+  - `out`: Total tokens generated (cumulative `output_tokens`)
+  - Display: "ctx 12.5k | out 3.2k" - meaningful metrics, not misleading sums
+  - Note: We don't sum `input_tokens` because each API call's `input_tokens` includes the ENTIRE context at that point (summing would double-count)
+  - Formatted with K/M suffixes (e.g., "12.5k", "1.2M")
+  - Backend preserves `Usage` field from JSONL events through to frontend
+
+### Changed
+- **SessionService Architecture** - Session creation moved from `ClaudeCodeService` to dedicated service
+  - `app.sessionService` handles instant session creation
+  - Writes `file-history-snapshot`, user message, and assistant response in Claude's exact format
+  - `sessions-index.json` updated with proper format (version as int, fileMtime as milliseconds)
+
 ## [0.3.20] - 2026-01-23
 
 ### Added

@@ -11,6 +11,7 @@ import (
 	"claudefu/internal/mcpserver"
 	"claudefu/internal/providers"
 	"claudefu/internal/runtime"
+	"claudefu/internal/session"
 	"claudefu/internal/settings"
 	"claudefu/internal/types"
 	"claudefu/internal/watcher"
@@ -29,6 +30,7 @@ type App struct {
 	rt               *runtime.WorkspaceRuntime
 	currentWorkspace *workspace.Workspace
 	mcpServer        *mcpserver.MCPService
+	sessionService   *session.Service // Instant session creation (no CLI wait)
 }
 
 // NewApp creates a new App application struct
@@ -110,6 +112,9 @@ func (a *App) loadPersistedState() {
 
 	// Initialize workspace manager
 	a.workspace = workspace.NewManager(sm.GetConfigPath())
+
+	// Initialize session service (instant session creation)
+	a.sessionService = session.NewService()
 }
 
 // loadCurrentWorkspace loads the current workspace and migrates if needed

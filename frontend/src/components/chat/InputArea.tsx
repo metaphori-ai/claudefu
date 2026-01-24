@@ -5,6 +5,7 @@ import { FilePicker } from './FilePicker';
 import { SplitButton } from './SplitButton';
 import { QueuedMessage } from '../../context/SessionContext';
 import { ReadFileContent } from '../../../wailsjs/go/main/App';
+import { formatTokenCount, SessionTokenMetrics } from '../../utils/messageUtils';
 
 // Fun verbs for the "Claude is thinking" placeholder
 const CLAUDE_VERBS = [
@@ -49,6 +50,7 @@ interface InputAreaProps {
   hasPendingQuestion: boolean;
   newSessionMode?: boolean;   // For status indicator chip
   planningMode?: boolean;     // For status indicator chip
+  tokenMetrics?: SessionTokenMetrics;  // Token metrics for status chip (v0.3.21)
   // Lifted attachment state (managed by parent, displayed in ControlButtonsRow)
   attachments: Attachment[];
   onAttachmentsChange: React.Dispatch<React.SetStateAction<Attachment[]>>;
@@ -103,6 +105,7 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
   hasPendingQuestion,
   newSessionMode = false,
   planningMode = false,
+  tokenMetrics,
   attachments,
   onAttachmentsChange,
   queue,
@@ -719,7 +722,8 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
             </div>
           )}
           {/* Floating status chip - bottom right of textarea */}
-          {(newSessionMode || planningMode) && (
+          {/* Shows: token metrics (context + output), new session mode, planning mode */}
+          {(newSessionMode || planningMode || (tokenMetrics && (tokenMetrics.contextSize > 0 || tokenMetrics.totalOutput > 0))) && (
             <div style={{
               position: 'absolute',
               bottom: '6px',
@@ -735,13 +739,36 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
               color: '#d97757',
               pointerEvents: 'none'
             }}>
+              {/* Token metrics display - shows context size and total output separately */}
+              {tokenMetrics && (tokenMetrics.contextSize > 0 || tokenMetrics.totalOutput > 0) && (
+                <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#888' }}>
+                  {tokenMetrics.contextSize > 0 && (
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '2px' }} title="Current context window size">
+                      <span style={{ color: '#666', fontSize: '0.9em' }}>ctx</span>
+                      {formatTokenCount(tokenMetrics.contextSize)}
+                    </span>
+                  )}
+                  {tokenMetrics.contextSize > 0 && tokenMetrics.totalOutput > 0 && (
+                    <span style={{ color: '#444' }}>|</span>
+                  )}
+                  {tokenMetrics.totalOutput > 0 && (
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '2px' }} title="Total tokens generated">
+                      <span style={{ color: '#666', fontSize: '0.9em' }}>out</span>
+                      {formatTokenCount(tokenMetrics.totalOutput)}
+                    </span>
+                  )}
+                </span>
+              )}
+              {tokenMetrics && (tokenMetrics.contextSize > 0 || tokenMetrics.totalOutput > 0) && (newSessionMode || planningMode) && (
+                <span style={{ color: '#333' }}>•</span>
+              )}
               {newSessionMode && (
                 <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
                   <span style={{ fontSize: '1em' }}>+</span> Create New Session
                 </span>
               )}
               {newSessionMode && planningMode && (
-                <span style={{ color: '#444' }}>•</span>
+                <span style={{ color: '#333' }}>•</span>
               )}
               {planningMode && (
                 <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>

@@ -1,4 +1,4 @@
-import type { ContentBlock, ImageSource, Message, PendingQuestion } from '../components/chat/types';
+import type { ContentBlock, ImageSource, Message, PendingQuestion, TokenUsage } from '../components/chat/types';
 
 /**
  * Format timestamp for display
@@ -229,4 +229,62 @@ export function findResponseGroupStart(
   }
 
   return startIdx;
+}
+
+/**
+ * Session token metrics - meaningful values for display.
+ *
+ * contextSize: The current context window size (from latest API call's input_tokens).
+ *              This tells you how much of the context window is being used.
+ *
+ * totalOutput: Sum of all output_tokens across the session.
+ *              This tells you how many tokens Claude has generated in total.
+ *
+ * Note: We don't sum input_tokens because each API call's input_tokens includes
+ * the ENTIRE context at that point. Summing them would be misleading.
+ */
+export interface SessionTokenMetrics {
+  contextSize: number;    // Latest input_tokens (current context window usage)
+  totalOutput: number;    // Sum of all output_tokens (total generated)
+}
+
+/**
+ * Compute meaningful token metrics from messages.
+ *
+ * - contextSize: From the most recent message with usage data
+ * - totalOutput: Cumulative sum of output tokens
+ */
+export function computeTokenMetrics(messages: Message[]): SessionTokenMetrics {
+  let contextSize = 0;
+  let totalOutput = 0;
+
+  for (const msg of messages) {
+    if (msg.usage) {
+      // Always update contextSize - we want the latest one
+      const inputTokens = msg.usage.input_tokens || 0;
+      if (inputTokens > 0) {
+        contextSize = inputTokens;
+      }
+      // Sum output tokens
+      totalOutput += msg.usage.output_tokens || 0;
+    }
+  }
+
+  return {
+    contextSize,
+    totalOutput
+  };
+}
+
+/**
+ * Format token count for display (e.g., "12.5k" for 12500).
+ */
+export function formatTokenCount(count: number): string {
+  if (count >= 1000000) {
+    return `${(count / 1000000).toFixed(1)}M`;
+  }
+  if (count >= 1000) {
+    return `${(count / 1000).toFixed(1)}k`;
+  }
+  return count.toString();
 }
