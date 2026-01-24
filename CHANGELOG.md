@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.3.21] - 2026-01-23
+## [0.4.0] - 2026-01-24
 
 ### Added
 - **Instant Session Creation** - New sessions are created instantly without waiting for Claude CLI
@@ -18,13 +18,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - New `internal/session/` package with `SessionService` for programmatic session management
   - Key discovery: Assistant messages require `content` as array of content blocks, not plain string
 
-- **Token Metrics Display** - Show context size and output tokens in InputArea status chip
-  - `ctx`: Current context window size (latest `input_tokens` from API)
-  - `out`: Total tokens generated (cumulative `output_tokens`)
-  - Display: "ctx 12.5k | out 3.2k" - meaningful metrics, not misleading sums
-  - Note: We don't sum `input_tokens` because each API call's `input_tokens` includes the ENTIRE context at that point (summing would double-count)
+- **Token Metrics Display** - Show full context breakdown below InputArea
+  - `in`: Non-cached input tokens (fresh content this turn)
+  - `cr`: Cache read tokens (content from Anthropic's prompt cache)
+  - `cw`: Cache write tokens (content written to cache this turn)
+  - `ctx`: Total context window = in + cr + cw (with percentage of 200K)
+  - `out`: Cumulative output tokens generated
+  - Display: "in 8 | cr 139.8k | cw 354 | ctx 140.2k (70.1%) | out 45.2k"
+  - Metrics automatically reflect context compaction (uses latest values)
   - Formatted with K/M suffixes (e.g., "12.5k", "1.2M")
-  - Backend preserves `Usage` field from JSONL events through to frontend
+
+- **Token Usage Documentation** - Comprehensive token behavior documentation in TDA
+  - New section in `claude-code-jsonl-schema.tda.svml.md`
+  - Documents context calculation formula: `ctx = in + cr + cw`
+  - Documents compaction effects (cr drops dramatically, cw spikes)
+  - Documents streaming output_tokens behavior (per-chunk in JSONL)
+  - Documents ~5-6% variance between Claude Code /context and API usage
 
 ### Changed
 - **SessionService Architecture** - Session creation moved from `ClaudeCodeService` to dedicated service

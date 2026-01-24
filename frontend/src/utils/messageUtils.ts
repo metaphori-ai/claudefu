@@ -232,45 +232,59 @@ export function findResponseGroupStart(
 }
 
 /**
- * Session token metrics - meaningful values for display.
+ * Session token metrics - all values for display.
  *
- * contextSize: The current context window size (from latest API call's input_tokens).
- *              This tells you how much of the context window is being used.
+ * Latest values (from most recent API response):
+ * - inputTokens (in): Non-cached input tokens
+ * - cacheRead (cr): Tokens read from cache
+ * - cacheWrite (cw): Tokens written to cache
+ * - contextSize (ctx): Total context = in + cr + cw
  *
- * totalOutput: Sum of all output_tokens across the session.
- *              This tells you how many tokens Claude has generated in total.
- *
- * Note: We don't sum input_tokens because each API call's input_tokens includes
- * the ENTIRE context at that point. Summing them would be misleading.
+ * Cumulative values:
+ * - totalOutput (out): Sum of all output tokens generated
  */
 export interface SessionTokenMetrics {
-  contextSize: number;    // Latest input_tokens (current context window usage)
-  totalOutput: number;    // Sum of all output_tokens (total generated)
+  inputTokens: number;      // in - latest input_tokens (non-cached)
+  cacheRead: number;        // cr - latest cache_read_input_tokens
+  cacheWrite: number;       // cw - latest cache_creation_input_tokens
+  contextSize: number;      // ctx - total context = in + cr + cw
+  totalOutput: number;      // out - sum of all output_tokens
 }
 
 /**
- * Compute meaningful token metrics from messages.
- *
- * - contextSize: From the most recent message with usage data
- * - totalOutput: Cumulative sum of output tokens
+ * Compute token metrics from messages.
+ * Latest values from most recent message, cumulative for output.
  */
 export function computeTokenMetrics(messages: Message[]): SessionTokenMetrics {
-  let contextSize = 0;
+  let inputTokens = 0;
+  let cacheRead = 0;
+  let cacheWrite = 0;
   let totalOutput = 0;
 
   for (const msg of messages) {
     if (msg.usage) {
-      // Always update contextSize - we want the latest one
-      const inputTokens = msg.usage.input_tokens || 0;
-      if (inputTokens > 0) {
-        contextSize = inputTokens;
+      // Always update latest values - we want the most recent
+      const inTokens = msg.usage.input_tokens || 0;
+      const cr = msg.usage.cache_read_input_tokens || 0;
+      const cw = msg.usage.cache_creation_input_tokens || 0;
+
+      if (inTokens > 0 || cr > 0 || cw > 0) {
+        inputTokens = inTokens;
+        cacheRead = cr;
+        cacheWrite = cw;
       }
       // Sum output tokens
       totalOutput += msg.usage.output_tokens || 0;
     }
   }
 
+  // Context size is total tokens in the context window
+  const contextSize = inputTokens + cacheRead + cacheWrite;
+
   return {
+    inputTokens,
+    cacheRead,
+    cacheWrite,
     contextSize,
     totalOutput
   };

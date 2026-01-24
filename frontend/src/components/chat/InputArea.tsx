@@ -722,8 +722,8 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
             </div>
           )}
           {/* Floating status chip - bottom right of textarea */}
-          {/* Shows: token metrics (context + output), new session mode, planning mode */}
-          {(newSessionMode || planningMode || (tokenMetrics && (tokenMetrics.contextSize > 0 || tokenMetrics.totalOutput > 0))) && (
+          {/* Shows: new session mode, planning mode (token metrics moved below) */}
+          {(newSessionMode || planningMode) && (
             <div style={{
               position: 'absolute',
               bottom: '6px',
@@ -739,29 +739,6 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
               color: '#d97757',
               pointerEvents: 'none'
             }}>
-              {/* Token metrics display - shows context size and total output separately */}
-              {tokenMetrics && (tokenMetrics.contextSize > 0 || tokenMetrics.totalOutput > 0) && (
-                <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#888' }}>
-                  {tokenMetrics.contextSize > 0 && (
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '2px' }} title="Current context window size">
-                      <span style={{ color: '#666', fontSize: '0.9em' }}>ctx</span>
-                      {formatTokenCount(tokenMetrics.contextSize)}
-                    </span>
-                  )}
-                  {tokenMetrics.contextSize > 0 && tokenMetrics.totalOutput > 0 && (
-                    <span style={{ color: '#444' }}>|</span>
-                  )}
-                  {tokenMetrics.totalOutput > 0 && (
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '2px' }} title="Total tokens generated">
-                      <span style={{ color: '#666', fontSize: '0.9em' }}>out</span>
-                      {formatTokenCount(tokenMetrics.totalOutput)}
-                    </span>
-                  )}
-                </span>
-              )}
-              {tokenMetrics && (tokenMetrics.contextSize > 0 || tokenMetrics.totalOutput > 0) && (newSessionMode || planningMode) && (
-                <span style={{ color: '#333' }}>•</span>
-              )}
               {newSessionMode && (
                 <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
                   <span style={{ fontSize: '1em' }}>+</span> Create New Session
@@ -825,6 +802,60 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
           </button>
         )}
       </div>
+
+      {/* Token metrics row - centered below input */}
+      {tokenMetrics && (tokenMetrics.contextSize > 0 || tokenMetrics.totalOutput > 0) && (
+        <div style={{
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          marginTop: '8px',
+          gap: '12px',
+          fontSize: '0.65rem',
+          color: '#666'
+        }}>
+          {/* Input tokens (non-cached) */}
+          {tokenMetrics.inputTokens > 0 && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }} title="Non-cached input tokens">
+              <span style={{ color: '#555' }}>in</span>
+              <span style={{ color: '#888' }}>{formatTokenCount(tokenMetrics.inputTokens)}</span>
+            </span>
+          )}
+          {/* Cache read */}
+          {tokenMetrics.cacheRead > 0 && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }} title="Tokens read from cache">
+              <span style={{ color: '#555' }}>cr</span>
+              <span style={{ color: '#888' }}>{formatTokenCount(tokenMetrics.cacheRead)}</span>
+            </span>
+          )}
+          {/* Cache write */}
+          {tokenMetrics.cacheWrite > 0 && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }} title="Tokens written to cache">
+              <span style={{ color: '#555' }}>cw</span>
+              <span style={{ color: '#888' }}>{formatTokenCount(tokenMetrics.cacheWrite)}</span>
+            </span>
+          )}
+          {/* Context size with percentage */}
+          {tokenMetrics.contextSize > 0 && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }} title="Total context window (in + cr + cw)">
+              <span style={{ color: '#555' }}>ctx</span>
+              <span style={{ color: '#888' }}>
+                {formatTokenCount(tokenMetrics.contextSize)}
+                <span style={{ color: '#555', marginLeft: '2px' }}>
+                  ({((tokenMetrics.contextSize / 200000) * 100).toFixed(1)}%)
+                </span>
+              </span>
+            </span>
+          )}
+          {/* Total output tokens */}
+          {tokenMetrics.totalOutput > 0 && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }} title="Total output tokens generated">
+              <span style={{ color: '#555' }}>out</span>
+              <span style={{ color: '#888' }}>{formatTokenCount(tokenMetrics.totalOutput)}</span>
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Drag overlay */}
       {isDragOver && (
