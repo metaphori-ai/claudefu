@@ -212,15 +212,14 @@ func (s *ClaudeCodeService) WasCancelled(sessionID string) bool {
 	return wasCancelled
 }
 
-// getMCPArgs returns the --mcp-config, --allowed-tools, and --disallowed-tools args if MCP is configured
+// getMCPArgs returns ONLY the --mcp-config arg if MCP is configured.
+// MCP tool allow/disallow is handled by buildPermissionArgs to avoid duplicate flags.
 func (s *ClaudeCodeService) getMCPArgs() []string {
 	if s.mcpConfig == "" {
 		return nil
 	}
 	return []string{
 		"--mcp-config", s.mcpConfig,
-		"--allowed-tools", "mcp__claudefu__AgentBroadcast,mcp__claudefu__AgentMessage,mcp__claudefu__AgentQuery,mcp__claudefu__NotifyUser,mcp__claudefu__AskUserQuestion,mcp__claudefu__SelfQuery,mcp__claudefu__BrowserAgent",
-		"--disallowed-tools", "AskUserQuestion", // Force Claude to use MCP version instead of built-in
 	}
 }
 
@@ -268,6 +267,21 @@ func (s *ClaudeCodeService) buildPermissionArgs(folder string) []string {
 	// 2. --allowedTools: Auto-approve these (no permission prompt)
 	// This includes enabled built-in tools + Bash patterns from sets
 	allowedPatterns := mgr.CompileAllowList(perms)
+
+	// Add MCP tools to allowed list if MCP is configured
+	if s.mcpConfig != "" {
+		mcpTools := []string{
+			"mcp__claudefu__AgentBroadcast",
+			"mcp__claudefu__AgentMessage",
+			"mcp__claudefu__AgentQuery",
+			"mcp__claudefu__NotifyUser",
+			"mcp__claudefu__AskUserQuestion",
+			"mcp__claudefu__SelfQuery",
+			"mcp__claudefu__BrowserAgent",
+		}
+		allowedPatterns = append(allowedPatterns, mcpTools...)
+	}
+
 	if len(allowedPatterns) > 0 {
 		args = append(args, "--allowedTools", strings.Join(allowedPatterns, ","))
 	}
@@ -279,6 +293,12 @@ func (s *ClaudeCodeService) buildPermissionArgs(folder string) []string {
 	// - Clear it via "Sync to settings.local" in Permissions dialog
 	// - Or manually edit settings.local.json
 	denyPatterns := mgr.CompileDenyList(perms)
+
+	// Add built-in AskUserQuestion to deny list when MCP is configured
+	// This forces Claude to use our MCP version instead of built-in
+	if s.mcpConfig != "" {
+		denyPatterns = append(denyPatterns, "AskUserQuestion")
+	}
 	if len(denyPatterns) > 0 {
 		args = append(args, "--disallowedTools", strings.Join(denyPatterns, ","))
 	}

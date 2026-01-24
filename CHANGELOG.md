@@ -26,6 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fix: `CompileAllowList` now skips blanket `Bash` - only `Bash(...)` patterns are included
   - `Bash` still goes into `--tools` (tool pool) via `CompileAvailableTools` when patterns exist
   - Result: Specific patterns like `Bash(git:*)` are auto-approved, other commands prompt for permission
+- **Duplicate allowedTools/allowed-tools Flags Conflicting** - Consolidated into single flag
+  - MCP args used `--allowed-tools` (kebab-case), permissions used `--allowedTools` (camelCase)
+  - Having both flags caused the second to OVERWRITE the first, losing permission patterns
+  - Fix: MCP tools now merged into `buildPermissionArgs` as a single `--allowedTools` flag
+  - Same fix for `--disallowedTools` - AskUserQuestion denial merged into main deny list
 - **Permissions Dialog Crash on New Agents** - Fixed "null is not an object" error
   - Was calling `GetAgentPermissions` (returns null for new agents)
   - Now calls `GetAgentPermissionsOrGlobal` (falls back to global template)
