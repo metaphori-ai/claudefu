@@ -82,6 +82,9 @@ type ClaudeCodeService struct {
 	// Cancellation tracking - distinguishes user cancellation from errors
 	cancelledSessions   map[string]bool
 	cancelledSessionsMu sync.RWMutex
+
+	// Event emission for debug info (CLI command, etc.)
+	emitFunc func(eventType string, data map[string]any)
 }
 
 // NewClaudeCodeService creates a new Claude Code service
@@ -122,6 +125,11 @@ func (s *ClaudeCodeService) SetEnvironment(vars map[string]string) {
 	s.envVarsMu.Lock()
 	defer s.envVarsMu.Unlock()
 	s.envVars = vars
+}
+
+// SetEmitFunc sets the function to emit events (for debug info like CLI commands)
+func (s *ClaudeCodeService) SetEmitFunc(emitFunc func(eventType string, data map[string]any)) {
+	s.emitFunc = emitFunc
 }
 
 // buildEnvironment creates the environment slice for exec.Cmd.
@@ -345,6 +353,12 @@ func (s *ClaudeCodeService) SendMessage(folder, sessionId, message string, attac
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
+	// Emit CLI command for debug display
+	if s.emitFunc != nil {
+		cmdStr := path + " " + strings.Join(args, " ")
+		s.emitFunc("debug:cli-command", map[string]any{"command": cmdStr, "sessionId": sessionId})
+	}
+
 	// Start the command (non-blocking)
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start claude: %w", err)
@@ -474,6 +488,12 @@ func (s *ClaudeCodeService) sendWithAttachments(claudePath, folder, sessionId, m
 	cmd.Stderr = &stderr
 
 	fmt.Printf("[DEBUG] sendWithAttachments: executing command...\n")
+
+	// Emit CLI command for debug display (note: with attachments, stdin is piped so we note that)
+	if s.emitFunc != nil {
+		cmdStr := claudePath + " " + strings.Join(args, " ") + " < [stream-json stdin]"
+		s.emitFunc("debug:cli-command", map[string]any{"command": cmdStr, "sessionId": sessionId})
+	}
 
 	// Start the command (non-blocking)
 	if err := cmd.Start(); err != nil {

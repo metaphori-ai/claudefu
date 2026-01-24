@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Quit ClaudeFu Menu Item** - Standard macOS app menu items now present
   - Hide ClaudeFu (⌘H)
   - Quit ClaudeFu (⌘Q)
+- **Debug: CLI Command Display** - Debug overlay (Ctrl+D) now shows the last executed Claude CLI command
+  - Useful for debugging permission args, MCP config, env vars
+  - Command includes all args: `--allowedTools`, `--add-dir`, `--mcp-config`, etc.
 
 ### Fixed
 - **Permissions Dialog Crash on New Agents** - Fixed "null is not an object" error

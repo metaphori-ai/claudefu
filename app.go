@@ -220,6 +220,11 @@ func (a *App) initializeClaude() {
 		}
 	}
 
+	// Set up emit function for debug info (CLI commands)
+	a.claude.SetEmitFunc(func(eventType string, data map[string]any) {
+		wailsrt.EventsEmit(a.ctx, eventType, data)
+	})
+
 	if providers.IsClaudeInstalled() {
 		if version, err := providers.GetClaudeVersion(); err == nil {
 			wailsrt.LogInfo(a.ctx, fmt.Sprintf("Claude Code CLI detected: %s", version))

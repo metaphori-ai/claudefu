@@ -193,6 +193,23 @@ export function useWailsEvents() {
     };
   }, [workspaceId, setAgentResponding]);
 
+  // Subscribe to debug:cli-command events (emitted by Claude CLI service)
+  useEffect(() => {
+    const handleDebugCliCommand = (data: { command?: string; sessionId?: string }) => {
+      if (data?.command) {
+        // Forward to custom event for DebugStatsOverlay
+        window.dispatchEvent(new CustomEvent('claudefu:debug-cli-command', {
+          detail: { command: data.command, sessionId: data.sessionId }
+        }));
+      }
+    };
+
+    EventsOn('debug:cli-command', handleDebugCliCommand);
+    return () => {
+      EventsOff('debug:cli-command');
+    };
+  }, []);
+
   // Subscribe to session:messages events
   useEffect(() => {
     const processMessages = (agentId: string, sessionId: string, messages: Message[]) => {

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import type { DebugStats } from '../../utils/messageUtils';
 import type { ScrollDebugInfo } from '../../utils/scrollUtils';
 
@@ -17,6 +17,20 @@ export function DebugStatsOverlay({
   agentId,
   sessionId
 }: DebugStatsOverlayProps) {
+  const [lastCliCommand, setLastCliCommand] = useState<string | null>(null);
+
+  // Listen for debug CLI command events
+  useEffect(() => {
+    const handleCliCommand = (event: CustomEvent<{ command: string; sessionId: string }>) => {
+      setLastCliCommand(event.detail.command);
+    };
+
+    window.addEventListener('claudefu:debug-cli-command', handleCliCommand as EventListener);
+    return () => {
+      window.removeEventListener('claudefu:debug-cli-command', handleCliCommand as EventListener);
+    };
+  }, []);
+
   return (
     <div style={{
       position: 'absolute',
@@ -52,6 +66,11 @@ export function DebugStatsOverlay({
           forceScroll: {forceScrollActive ? 'ACTIVE' : 'off'}
         </span>
       </div>
+      {lastCliCommand && (
+        <div style={{ marginTop: '0.5rem', color: '#f8f', fontSize: '0.65rem', wordBreak: 'break-all' }}>
+          <span style={{ color: '#888' }}>Last CLI:</span> {lastCliCommand}
+        </div>
+      )}
       <div style={{ marginTop: '0.25rem', color: '#666', fontSize: '0.65rem' }}>
         agentId: {agentId.substring(0, 8)}... | sessionId: {sessionId.substring(0, 8)}... | threshold: 300px | Press Ctrl+D to hide
       </div>
