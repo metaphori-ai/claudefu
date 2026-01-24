@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.20] - 2026-01-23
+
 ### Added
 - **Quit ClaudeFu Menu Item** - Standard macOS app menu items now present
   - Hide ClaudeFu (⌘H)
