@@ -16,11 +16,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Command includes all args: `--allowedTools`, `--add-dir`, `--mcp-config`, etc.
 
 ### Fixed
-- **Stale settings.local.json Deny List Blocking Tools** - Pass `--disallowedTools ""` explicitly
-  - Claude Code reads `deny` array from settings.local.json BEFORE processing CLI flags
-  - A stale `deny: ["Bash"]` would remove Bash from tool pool entirely
-  - Fix: Always pass `--disallowedTools ""` (even when empty) to override settings.local.json
-  - Error was "No such tool available: Bash" (tool removed from pool, not just denied)
+- **Bash Patterns Not Working Without YOLO** - Auto-add `Bash` to `--tools` when patterns exist
+  - `Bash(git status:*)` patterns in `--allowedTools` require `Bash` in `--tools` pool
+  - Previously: Bash only added to `--tools` when YOLO tier enabled
+  - Fix: Detect any `Bash(...)` pattern and ensure `Bash` is in available tools
+  - Now git/files/etc patterns work without enabling blanket Bash YOLO
+- **Blanket Bash in YOLO Auto-Approving All Commands** - Exclude `Bash` from `--allowedTools`
+  - When `Bash` was in YOLO tier, it was added to `--allowedTools` which auto-approves ALL commands
+  - Fix: `CompileAllowList` now skips blanket `Bash` - only `Bash(...)` patterns are included
+  - `Bash` still goes into `--tools` (tool pool) via `CompileAvailableTools` when patterns exist
+  - Result: Specific patterns like `Bash(git:*)` are auto-approved, other commands prompt for permission
 - **Permissions Dialog Crash on New Agents** - Fixed "null is not an object" error
   - Was calling `GetAgentPermissions` (returns null for new agents)
   - Now calls `GetAgentPermissionsOrGlobal` (falls back to global template)

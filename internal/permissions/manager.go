@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -201,6 +202,9 @@ func (m *Manager) RevertAgentToGlobal(agentFolder string) error {
 
 // CompileAllowList generates the list of permissions for --allowedTools flag
 // V2 format: Simply collect all tools from all tier arrays
+// IMPORTANT: Blanket "Bash" is EXCLUDED - only Bash(...) patterns are included.
+// This prevents auto-approving ALL Bash commands when user only wants specific patterns.
+// Bash availability in the tool pool is handled by CompileAvailableTools via --tools flag.
 func (m *Manager) CompileAllowList(perms *ClaudeFuPermissions) []string {
 	var allowList []string
 	seen := make(map[string]bool)
@@ -210,6 +214,12 @@ func (m *Manager) CompileAllowList(perms *ClaudeFuPermissions) []string {
 		// Add tools from all three tiers
 		for _, tierTools := range [][]string{toolPerm.Common, toolPerm.Permissive, toolPerm.YOLO} {
 			for _, t := range tierTools {
+				// Skip blanket "Bash" - it would auto-approve ALL Bash commands
+				// Only Bash(...) patterns should go into --allowedTools
+				// Bash availability is handled by CompileAvailableTools (--tools flag)
+				if t == "Bash" {
+					continue
+				}
 				if !seen[t] {
 					seen[t] = true
 					allowList = append(allowList, t)
@@ -224,6 +234,7 @@ func (m *Manager) CompileAllowList(perms *ClaudeFuPermissions) []string {
 // CompileAvailableTools generates the list of built-in tools for --tools flag
 // This is the "pool" of available tools (not Bash patterns)
 // V2 format: Simply return tools from claude-builtin arrays
+// IMPORTANT: If ANY Bash(...) pattern exists in allowedTools, Bash must be in the tools pool
 func (m *Manager) CompileAvailableTools(perms *ClaudeFuPermissions) []string {
 	builtinPerm, ok := perms.ToolPermissions["claude-builtin"]
 	if !ok {
@@ -235,6 +246,43 @@ func (m *Manager) CompileAvailableTools(perms *ClaudeFuPermissions) []string {
 	tools = append(tools, builtinPerm.Common...)
 	tools = append(tools, builtinPerm.Permissive...)
 	tools = append(tools, builtinPerm.YOLO...)
+
+	// Check if we have any Bash(...) patterns in ANY permission set
+	// If so, Bash must be in the available tools pool for patterns to work
+	hasBashPattern := false
+	hasBashTool := false
+	for _, t := range tools {
+		if t == "Bash" {
+			hasBashTool = true
+			break
+		}
+	}
+
+	if !hasBashTool {
+		// Check all permission sets for Bash(...) patterns
+		for _, toolPerm := range perms.ToolPermissions {
+			for _, tierTools := range [][]string{toolPerm.Common, toolPerm.Permissive, toolPerm.YOLO} {
+				for _, t := range tierTools {
+					if strings.HasPrefix(t, "Bash(") {
+						hasBashPattern = true
+						break
+					}
+				}
+				if hasBashPattern {
+					break
+				}
+			}
+			if hasBashPattern {
+				break
+			}
+		}
+
+		// If we have Bash patterns but no Bash tool, add Bash to the tools pool
+		if hasBashPattern {
+			tools = append(tools, "Bash")
+		}
+	}
+
 	return tools
 }
 
