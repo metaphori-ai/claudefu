@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Command includes all args: `--allowedTools`, `--add-dir`, `--mcp-config`, etc.
 
 ### Fixed
+- **Stale settings.local.json Deny List Blocking Tools** - Pass `--disallowedTools ""` explicitly
+  - Claude Code reads `deny` array from settings.local.json BEFORE processing CLI flags
+  - A stale `deny: ["Bash"]` would remove Bash from tool pool entirely
+  - Fix: Always pass `--disallowedTools ""` (even when empty) to override settings.local.json
+  - Error was "No such tool available: Bash" (tool removed from pool, not just denied)
 - **Permissions Dialog Crash on New Agents** - Fixed "null is not an object" error
   - Was calling `GetAgentPermissions` (returns null for new agents)
   - Now calls `GetAgentPermissionsOrGlobal` (falls back to global template)
