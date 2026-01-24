@@ -273,16 +273,14 @@ func (s *ClaudeCodeService) buildPermissionArgs(folder string) []string {
 	}
 
 	// 3. --disallowedTools: Always deny these
-	// IMPORTANT: We ALWAYS pass this flag, even if empty, to override any deny list
-	// that may exist in settings.local.json. Without this, a stale deny list in
-	// settings.local.json can block tools (e.g., "deny": ["Bash"]) even when we
-	// pass --tools Bash on the CLI.
+	// NOTE: We only pass this if there are explicit deny patterns.
+	// Passing empty doesn't override settings.local.json deny list.
+	// If settings.local.json has a deny list that conflicts, user must either:
+	// - Clear it via "Sync to settings.local" in Permissions dialog
+	// - Or manually edit settings.local.json
 	denyPatterns := mgr.CompileDenyList(perms)
 	if len(denyPatterns) > 0 {
 		args = append(args, "--disallowedTools", strings.Join(denyPatterns, ","))
-	} else {
-		// Explicitly pass empty to clear any settings.local.json deny list
-		args = append(args, "--disallowedTools", "")
 	}
 
 	// 4. --add-dir: Additional directories (union of global + agent dirs)
