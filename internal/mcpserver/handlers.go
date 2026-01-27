@@ -58,12 +58,6 @@ func (s *MCPService) getAvailableAgentSlugs() []string {
 	return slugs
 }
 
-// getMCPConfigJSON returns the inline JSON config for --mcp-config flag
-func (s *MCPService) getMCPConfigJSON() string {
-	// Format: {"mcpServers":{"name":{"type":"sse","url":"..."}}}
-	return fmt.Sprintf(`{"mcpServers":{"claudefu":{"type":"sse","url":"http://localhost:%d/sse"}}}`, s.port)
-}
-
 // handleAgentQuery handles the AgentQuery tool call
 // Spawns a stateless claude --print query in the target agent's folder
 func (s *MCPService) handleAgentQuery(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -102,13 +96,14 @@ func (s *MCPService) handleAgentQuery(ctx context.Context, req mcp.CallToolReque
 	systemPrompt := s.toolInstructions.GetInstructions().AgentQuerySystemPrompt
 
 	// Build command args
-	// Include MCP config so the queried agent can also use inter-agent tools
-	// Pre-approve MCP tools so they don't require permission prompts
+	// NOTE: We intentionally do NOT pass --mcp-config to the child Claude.
+	// Passing MCP config caused "tool_use ids must be unique" API errors because
+	// both parent and child Claude would connect to the same MCP SSE server.
+	// The child is a stateless query - it doesn't need inter-agent tools.
+	// We also disallow Task to prevent spawning subagents (causes concurrent API conflicts).
 	args := []string{
 		"--print",
-		"--mcp-config", s.getMCPConfigJSON(),
-		"--allowed-tools", "mcp__claudefu__AgentQuery,mcp__claudefu__AgentMessage,mcp__claudefu__AgentBroadcast,mcp__claudefu__NotifyUser,mcp__claudefu__AskUserQuestion,mcp__claudefu__SelfQuery",
-		"--disallowed-tools", "AskUserQuestion",
+		"--disallowed-tools", "Task",
 		"-p", query,
 	}
 
@@ -117,12 +112,38 @@ func (s *MCPService) handleAgentQuery(ctx context.Context, req mcp.CallToolReque
 		args = append(args, "--append-system-prompt", systemPrompt)
 	}
 
-	cmd := exec.CommandContext(ctx, claudePath, args...)
-	cmd.Dir = agent.Folder
+	// Retry logic for transient API concurrency errors
+	var output []byte
+	var cmdErr error
+	maxRetries := 3
 
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Query failed: %v\nOutput: %s", err, string(output))), nil
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		cmd := exec.CommandContext(ctx, claudePath, args...)
+		cmd.Dir = agent.Folder
+
+		output, cmdErr = cmd.CombinedOutput()
+		if cmdErr == nil {
+			break // Success
+		}
+
+		// Check if it's a transient concurrency error worth retrying
+		outputStr := string(output)
+		isTransient := strings.Contains(outputStr, "concurrency issues") ||
+			strings.Contains(outputStr, "tool_use ids must be unique")
+
+		if !isTransient || attempt == maxRetries {
+			// Log full command for debugging on final failure
+			fmt.Printf("[MCP:AgentQuery] FAILED (attempt %d/%d) - reproduce with:\n  cd %q && %s %s\n",
+				attempt, maxRetries, agent.Folder, claudePath, strings.Join(args, " "))
+			fmt.Printf("[MCP:AgentQuery] Error: %v\n", cmdErr)
+			fmt.Printf("[MCP:AgentQuery] Output: %s\n", outputStr)
+			return mcp.NewToolResultError(fmt.Sprintf("Query failed: %v\nOutput: %s", cmdErr, outputStr)), nil
+		}
+
+		// Transient error - wait and retry
+		fmt.Printf("[MCP:AgentQuery] Transient API error (attempt %d/%d), retrying in %dms...\n",
+			attempt, maxRetries, attempt*500)
+		time.Sleep(time.Duration(attempt*500) * time.Millisecond)
 	}
 
 	return mcp.NewToolResultText(string(output)), nil
@@ -168,11 +189,14 @@ func (s *MCPService) handleSelfQuery(ctx context.Context, req mcp.CallToolReques
 	systemPrompt := s.toolInstructions.GetInstructions().SelfQuerySystemPrompt
 
 	// Build command args - same as AgentQuery but runs in caller's own folder
+	// NOTE: We intentionally do NOT pass --mcp-config to the child Claude.
+	// Passing MCP config caused "tool_use ids must be unique" API errors because
+	// both parent and child Claude would connect to the same MCP SSE server.
+	// The child is a stateless query - it doesn't need inter-agent tools.
+	// We also disallow Task to prevent spawning subagents (causes concurrent API conflicts).
 	args := []string{
 		"--print",
-		"--mcp-config", s.getMCPConfigJSON(),
-		"--allowed-tools", "mcp__claudefu__AgentQuery,mcp__claudefu__AgentMessage,mcp__claudefu__AgentBroadcast,mcp__claudefu__NotifyUser,mcp__claudefu__AskUserQuestion,mcp__claudefu__SelfQuery",
-		"--disallowed-tools", "AskUserQuestion",
+		"--disallowed-tools", "Task",
 		"-p", query,
 	}
 
@@ -181,12 +205,38 @@ func (s *MCPService) handleSelfQuery(ctx context.Context, req mcp.CallToolReques
 		args = append(args, "--append-system-prompt", systemPrompt)
 	}
 
-	cmd := exec.CommandContext(ctx, claudePath, args...)
-	cmd.Dir = agent.Folder // Run in CALLER'S folder (key difference from AgentQuery)
+	// Retry logic for transient API concurrency errors
+	var output []byte
+	var cmdErr error
+	maxRetries := 3
 
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("SelfQuery failed: %v\nOutput: %s", err, string(output))), nil
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		cmd := exec.CommandContext(ctx, claudePath, args...)
+		cmd.Dir = agent.Folder // Run in CALLER'S folder (key difference from AgentQuery)
+
+		output, cmdErr = cmd.CombinedOutput()
+		if cmdErr == nil {
+			break // Success
+		}
+
+		// Check if it's a transient concurrency error worth retrying
+		outputStr := string(output)
+		isTransient := strings.Contains(outputStr, "concurrency issues") ||
+			strings.Contains(outputStr, "tool_use ids must be unique")
+
+		if !isTransient || attempt == maxRetries {
+			// Log full command for debugging on final failure
+			fmt.Printf("[MCP:SelfQuery] FAILED (attempt %d/%d) - reproduce with:\n  cd %q && %s %s\n",
+				attempt, maxRetries, agent.Folder, claudePath, strings.Join(args, " "))
+			fmt.Printf("[MCP:SelfQuery] Error: %v\n", cmdErr)
+			fmt.Printf("[MCP:SelfQuery] Output: %s\n", outputStr)
+			return mcp.NewToolResultError(fmt.Sprintf("SelfQuery failed: %v\nOutput: %s", cmdErr, outputStr)), nil
+		}
+
+		// Transient error - wait and retry
+		fmt.Printf("[MCP:SelfQuery] Transient API error (attempt %d/%d), retrying in %dms...\n",
+			attempt, maxRetries, attempt*500)
+		time.Sleep(time.Duration(attempt*500) * time.Millisecond)
 	}
 
 	return mcp.NewToolResultText(string(output)), nil

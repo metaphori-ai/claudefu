@@ -835,18 +835,27 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
               <span style={{ color: '#888' }}>{formatTokenCount(tokenMetrics.cacheWrite)}</span>
             </span>
           )}
-          {/* Context size with percentage */}
-          {tokenMetrics.contextSize > 0 && (
-            <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }} title="Total context window (in + cr + cw)">
-              <span style={{ color: '#555' }}>ctx</span>
-              <span style={{ color: '#888' }}>
-                {formatTokenCount(tokenMetrics.contextSize)}
-                <span style={{ color: '#555', marginLeft: '2px' }}>
-                  ({((tokenMetrics.contextSize / 200000) * 100).toFixed(1)}%)
+          {/* Context size with percentage and "left until compact" */}
+          {tokenMetrics.contextSize > 0 && (() => {
+            const contextPercent = (tokenMetrics.contextSize / 200000) * 100;
+            // Autocompact triggers at ~77.5% (100% - 22.5% buffer)
+            const compactThreshold = 77.5;
+            const leftUntilCompact = Math.max(0, compactThreshold - contextPercent);
+            return (
+              <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }} title="Total context window (in + cr + cw)">
+                <span style={{ color: '#555' }}>ctx</span>
+                <span style={{ color: '#888' }}>
+                  {formatTokenCount(tokenMetrics.contextSize)}
+                  <span style={{ color: '#555', marginLeft: '2px' }}>
+                    ({contextPercent.toFixed(1)}%)
+                  </span>
+                  <span style={{ color: '#d97757', marginLeft: '4px' }} title="Context left until auto-compact">
+                    ({leftUntilCompact.toFixed(0)}% left)
+                  </span>
                 </span>
               </span>
-            </span>
-          )}
+            );
+          })()}
           {/* Total output tokens */}
           {tokenMetrics.totalOutput > 0 && (
             <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }} title="Total output tokens generated">

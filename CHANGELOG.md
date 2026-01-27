@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Context Headroom Indicator** - Shows "% left until auto-compact" in token metrics
+  - Displays in orange next to context percentage: `ctx 96.0k (48.0%) (30% left)`
+  - Calculated from 77.5% auto-compact threshold (100% - 22.5% buffer)
+  - Formula: `left = max(0, 77.5 - currentContextPercent)`
+  - Helps users anticipate when Claude Code will trigger auto-compaction
+
+### Fixed
+- **AgentQuery/SelfQuery API Concurrency Errors** - Fixed "tool_use ids must be unique" and concurrency errors
+  - **Root cause**: Child Claude processes were sharing MCP SSE connection with parent
+  - **Fix 1**: Removed `--mcp-config` from child spawns - stateless queries don't need inter-agent tools
+  - **Fix 2**: Added `--disallowed-tools Task` - prevents subagent spawning which caused API conflicts
+  - **Fix 3**: Added retry logic (up to 3 attempts) with exponential backoff (500ms, 1000ms, 1500ms)
+  - Retries only on transient errors: "concurrency issues" or "tool_use ids must be unique"
+  - Detailed failure logging shows exact command to reproduce issues
+
 ## [0.4.0] - 2026-01-24
 
 ### Added
