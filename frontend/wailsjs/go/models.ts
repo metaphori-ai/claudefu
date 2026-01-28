@@ -605,6 +605,27 @@ export namespace settings {
 
 }
 
+export namespace terminal {
+	
+	export class TerminalInfo {
+	    id: string;
+	    label: string;
+	    folder: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new TerminalInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.label = source["label"];
+	        this.folder = source["folder"];
+	    }
+	}
+
+}
+
 export namespace types {
 	
 	export class Attachment {

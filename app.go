@@ -13,6 +13,7 @@ import (
 	"claudefu/internal/runtime"
 	"claudefu/internal/session"
 	"claudefu/internal/settings"
+	"claudefu/internal/terminal"
 	"claudefu/internal/types"
 	"claudefu/internal/watcher"
 	"claudefu/internal/workspace"
@@ -31,6 +32,7 @@ type App struct {
 	currentWorkspace *workspace.Workspace
 	mcpServer        *mcpserver.MCPService
 	sessionService   *session.Service // Instant session creation (no CLI wait)
+	terminalManager  *terminal.Manager
 }
 
 // NewApp creates a new App application struct
@@ -80,7 +82,14 @@ func (a *App) startup(ctx context.Context) {
 	a.emitLoadingStatus("Starting MCP server...")
 	a.initializeMCPServer()
 
-	// Step 8: Emit initial state to frontend
+	// Step 8: Initialize terminal manager
+	a.terminalManager = terminal.NewManager(func(eventType string, args ...any) {
+		if len(args) > 0 {
+			wailsrt.EventsEmit(a.ctx, eventType, args[0])
+		}
+	})
+
+	// Step 9: Emit initial state to frontend
 	a.emitInitialState()
 
 	// Step 9: Refresh menu now that workspace is loaded
@@ -323,6 +332,11 @@ func (a *App) emitInitialState() {
 
 // shutdown is called when the app is closing
 func (a *App) shutdown(ctx context.Context) {
+	// Stop terminal sessions
+	if a.terminalManager != nil {
+		a.terminalManager.Shutdown()
+	}
+
 	// Stop MCP server
 	if a.mcpServer != nil {
 		a.mcpServer.Stop()

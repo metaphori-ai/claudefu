@@ -46,12 +46,20 @@ export function ClearAgentInbox(arg1) {
   return window['go']['main']['App']['ClearAgentInbox'](arg1);
 }
 
+export function CloseTerminal(arg1) {
+  return window['go']['main']['App']['CloseTerminal'](arg1);
+}
+
 export function CompleteHyperLogin(arg1, arg2) {
   return window['go']['main']['App']['CompleteHyperLogin'](arg1, arg2);
 }
 
 export function ConfirmDialog(arg1, arg2) {
   return window['go']['main']['App']['ConfirmDialog'](arg1, arg2);
+}
+
+export function CreateTerminal(arg1) {
+  return window['go']['main']['App']['CreateTerminal'](arg1);
 }
 
 export function CreateWorkspace(arg1) {
@@ -210,6 +218,10 @@ export function GetSubagentConversation(arg1, arg2, arg3) {
   return window['go']['main']['App']['GetSubagentConversation'](arg1, arg2, arg3);
 }
 
+export function GetTerminals() {
+  return window['go']['main']['App']['GetTerminals']();
+}
+
 export function GetUnreadCounts(arg1) {
   return window['go']['main']['App']['GetUnreadCounts'](arg1);
 }
@@ -306,6 +318,10 @@ export function ResetMCPToolInstructions() {
   return window['go']['main']['App']['ResetMCPToolInstructions']();
 }
 
+export function ResizeTerminal(arg1, arg2, arg3) {
+  return window['go']['main']['App']['ResizeTerminal'](arg1, arg2, arg3);
+}
+
 export function RevertAgentToGlobal(arg1) {
   return window['go']['main']['App']['RevertAgentToGlobal'](arg1);
 }
@@ -400,4 +416,8 @@ export function SyncToClaudeSettings(arg1) {
 
 export function UpdateAgent(arg1) {
   return window['go']['main']['App']['UpdateAgent'](arg1);
+}
+
+export function WriteTerminal(arg1, arg2) {
+  return window['go']['main']['App']['WriteTerminal'](arg1, arg2);
 }

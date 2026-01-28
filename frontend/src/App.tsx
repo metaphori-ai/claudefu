@@ -8,6 +8,7 @@ import { ManageWorkspacesDialog } from './components/ManageWorkspacesDialog';
 import { ManageAgentsDialog } from './components/ManageAgentsDialog';
 import { WorkspaceDropdown } from './components/WorkspaceDropdown';
 import { MCPSettingsPane } from './components/MCPSettingsPane';
+import { TerminalPanelInline } from './components/terminal/TerminalPanelInline';
 import { DialogBase } from './components/DialogBase';
 import { MCPQuestionDialog } from './components/MCPQuestionDialog';
 import { PermissionRequestDialog } from './components/PermissionRequestDialog';
@@ -89,6 +90,7 @@ function AppContent() {
   const [pendingInitialMessage, setPendingInitialMessage] = useState<string | null>(null);
   const [openSessionsForAgentId, setOpenSessionsForAgentId] = useState<string | null>(null);
   const [isCreatingNewSessionExternally, setIsCreatingNewSessionExternally] = useState<boolean>(false);
+  const [terminalOpen, setTerminalOpen] = useState<boolean>(false);
 
   // MCP notification state
   const [notification, setNotification] = useState<{
@@ -470,6 +472,13 @@ function AppContent() {
             clearSelection();
           }
         }
+      }
+
+      // Ctrl+` to toggle terminal
+      if ((e.ctrlKey || e.metaKey) && e.key === '`') {
+        e.preventDefault();
+        setTerminalOpen(prev => !prev);
+        return;
       }
 
       // Ctrl+Shift+D to toggle debug logging
@@ -1255,6 +1264,28 @@ function AppContent() {
             )}
           </span>
           <button
+            onClick={() => setTerminalOpen(prev => !prev)}
+            title="Terminal (Ctrl+`)"
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '0.25rem',
+              display: 'flex',
+              alignItems: 'center',
+              opacity: terminalOpen ? 1 : 0.5,
+              transition: 'opacity 0.2s ease'
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
+            onMouseLeave={(e) => (e.currentTarget.style.opacity = terminalOpen ? '1' : '0.5')}
+          >
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="1" y="2" width="18" height="16" rx="2" stroke={terminalOpen ? '#d97757' : '#999'} strokeWidth="1.5" fill="none" />
+              <path d="M5 7L9 10L5 13" stroke={terminalOpen ? '#d97757' : '#999'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              <line x1="11" y1="13" x2="15" y2="13" stroke={terminalOpen ? '#d97757' : '#999'} strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </button>
+          <button
             onClick={() => setMcpSettingsOpen(true)}
             title="MCP Settings"
             style={{
@@ -1360,6 +1391,14 @@ function AppContent() {
           )}
         </main>
       </div>
+
+      {/* Inline Terminal Panel */}
+      {terminalOpen && (
+        <TerminalPanelInline
+          selectedFolder={selectedFolder ?? undefined}
+          onClose={() => setTerminalOpen(false)}
+        />
+      )}
 
       {/* Save Workspace Dialog */}
       <InputDialog

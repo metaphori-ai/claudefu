@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Embedded Terminal Panel** - VS Code-style terminal panel at the bottom of the app
+  - Toggle via header button (terminal icon) or **Ctrl+`** keyboard shortcut
+  - Multi-tab support with right-side tab list (VS Code layout)
+  - Each tab spawns a real PTY shell (`$SHELL` or `/bin/zsh`) in the selected agent's folder
+  - Resizable panel height with drag handle, persisted to localStorage
+  - Full ANSI escape code support via xterm.js (colors, cursor positioning, TUI apps)
+  - Inline flex layout — chat content shrinks to accommodate terminal, no overlay
+  - Backend: `internal/terminal/manager.go` (Go PTY manager using `creack/pty`)
+  - Frontend: `@xterm/xterm` + `@xterm/addon-fit` for terminal rendering
+
 - **Context Headroom Indicator** - Shows "% left until auto-compact" in token metrics
   - Displays in orange next to context percentage: `ctx 96.0k (48.0%) (30% left)`
   - Calculated from 77.5% auto-compact threshold (100% - 22.5% buffer)
