@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Embedded Terminal Panel** - VS Code-style terminal panel at the bottom of the app
-  - Toggle via header button (terminal icon) or **Ctrl+`** keyboard shortcut
+  - Toggle via header button (terminal icon) or **Cmd+`** / **Ctrl+`** keyboard shortcut
   - Multi-tab support with right-side tab list (VS Code layout)
   - Each tab spawns a real PTY shell (`$SHELL` or `/bin/zsh`) in the selected agent's folder
   - Resizable panel height with drag handle, persisted to localStorage
