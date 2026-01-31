@@ -216,6 +216,8 @@ export function SwitchWorkspace(arg1:string):Promise<workspace.Workspace>;
 
 export function SyncToClaudeSettings(arg1:string):Promise<void>;
 
+export function TouchPlanFile(arg1:string,arg2:string):Promise<string>;
+
 export function UpdateAgent(arg1:workspace.Agent):Promise<void>;
 
 export function WriteTerminal(arg1:string,arg2:string):Promise<void>;

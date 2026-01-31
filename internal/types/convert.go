@@ -117,6 +117,7 @@ func convertUserToMessage(event *UserEvent) *Message {
 		UUID:              event.UUID,
 		IsCompaction:      isCompaction,
 		CompactionPreview: compactionPreview,
+		Slug:              event.Slug,
 	}
 }
 
@@ -246,6 +247,7 @@ func convertAssistantToMessage(event *AssistantEvent) *Message {
 		IsSynthetic:   isSynthetic,
 		StopReason:    event.Message.StopReason,
 		Usage:         usage,
+		Slug:          event.Slug,
 	}
 }
 

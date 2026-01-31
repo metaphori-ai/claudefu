@@ -414,6 +414,10 @@ export function SyncToClaudeSettings(arg1) {
   return window['go']['main']['App']['SyncToClaudeSettings'](arg1);
 }
 
+export function TouchPlanFile(arg1, arg2) {
+  return window['go']['main']['App']['TouchPlanFile'](arg1, arg2);
+}
+
 export function UpdateAgent(arg1) {
   return window['go']['main']['App']['UpdateAgent'](arg1);
 }

@@ -21,6 +21,7 @@ type Message struct {
 	IsSynthetic       bool             `json:"isSynthetic,omitempty"`     // True if model="<synthetic>" (e.g., "No response requested.")
 	StopReason        string           `json:"stopReason,omitempty"`      // "stop_sequence" when complete (JSONL), "end_turn" (streaming), null when tools pending
 	Usage             *TokenUsage      `json:"usage,omitempty"`           // Token usage for assistant messages (input/output/cache tokens)
+	Slug              string           `json:"slug,omitempty"`            // Session slug (e.g., "polymorphic-roaming-hummingbird") - plan file at ~/.claude/plans/{slug}.md
 }
 
 // PendingQuestion tracks a failed AskUserQuestion tool call that needs user interaction.

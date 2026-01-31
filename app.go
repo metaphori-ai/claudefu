@@ -33,6 +33,7 @@ type App struct {
 	mcpServer        *mcpserver.MCPService
 	sessionService   *session.Service // Instant session creation (no CLI wait)
 	terminalManager  *terminal.Manager
+	cliArgs          *CLIArgs         // CLI arguments (e.g., `claudefu .`)
 }
 
 // NewApp creates a new App application struct
@@ -95,7 +96,58 @@ func (a *App) startup(ctx context.Context) {
 	// Step 9: Refresh menu now that workspace is loaded
 	a.RefreshMenu()
 
+	// Step 10: Process CLI arguments (e.g., `claudefu .` to add folder as agent)
+	a.processStartupArgs()
+
 	wailsrt.LogInfo(ctx, fmt.Sprintf("ClaudeFu initialized. Config path: %s", a.settings.GetConfigPath()))
+}
+
+// processStartupArgs handles CLI arguments like `claudefu /path/to/folder`.
+// Workspace selection already happened in the terminal (before GUI started).
+func (a *App) processStartupArgs() {
+	if a.cliArgs == nil || a.cliArgs.Folder == "" {
+		return
+	}
+
+	folder := a.cliArgs.Folder
+
+	// Switch workspace if the CLI-selected one differs from current
+	if a.cliArgs.WorkspaceID != "" && (a.currentWorkspace == nil || a.currentWorkspace.ID != a.cliArgs.WorkspaceID) {
+		if _, err := a.SwitchWorkspace(a.cliArgs.WorkspaceID); err != nil {
+			wailsrt.LogError(a.ctx, fmt.Sprintf("Failed to switch workspace: %v", err))
+			return
+		}
+	}
+
+	// Check if folder already exists as agent in current workspace
+	if a.currentWorkspace != nil {
+		for _, agent := range a.currentWorkspace.Agents {
+			if agent.Folder == folder {
+				// Already an agent — just select it
+				if a.rt != nil {
+					a.rt.Emit("agent:select", agent.ID, "", map[string]any{
+						"agentId": agent.ID,
+					})
+				}
+				return
+			}
+		}
+	}
+
+	// Add as new agent (derive name from folder basename)
+	name := filepath.Base(folder)
+	agent, err := a.AddAgent(name, folder)
+	if err != nil {
+		wailsrt.LogError(a.ctx, fmt.Sprintf("Failed to add agent from CLI: %v", err))
+		return
+	}
+
+	// Select the newly added agent
+	if a.rt != nil {
+		a.rt.Emit("agent:select", agent.ID, "", map[string]any{
+			"agentId": agent.ID,
+		})
+	}
 }
 
 // loadPersistedState loads settings and session state from disk

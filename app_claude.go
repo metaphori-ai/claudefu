@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"claudefu/internal/providers"
@@ -106,6 +107,30 @@ func (a *App) GetPlanFilePath(agentID, sessionID string) string {
 		return ""
 	}
 	return a.rt.GetPlanFilePath(agentID, sessionID)
+}
+
+// TouchPlanFile creates the plan file if it doesn't exist and returns its path.
+// Uses the session slug to derive: ~/.claude/plans/{slug}.md
+func (a *App) TouchPlanFile(agentID, sessionID string) (string, error) {
+	planPath := a.GetPlanFilePath(agentID, sessionID)
+	if planPath == "" {
+		return "", fmt.Errorf("no slug available for this session")
+	}
+
+	// Ensure directory exists
+	dir := filepath.Dir(planPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create plans directory: %w", err)
+	}
+
+	// Touch the file (create if not exists, don't truncate if exists)
+	f, err := os.OpenFile(planPath, os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return "", fmt.Errorf("failed to create plan file: %w", err)
+	}
+	f.Close()
+
+	return planPath, nil
 }
 
 // AnswerQuestion answers a pending AskUserQuestion by patching the JSONL and resuming the session.

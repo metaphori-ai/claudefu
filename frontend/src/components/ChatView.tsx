@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { GetConversationPaged, SetActiveSession, ClearActiveSession, SendMessage, MarkSessionViewed, NewSession, ReadPlanFile, GetPlanFilePath, AnswerQuestion, CancelSession } from '../../wailsjs/go/main/App';
+import { GetConversationPaged, SetActiveSession, ClearActiveSession, SendMessage, MarkSessionViewed, NewSession, ReadPlanFile, TouchPlanFile, AnswerQuestion, CancelSession } from '../../wailsjs/go/main/App';
 import { types } from '../../wailsjs/go/models';
 
 // Extracted components
@@ -95,11 +95,18 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
   // Toggle states for prompt controls
   const [newSessionMode, setNewSessionMode] = useState(false);
   const [planningMode, setPlanningMode] = useState(false);
-  const [latestPlanFile, setLatestPlanFile] = useState<string | null>(null);
   const [planPaneOpen, setPlanPaneOpen] = useState(false);
   const [planContent, setPlanContent] = useState<string | null>(null);
   const [claudeSettingsOpen, setClaudeSettingsOpen] = useState(false);
   const [permissionsDialogOpen, setPermissionsDialogOpen] = useState(false);
+
+  // Derive session slug from messages (any message with a slug field)
+  const sessionSlug = useMemo(() => {
+    for (const msg of messages) {
+      if (msg.slug) return msg.slug;
+    }
+    return null;
+  }, [messages]);
 
   // Permission wizard state (triggered from failed tool calls)
   const [permissionWizardOpen, setPermissionWizardOpen] = useState(false);
@@ -158,12 +165,6 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
       const totalCount = result?.totalCount || messageList.length;
       const hasMoreMessages = result?.hasMore || false;
       setContextMessages(agentId, sessionId, messageList, totalCount, hasMoreMessages);
-
-      // Get plan file path from backend
-      const planPath = await GetPlanFilePath(agentId, sessionId);
-      if (planPath) {
-        setLatestPlanFile(planPath);
-      }
 
       // Scroll to bottom after initial load
       scroll.scrollToBottomRAF();
@@ -291,11 +292,6 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
         }
       }
       lastMessageCountRef.current = messages.length;
-
-      // Update plan file path when messages change
-      GetPlanFilePath(agentId, sessionId).then(planPath => {
-        if (planPath) setLatestPlanFile(planPath);
-      }).catch(() => {});
     }
   }, [messages.length, agentId, sessionId]);
 
@@ -499,15 +495,17 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
     }
   };
 
-  // Handle opening plan pane
+  // Handle opening plan pane - touch file if it doesn't exist yet
   const handleViewPlan = async () => {
-    if (!latestPlanFile) return;
+    if (!sessionSlug) return;
     try {
-      const content = await ReadPlanFile(latestPlanFile);
+      // TouchPlanFile creates the file if needed and returns its path
+      const planPath = await TouchPlanFile(agentId, sessionId);
+      const content = await ReadPlanFile(planPath);
       setPlanContent(content);
       setPlanPaneOpen(true);
     } catch (err) {
-      console.error('Failed to read plan file:', err);
+      console.error('Failed to open plan file:', err);
     }
   };
 
@@ -631,7 +629,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
           onNewSessionModeToggle={() => setNewSessionMode(!newSessionMode)}
           planningMode={planningMode}
           onPlanningModeToggle={() => setPlanningMode(!planningMode)}
-          latestPlanFile={latestPlanFile}
+          latestPlanFile={sessionSlug}
           onViewPlan={handleViewPlan}
           onOpenPermissions={() => setPermissionsDialogOpen(true)}
           onOpenClaudeSettings={() => setClaudeSettingsOpen(true)}

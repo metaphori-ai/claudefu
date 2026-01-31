@@ -3,20 +3,16 @@
 package runtime
 
 import (
-	"encoding/json"
 	"fmt"
 	"maps"
-	"regexp"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
 	"claudefu/internal/types"
 	"claudefu/internal/workspace"
 )
-
-// planPathRegex matches paths like ~/.claude/plans/something.md or /Users/.../.claude/plans/something.md
-// Excludes * to avoid matching wildcard patterns like ~/.claude/plans/*.md from system reminders
-var planPathRegex = regexp.MustCompile(`[/~][^\s"]*\.claude/plans/[^\s"*]+\.md`)
 
 // =============================================================================
 // CONSTANTS
@@ -64,7 +60,7 @@ type SessionState struct {
 	ViewedIndex     int       // Index up to which user has seen messages
 	UnreadCount     int       // Derived: len(Messages) - ViewedIndex
 	Preview         string    // First user message preview
-	PlanFilePath    string    // Path to active plan file (if any)
+	Slug            string    // Session slug (e.g., "polymorphic-roaming-hummingbird") - plan file at ~/.claude/plans/{slug}.md
 	LastSendTime    time.Time // Time when user sent last message (for timestamp-based filtering)
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
@@ -394,10 +390,11 @@ func (rt *WorkspaceRuntime) AppendMessages(agentID, sessionID string, messages [
 		}
 	}
 
-	// Extract plan file path from new messages
+	// Extract session slug from new messages (used to derive plan file path)
 	for _, msg := range messages {
-		if planPath := extractPlanFilePath(msg); planPath != "" {
-			session.PlanFilePath = planPath
+		if msg.Slug != "" {
+			session.Slug = msg.Slug
+			break // Slug is the same across all messages in a session
 		}
 	}
 
@@ -457,7 +454,14 @@ func (rt *WorkspaceRuntime) GetPlanFilePath(agentID, sessionID string) string {
 		return ""
 	}
 
-	return session.PlanFilePath
+	if session.Slug == "" {
+		return ""
+	}
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(homeDir, ".claude", "plans", session.Slug+".md")
 }
 
 // =============================================================================
@@ -848,7 +852,7 @@ func (rt *WorkspaceRuntime) ClearSession(agentID, sessionID string) {
 	session.Messages = make([]types.Message, 0)
 	session.FilePosition = 0
 	session.InitialLoadDone = false
-	session.PlanFilePath = ""
+	session.Slug = ""
 	// Keep ViewedIndex and LastViewedAt - these represent user's read state
 }
 
@@ -988,50 +992,3 @@ func truncatePreview(s string, maxLen int) string {
 	return s[:maxLen-3] + "..."
 }
 
-// extractPlanFilePath looks for a plan file path in a message's content blocks.
-// Checks tool_use inputs, tool_result content, and text content for paths
-// matching ~/.claude/plans/*.md or similar patterns.
-func extractPlanFilePath(msg types.Message) string {
-	for _, block := range msg.ContentBlocks {
-		// Check tool_use inputs (Read, Edit, Write on plan files)
-		if block.Type == "tool_use" && block.Input != nil {
-			var inputStr string
-			switch v := block.Input.(type) {
-			case string:
-				inputStr = v
-			default:
-				// Marshal to JSON to search
-				if data, err := json.Marshal(v); err == nil {
-					inputStr = string(data)
-				}
-			}
-			if match := planPathRegex.FindString(inputStr); match != "" {
-				return match
-			}
-		}
-
-		// Check tool_result content
-		if block.Type == "tool_result" && block.Content != nil {
-			var contentStr string
-			switch v := block.Content.(type) {
-			case string:
-				contentStr = v
-			default:
-				if data, err := json.Marshal(v); err == nil {
-					contentStr = string(data)
-				}
-			}
-			if match := planPathRegex.FindString(contentStr); match != "" {
-				return match
-			}
-		}
-
-		// Check text content (system reminders often mention plan file)
-		if block.Type == "text" && block.Text != "" {
-			if match := planPathRegex.FindString(block.Text); match != "" {
-				return match
-			}
-		}
-	}
-	return ""
-}

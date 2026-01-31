@@ -5,6 +5,26 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **CLI Agent Addition** - `claudefu .` or `claudefu /path/to/folder` adds a folder as an agent
+  - Interactive terminal prompt to select workspace (alphabetical, numbered list)
+  - `--workspace "name"` flag for non-interactive use (case-insensitive match)
+  - Invalid `--workspace` name falls through to interactive prompt
+  - Single workspace auto-selected without prompt
+  - Deduplication: if folder already exists as agent, selects it instead of duplicating
+  - Homebrew cask already symlinks binary to `claudefu` on PATH
+
+### Changed
+- **Slug-Based Plan File Detection** - Replaced regex content scanning with JSONL slug field
+  - Plan file path now derived from session slug: `~/.claude/plans/{slug}.md`
+  - Removed ~50 lines of regex + JSON marshaling (`extractPlanFilePath`, `planPathRegex`)
+  - Slug propagated end-to-end: JSONL event → Go `Message.Slug` → Frontend
+  - View Plan button now visible whenever session has a slug (virtually always)
+  - `TouchPlanFile` creates the plan file on-demand if it doesn't exist yet
+  - Frontend no longer polls backend on every message change — slug derived client-side via `useMemo`
+
 ## [0.4.1] - 2026-01-28
 
 ### Added

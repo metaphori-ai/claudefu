@@ -77,6 +77,7 @@ export interface Message {
   isSynthetic?: boolean;  // True if model="<synthetic>" (e.g., "No response requested.")
   stopReason?: string;  // "stop_sequence" (JSONL) or "end_turn" (streaming) when complete, null/undefined when tools pending
   usage?: TokenUsage;  // Token usage for assistant messages (v0.3.21 - from JSONL event.message.usage)
+  slug?: string;  // Session slug (e.g., "polymorphic-roaming-hummingbird") - plan file at ~/.claude/plans/{slug}.md
 }
 
 // Props for ChatView component
