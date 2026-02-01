@@ -75,7 +75,7 @@ func claudeBuiltinSet() PermissionSet {
 				// Write/modify tools - can change files
 				"Write", "Edit", "NotebookEdit",
 				// Agent/workflow tools
-				"Task", "Skill", "EnterPlanMode", "ExitPlanMode",
+				"Task", "Skill", "EnterPlanMode",
 			},
 			YOLO: []string{
 				// Blanket Bash - typically users should use specific sets

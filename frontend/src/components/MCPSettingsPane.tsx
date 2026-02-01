@@ -565,16 +565,17 @@ export function MCPSettingsPane({
                         </div>
                       </label>
 
-                      {/* AskUserQuestion */}
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
+                      {/* AskUserQuestion - locked, required for ClaudeFu */}
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'not-allowed', opacity: 0.6 }}>
                         <input
                           type="checkbox"
-                          checked={toolAvailability.askUserQuestion}
-                          onChange={(e) => updateAvailability('askUserQuestion', e.target.checked)}
+                          checked={true}
+                          disabled
                           style={{ width: '18px', height: '18px', accentColor: '#8b5cf6' }}
                         />
                         <div>
                           <span style={{ color: '#fff' }}>AskUserQuestion</span>
+                          <span style={{ color: '#888', marginLeft: '0.5rem', fontSize: '0.8rem', fontStyle: 'italic' }}>(required)</span>
                           <span style={{ color: '#666', marginLeft: '0.75rem', fontSize: '0.85rem' }}>Ask user questions</span>
                         </div>
                       </label>
@@ -607,16 +608,17 @@ export function MCPSettingsPane({
                         </div>
                       </label>
 
-                      {/* ExitPlanMode */}
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
+                      {/* ExitPlanMode - locked, required for ClaudeFu */}
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'not-allowed', opacity: 0.6 }}>
                         <input
                           type="checkbox"
-                          checked={toolAvailability.exitPlanMode}
-                          onChange={(e) => updateAvailability('exitPlanMode', e.target.checked)}
+                          checked={true}
+                          disabled
                           style={{ width: '18px', height: '18px', accentColor: '#8b5cf6' }}
                         />
                         <div>
                           <span style={{ color: '#fff' }}>ExitPlanMode</span>
+                          <span style={{ color: '#888', marginLeft: '0.5rem', fontSize: '0.8rem', fontStyle: 'italic' }}>(required)</span>
                           <span style={{ color: '#666', marginLeft: '0.75rem', fontSize: '0.85rem' }}>Plan review approval flow</span>
                         </div>
                       </label>

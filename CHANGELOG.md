@@ -5,10 +5,12 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.6] - 2026-02-01
 
 ### Fixed
 - **Planning mode auto-clear** — Planning mode toggle now resets after each send, preventing unintentional plan mode on subsequent prompts
+- **Lock required MCP tools** — AskUserQuestion and ExitPlanMode toggles in MCP Settings are now locked on (required for ClaudeFu operation)
+- **Remove ExitPlanMode from permission sets** — Removed built-in ExitPlanMode from claude-builtin permissive tier (always replaced by MCP version)
 
 ## [0.4.5] - 2026-02-01
 
