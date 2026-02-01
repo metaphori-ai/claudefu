@@ -534,8 +534,9 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
     try {
       await SendMessage(agentId, sessionId, message, backendAttachments, planningMode);
       logDebug('ChatView', 'SEND_COMPLETE', { success: true });
-      // Clear attachments on successful send
+      // Clear attachments and planning mode on successful send
       setAttachments([]);
+      setPlanningMode(false);
       // Note: isWaitingForResponse stays true - it gets cleared when assistant message arrives
     } catch (err) {
       console.error('Failed to send message:', err);
