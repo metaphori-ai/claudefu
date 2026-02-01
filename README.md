@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  Visualize and interact with multiple Claude Code CLI sessions from a unified interface.
+  Manage multiple Claude Code CLI instances from a unified interface with inter-agent communication, plan review, permission control, and real-time session monitoring.
 </p>
 
 ---
@@ -34,7 +34,7 @@ brew install --cask claudefu
 brew upgrade --cask claudefu
 ```
 
-> **Note:** For unsigned builds, macOS may block the app. Right-click → Open; Go to System Settings > Privacy & Security >  or run:
+> **Note:** For unsigned builds, macOS may block the app. Right-click → Open, or go to System Settings > Privacy & Security, or run:
 > ```bash
 > xattr -cr /Applications/ClaudeFu.app
 > ```
@@ -47,7 +47,7 @@ ClaudeFu requires the Claude Code CLI:
 npm install -g @anthropic-ai/claude-code
 ```
 
-### Reinstalling 
+### Reinstalling
 
 ```bash
 rm -rf /Applications/ClaudeFu.app
@@ -61,43 +61,97 @@ brew install --cask claudefu
 
 ## Features
 
-- **Multi-Agent Dashboard** - Manage multiple Claude Code instances across different project folders - single interface, many Claude Codes
-- **Real-Time Session Viewing** - Watch Claude's conversation as it streams via JSONL file watching
-- **Tool Call Visualization** - Expandable tool use/result blocks with formatted inputs and outputs
-- **Interactive AskUserQuestion** - Answer Claude's questions directly in the UI (even in `--print` mode)
-- **Subagent Viewer** - Inspect Task tool spawned subagent conversations
-- **Thinking Blocks** - Collapsible extended thinking display
-- **Context Compaction** - View summary cards when Claude compacts conversation history
-- **Unread Tracking** - Badge indicators for sessions with new activity
+### Multi-Agent Dashboard
+- Manage multiple Claude Code instances across different project folders
+- Organize agents into **Workspaces** for different projects or workflows
+- Per-agent MCP slugs and descriptions for inter-agent identification
 
-## Roadmap
+### Real-Time Session Monitoring
+- Watch Claude's conversation as it streams via JSONL file watching
+- **Unread tracking** with badge indicators for sessions with new activity
+- **Token metrics** — context window usage and total output tokens displayed per session
+- **Session names** — custom display names for conversations
 
-- **Multi-Agent Orchestration** - `@backend create API, @frontend build UI` style coordination
-- **Parallel Agent Execution** - Run multiple agents simultaneously with dependency resolution
-- **Dynamic MCP** - Agent-to-agent communication via dyanmic agent MCP tools, auto-prompting to broadcast and request information from other agents
+### MCP Inter-Agent Communication
+ClaudeFu runs an MCP SSE server that gives every Claude Code agent access to orchestration tools:
+
+- **AgentQuery** — Send a stateless query to another agent and get a synchronous response
+- **AgentMessage** — Send messages to one or more agents' inboxes
+- **AgentBroadcast** — Broadcast a message to all agents
+- **SelfQuery** — Query your own codebase with full CLAUDE.md context
+- **NotifyUser** — Display notifications in the ClaudeFu UI
+- **AskUserQuestion** — Ask the user a question with options (blocks until answered)
+- **RequestToolPermission** — Request permission to use restricted tools at runtime
+- **ExitPlanMode** — Submit a plan for user review with Accept/Reject flow
+- **BrowserAgent** — Delegate visual/DOM investigation to Claude in Browser *(experimental)*
+
+All tools are configurable — toggle availability and customize instructions from the MCP Settings pane.
+
+### Plan Mode & Review
+- Toggle **Planning Mode** to have Claude write plans before implementing
+- **Plan review UI** — when Claude calls ExitPlanMode, the plan pane auto-opens with Accept/Reject buttons
+- Reject with feedback that Claude receives to iterate on the plan
+
+### Permission System
+- **Per-agent permissions** with risk-tiered tool control (common / permissive / YOLO)
+- **Global permission template** for consistent defaults across agents
+- Built-in permission sets: Claude tools, Git, Files, Docker, Go, Make, Node, Python
+- Import from / sync to Claude's `settings.local.json`
+
+### Interactive Tool Support
+- **AskUserQuestion** — Answer Claude's questions directly in the UI with option selection or custom text
+- **Permission requests** — Grant or deny tool permissions at runtime
+- **Message queue** — Queue messages while Claude is responding; auto-submitted when the response completes
+
+### Rich Conversation Display
+- **Tool call visualization** — Expandable tool use/result blocks with formatted inputs and outputs
+- **Subagent viewer** — Inspect Task tool spawned subagent conversations
+- **Thinking blocks** — Collapsible extended thinking display
+- **Context compaction** — View summary cards when Claude compacts conversation history
+- **Image support** — Paste or drag-and-drop images into prompts
+- **File references** — `@file` inserts paths, `@@file` attaches file content
+
+### MCP Inbox
+- Per-agent message inbox for inter-agent communication
+- SQLite-backed persistence (survives app restart)
+- Copy or inject inbox messages into the current prompt
+
+### Embedded Terminal
+- Multi-tab PTY terminal panel with Cmd+`` ` `` toggle
+- Run shell commands alongside Claude conversations
+
+### Settings & Configuration
+- **Global Settings** — Environment variables for Claude CLI (e.g., proxy configuration), global/default CLAUDE.md editing
+- **Per-agent CLAUDE.md** — Edit agent and global CLAUDE.md with markdown preview
+- **MCP Settings** — Server configuration, tool availability toggles, customizable tool instructions
+- **Native macOS menu** — Workspace and agent management from the menu bar
+
+---
 
 ## Tech Stack
 
-- **Backend**: Go with [Wails](https://wails.io/) framework
+- **Backend**: Go with [Wails v2](https://wails.io/)
 - **Frontend**: React + TypeScript + Vite
-- **Styling**: Tailwind CSS
-- **Data**: Claude Code JSONL session files (`~/.claude/projects/`)
+- **MCP Server**: SSE-based using [mcp-go](https://github.com/mark3labs/mcp-go)
+- **Data**: Claude Code JSONL session files (`~/.claude/projects/`), SQLite for inbox persistence
 
 ## Architecture
 
 ### Core Principles
 
-- **Single Source of Truth** - All state lives in Go backend, frontend is a view
-- **Event-Driven** - State changes flow through Wails events, not polling
-- **UUID Everywhere** - Workspace, Agent, Session all have stable UUIDs for event routing
+- **Single Source of Truth** — All state lives in Go backend, frontend is a view
+- **Event-Driven** — State changes flow through Wails events, not polling
+- **UUID Everywhere** — Workspace, Agent, Session all have stable UUIDs for event routing
+- **Channel-Based Blocking** — MCP tools that need user input (AskUserQuestion, ExitPlanMode, RequestToolPermission) block on Go channels until the frontend responds
 
-### Domain Model Hierarchy
+### Domain Model
 
 ```
-Workspace (container)
+Workspace (top-level container)
 └── Agent (Claude Code instance tied to a folder)
-    └── Session (conversation in ~/.claude/projects/{folder}/)
-        └── Subagent (Task tool spawned agents)
+    ├── Session (conversation in ~/.claude/projects/{folder}/)
+    │   └── Subagent (Task tool spawned agents)
+    └── Inbox (MCP messages from other agents)
 ```
 
 ### Communication Flow
@@ -108,27 +162,23 @@ Workspace (container)
 │                     │                  │                     │
 │  ───Bound Methods──────────────────▶   │  WorkspaceRuntime   │
 │     SendMessage()   │                  │  AgentState         │
-│     GetSessions()   │                  │  SessionState       │
-│                     │                  │                     │
-│  ◀────Wails Events─────────────────    │  FileWatcher        │
-│     session:messages│                  │  (fsnotify)         │
-│     unread:changed  │                  │                     │
+│     AcceptPlanReview│                  │  SessionState       │
+│     AnswerQuestion()│                  │                     │
+│                     │                  │  FileWatcher        │
+│  ◀────Wails Events─────────────────   │  (fsnotify)         │
+│     session:messages│                  │                     │
+│     mcp:planreview  │                  │  MCP Server (SSE)   │
+│     mcp:askuser     │                  │  InboxManager       │
+│     response_complete                  │  PendingQuestions    │
 └─────────────────────┘                  └─────────────────────┘
-                                                   │
-                                                   ▼
-                                         ~/.claude/projects/
-                                         └── {encoded-folder}/
-                                             └── {session}.jsonl
+                                                  │
+                          ┌───────────────────────┼───────────────┐
+                          │                       │               │
+                          ▼                       ▼               ▼
+                 ~/.claude/projects/     Claude Code CLI    MCP Clients
+                 └── {folder}/          (spawned per        (each agent
+                     └── *.jsonl         agent/session)      connects)
 ```
-
-### File Watcher Strategy
-
-ClaudeFu uses `fsnotify` to watch Claude Code's session directories. When changes occur:
-
-1. **Delta reads** - Only read new bytes from JSONL files
-2. **Parse incrementally** - Convert new lines to messages
-3. **Emit events** - Push updates to frontend via Wails runtime
-4. **Recalculate unread** - Update badge counts
 
 ### Data Storage
 
@@ -136,6 +186,7 @@ ClaudeFu uses `fsnotify` to watch Claude Code's session directories. When change
 ```
 ~/.claude/projects/
 └── {encoded-folder}/              # Folder path with / → -
+    ├── sessions-index.json        # Session registry
     ├── {session-id}.jsonl         # Main conversation
     └── {session-id}/
         └── subagents/
@@ -145,18 +196,25 @@ ClaudeFu uses `fsnotify` to watch Claude Code's session directories. When change
 **ClaudeFu config** (managed by ClaudeFu):
 ```
 ~/.claudefu/
-├── workspaces/
-│   └── {workspace-id}.json        # Workspace with agents list
+├── workspaces/{id}.json           # Workspace with agents list
 ├── current_workspace.txt          # Active workspace ID
-└── session_state.json             # Last viewed timestamps (for unread tracking)
+├── session_state.json             # Last viewed timestamps
+├── settings.json                  # Global settings (env vars)
+├── mcp_tool_instructions.json     # Configurable MCP tool prompts
+├── mcp_tool_availability.json     # Per-tool enable/disable
+├── global.permissions.json        # Global permission template
+├── default-templates/CLAUDE.md    # Default CLAUDE.md for new agents
+└── inbox/{workspace-id}.db        # SQLite inbox per workspace
 ```
 
-### Build from Source
+---
+
+## Build from Source
 
 ```bash
 # Clone the repository
 git clone https://github.com/metaphori-ai/claudefu.git
-cd claudefu
+cd claudefu/app
 
 # Install frontend dependencies
 cd frontend && npm install && cd ..
@@ -168,45 +226,45 @@ wails dev
 wails build
 ```
 
-## Usage
-
-1. **Add Agents**: Click the "+" button and select folders containing Claude Code projects
-2. **View Sessions**: Select an agent to see its conversation sessions
-3. **Real-Time Updates**: Sessions update live as Claude Code runs in that folder
-4. **Answer Questions**: When Claude asks an AskUserQuestion, click options or type custom answers directly in ClaudeFu
-
-## How It Works
-
-ClaudeFu watches Claude Code's JSONL session files in `~/.claude/projects/{encoded-folder}/`. Each conversation turn is stored as a JSON line containing:
-
-- User messages and tool results
-- Assistant responses with tool calls
-- System events (compaction summaries, file history snapshots)
-
-The app parses these events using a discriminated union classifier and renders them in a rich chat interface.
-
-### AskUserQuestion Interception
-
-When Claude Code runs in `--print` mode, interactive tools like `AskUserQuestion` auto-fail. ClaudeFu detects these failures, presents an interactive UI, and patches the JSONL with your answer to resume the conversation.
-
 ## Project Structure
 
 ```
-claudefu/
-├── app.go                    # Wails app with bound methods
+claudefu/app/
+├── app.go                         # Core lifecycle, initialization
+├── app_*.go                       # Domain-specific bound methods
+│   ├── app_agent.go               #   Agent management
+│   ├── app_claude.go              #   Claude CLI integration
+│   ├── app_inbox.go               #   MCP inbox management
+│   ├── app_mcp.go                 #   MCP tools, questions, permissions, plan review
+│   ├── app_permissions.go         #   Permission system (v2)
+│   ├── app_session.go             #   Session state and conversations
+│   ├── app_settings.go            #   Application settings
+│   └── app_workspace.go           #   Workspace CRUD
 ├── internal/
-│   ├── providers/            # Claude CLI integration
-│   ├── runtime/              # Session state management
-│   ├── types/                # JSONL parsing & classification
-│   ├── watcher/              # File system watcher
-│   └── workspace/            # Workspace & agent management
-└── frontend/
-    └── src/
-        ├── components/       # React components
-        │   ├── ChatView.tsx  # Main conversation view
-        │   ├── ToolCallBlock.tsx
-        │   └── ...
-        └── App.tsx
+│   ├── mcpserver/                 # MCP SSE server
+│   │   ├── server.go              #   Lifecycle, tool registration
+│   │   ├── handlers.go            #   Tool handlers
+│   │   ├── tools.go               #   Tool definitions
+│   │   ├── askuser.go             #   AskUserQuestion blocking
+│   │   ├── planreview.go          #   ExitPlanMode blocking
+│   │   ├── inbox.go               #   Per-agent message queues
+│   │   ├── tool_instructions.go   #   Configurable prompts
+│   │   └── tool_availability.go   #   Per-tool enable/disable
+│   ├── permissions/               # Permission file management
+│   ├── providers/claudecode.go    # Claude CLI integration
+│   ├── session/                   # Instant session creation
+│   └── watcher/                   # JSONL file watcher
+└── frontend/src/
+    ├── context/                   # React Context (Workspace, Session, Messages)
+    ├── hooks/                     # Custom hooks (useWailsEvents, useSession, etc.)
+    ├── components/
+    │   ├── ChatView.tsx           # Main conversation orchestrator
+    │   ├── chat/                  # Extracted chat components
+    │   ├── Sidebar.tsx            # Agent/session sidebar
+    │   ├── MCPSettingsPane.tsx    # MCP configuration panel
+    │   ├── PermissionsDialog.tsx  # Permission editor
+    │   └── ...                    # Dialogs, panes, shared components
+    └── utils/                     # Message processing, scroll helpers
 ```
 
 ## License
@@ -216,4 +274,5 @@ MIT
 ## Acknowledgments
 
 - Built with [Wails](https://wails.io/)
-- Integrates with [Claude Code](https://claude.ai/claude-code) by Anthropic
+- MCP server powered by [mcp-go](https://github.com/mark3labs/mcp-go)
+- Integrates with [Claude Code](https://docs.anthropic.com/en/docs/claude-code) by Anthropic
