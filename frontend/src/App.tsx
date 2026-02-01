@@ -12,6 +12,7 @@ import { TerminalPanelInline } from './components/terminal/TerminalPanelInline';
 import { DialogBase } from './components/DialogBase';
 import { MCPQuestionDialog } from './components/MCPQuestionDialog';
 import { PermissionRequestDialog } from './components/PermissionRequestDialog';
+import { ScaffoldDialog } from './components/ScaffoldDialog';
 import { WorkspaceProvider, SessionProvider, MessagesProvider } from './context';
 import { useWorkspace, useSession, useSelectedAgent, useSessionName, WailsEventHub } from './hooks';
 import { QueueWatcher } from './components/QueueWatcher';
@@ -40,11 +41,14 @@ import {
   DeleteWorkspace,
   RenameWorkspace,
   RemoveAgent,
-  SelectWorkspaceFolder
+  SelectWorkspaceFolder,
+  CheckAgentScaffold,
+  ScaffoldAgent,
+  RefreshSessions
 } from "../wailsjs/go/main/App";
 import { settings as settingsModel } from "../wailsjs/go/models";
 import { EventsOn, BrowserOpenURL } from "../wailsjs/runtime/runtime";
-import { workspace } from "../wailsjs/go/models";
+import { workspace, scaffold } from "../wailsjs/go/models";
 
 interface AuthStatus {
   isAuthenticated: boolean;
@@ -91,6 +95,13 @@ function AppContent() {
   const [openSessionsForAgentId, setOpenSessionsForAgentId] = useState<string | null>(null);
   const [isCreatingNewSessionExternally, setIsCreatingNewSessionExternally] = useState<boolean>(false);
   const [terminalOpen, setTerminalOpen] = useState<boolean>(false);
+  const [scaffoldDialog, setScaffoldDialog] = useState<{
+    folder: string;
+    name: string;
+    check: scaffold.ScaffoldCheck;
+    isAddAgent: boolean; // true = Add Agent flow, false = Select Agent flow
+    pendingAgentId?: string; // for Select Agent flow
+  } | null>(null);
 
   // MCP notification state
   const [notification, setNotification] = useState<{
@@ -376,18 +387,7 @@ function AppContent() {
       }),
       EventsOn('menu:switch-agent', (data: { agentId?: string }) => {
         if (data?.agentId) {
-          // Inline agent selection logic (same as handleAgentSelect)
-          const agent = agents.find(a => a.id === data.agentId);
-          if (agent) {
-            selectAgent(data.agentId);
-            if (agent.selectedSessionId) {
-              selectSession(agent.selectedSessionId, agent.folder);
-            } else {
-              clearSelection();
-            }
-            // Refresh menu to update Agent menu state
-            RefreshMenu();
-          }
+          handleAgentSelect(data.agentId);
         }
       }),
     ];
@@ -463,14 +463,7 @@ function AppContent() {
         e.preventDefault();
         const index = parseInt(e.key) - 1;
         if (index < agents.length) {
-          const agent = agents[index];
-          // Select the agent (no toggle - if already selected, stay selected)
-          selectAgent(agent.id);
-          if (agent.selectedSessionId) {
-            selectSession(agent.selectedSessionId, agent.folder);
-          } else {
-            clearSelection();
-          }
+          handleAgentSelect(agents[index].id);
         }
       }
 
@@ -677,7 +670,8 @@ function AppContent() {
     }
   };
 
-  const handleAddAgent = async (folder: string, name: string) => {
+  // Completes the add-agent flow (called directly or after scaffold dialog)
+  const completeAddAgent = async (folder: string, name: string) => {
     try {
       const newAgent = await AddAgent(name, folder);
       addAgent(newAgent);
@@ -692,10 +686,25 @@ function AppContent() {
         selectAgent(newAgent.id);
         clearSelection();
       }
-      // Refresh native menu to show new agent
       RefreshMenu();
     } catch (err) {
       console.error('Failed to add agent:', err);
+    }
+  };
+
+  const handleAddAgent = async (folder: string, name: string) => {
+    try {
+      const check = await CheckAgentScaffold(folder);
+      if (!check.hasProjectsDir || !check.hasClaudeMD || !check.hasPermissions) {
+        // Show scaffold dialog — completeAddAgent called on confirm
+        setScaffoldDialog({ folder, name, check, isAddAgent: true });
+      } else {
+        await completeAddAgent(folder, name);
+      }
+    } catch (err) {
+      console.error('Failed to check agent scaffold:', err);
+      // Fall through to add without scaffold on error
+      await completeAddAgent(folder, name);
     }
   };
 
@@ -727,19 +736,46 @@ function AppContent() {
     }
   };
 
-  const handleAgentSelect = (agentId: string) => {
+  // Completes agent selection (called directly or after scaffold dialog)
+  // newSessionId: if scaffold just created a first session, select it
+  const completeAgentSelect = (agentId: string, newSessionId?: string) => {
     const agent = agents.find(a => a.id === agentId);
     if (!agent) return;
 
-    // Select the agent (no toggle - if already selected, stay selected)
     selectAgent(agentId);
-    if (agent.selectedSessionId) {
-      selectSession(agent.selectedSessionId, agent.folder);
+    const sessionToSelect = newSessionId || agent.selectedSessionId;
+    if (sessionToSelect) {
+      selectSession(sessionToSelect, agent.folder);
+      if (newSessionId) {
+        setAgentSelectedSession(agentId, newSessionId);
+      }
     } else {
       clearSelection();
     }
-    // Refresh native menu to reflect agent selection
     RefreshMenu();
+  };
+
+  const handleAgentSelect = async (agentId: string) => {
+    const agent = agents.find(a => a.id === agentId);
+    if (!agent) return;
+
+    try {
+      const check = await CheckAgentScaffold(agent.folder);
+      if (!check.hasProjectsDir || !check.hasClaudeMD || !check.hasPermissions) {
+        setScaffoldDialog({
+          folder: agent.folder,
+          name: agent.name,
+          check,
+          isAddAgent: false,
+          pendingAgentId: agentId,
+        });
+      } else {
+        completeAgentSelect(agentId);
+      }
+    } catch (err) {
+      console.error('Failed to check agent scaffold:', err);
+      completeAgentSelect(agentId);
+    }
   };
 
   const handleSaveWorkspaceName = async (newName: string) => {
@@ -1704,6 +1740,36 @@ function AppContent() {
             ×
           </button>
         </div>
+      )}
+
+      {/* Scaffold Dialog */}
+      {scaffoldDialog && (
+        <ScaffoldDialog
+          isOpen={true}
+          onClose={() => {
+            // On cancel: if this was Add Agent, don't add. If Select, just select without scaffold.
+            if (!scaffoldDialog.isAddAgent && scaffoldDialog.pendingAgentId) {
+              completeAgentSelect(scaffoldDialog.pendingAgentId);
+            }
+            setScaffoldDialog(null);
+          }}
+          folder={scaffoldDialog.folder}
+          agentName={scaffoldDialog.name}
+          check={scaffoldDialog.check}
+          onConfirm={async (opts) => {
+            const result = await ScaffoldAgent(scaffoldDialog.folder, opts);
+            // If a session was created, refresh so the runtime discovers it
+            if (result?.sessionId && scaffoldDialog.pendingAgentId) {
+              await RefreshSessions(scaffoldDialog.pendingAgentId);
+            }
+            if (scaffoldDialog.isAddAgent) {
+              await completeAddAgent(scaffoldDialog.folder, scaffoldDialog.name);
+            } else if (scaffoldDialog.pendingAgentId) {
+              completeAgentSelect(scaffoldDialog.pendingAgentId, result?.sessionId);
+            }
+            setScaffoldDialog(null);
+          }}
+        />
       )}
 
       {/* MCP AskUserQuestion Dialog */}

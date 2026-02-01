@@ -1,15 +1,13 @@
 package mcpserver
 
 import (
-	_ "embed"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"sync"
-)
 
-//go:embed default_tool_instructions.json
-var defaultInstructionsJSON []byte
+	"claudefu/internal/defaults"
+)
 
 const (
 	ToolInstructionsFile = "mcp_tool_instructions.json"
@@ -53,7 +51,7 @@ func NewToolInstructionsManager(configPath string) *ToolInstructionsManager {
 // Defaults are loaded from the embedded default_tool_instructions.json file.
 func DefaultToolInstructions() *ToolInstructions {
 	var ti ToolInstructions
-	if err := json.Unmarshal(defaultInstructionsJSON, &ti); err != nil {
+	if err := json.Unmarshal(defaults.ToolInstructionsJSON(), &ti); err != nil {
 		// Should never happen with a valid embedded file
 		panic("failed to unmarshal embedded default_tool_instructions.json: " + err.Error())
 	}

@@ -242,6 +242,18 @@ export namespace main {
 		    return a;
 		}
 	}
+	export class ScaffoldResult {
+	    sessionId: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ScaffoldResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.sessionId = source["sessionId"];
+	    }
+	}
 	export class UpdateInfo {
 	    available: boolean;
 	    currentVersion: string;
@@ -351,6 +363,8 @@ export namespace mcpserver {
 	    selfQuerySystemPrompt: string;
 	    browserAgent: string;
 	    requestToolPermission: string;
+	    compactionPrompt: string;
+	    compactionContinuation: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ToolInstructions(source);
@@ -368,6 +382,8 @@ export namespace mcpserver {
 	        this.selfQuerySystemPrompt = source["selfQuerySystemPrompt"];
 	        this.browserAgent = source["browserAgent"];
 	        this.requestToolPermission = source["requestToolPermission"];
+	        this.compactionPrompt = source["compactionPrompt"];
+	        this.compactionContinuation = source["compactionContinuation"];
 	    }
 	}
 
@@ -573,6 +589,45 @@ export namespace permissions {
 	        this.toolsAdded = source["toolsAdded"];
 	        this.toolsRemoved = source["toolsRemoved"];
 	        this.hasChanges = source["hasChanges"];
+	    }
+	}
+
+}
+
+export namespace scaffold {
+	
+	export class ScaffoldCheck {
+	    hasProjectsDir: boolean;
+	    hasSessions: boolean;
+	    hasClaudeMD: boolean;
+	    hasPermissions: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new ScaffoldCheck(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.hasProjectsDir = source["hasProjectsDir"];
+	        this.hasSessions = source["hasSessions"];
+	        this.hasClaudeMD = source["hasClaudeMD"];
+	        this.hasPermissions = source["hasPermissions"];
+	    }
+	}
+	export class ScaffoldOptions {
+	    projectsDir: boolean;
+	    claudeMD: boolean;
+	    permissions: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new ScaffoldOptions(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.projectsDir = source["projectsDir"];
+	        this.claudeMD = source["claudeMD"];
+	        this.permissions = source["permissions"];
 	    }
 	}
 

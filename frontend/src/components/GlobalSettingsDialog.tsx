@@ -7,6 +7,10 @@ import {
   GetGlobalPermissions,
   SaveGlobalPermissions,
   GetOrderedPermissionSets,
+  GetGlobalClaudeMD,
+  SaveGlobalClaudeMD,
+  GetDefaultTemplateMD,
+  SaveDefaultTemplateMD,
 } from '../../wailsjs/go/main/App';
 import { settings } from '../../wailsjs/go/models';
 import {
@@ -15,6 +19,8 @@ import {
   ClaudeFuPermissions,
   PermissionSet,
 } from './permissions';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface GlobalSettingsDialogProps {
   isOpen: boolean;
@@ -26,7 +32,7 @@ interface EnvVar {
   value: string;
 }
 
-type TabId = 'env' | 'tools' | 'directories';
+type TabId = 'env' | 'tools' | 'directories' | 'global-claude-md' | 'default-claude-md';
 
 export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogProps) {
   // Tab state
@@ -41,6 +47,12 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
   const [globalPermissions, setGlobalPermissions] = useState<ClaudeFuPermissions | null>(null);
   const [orderedSets, setOrderedSets] = useState<PermissionSet[]>([]);
 
+  // CLAUDE.md state
+  const [globalClaudeMD, setGlobalClaudeMD] = useState('');
+  const [defaultTemplateMD, setDefaultTemplateMD] = useState('');
+  const [claudeMDViewMode, setClaudeMDViewMode] = useState<'edit' | 'preview'>('edit');
+  const [mdSaved, setMdSaved] = useState(false);
+
   // Shared state
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,16 +65,29 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
     }
   }, [isOpen]);
 
+  // Clear saved indicator
+  useEffect(() => {
+    if (mdSaved) {
+      const timer = setTimeout(() => setMdSaved(false), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [mdSaved]);
+
   const loadAllSettings = async () => {
     setLoading(true);
     setError(null);
     try {
-      // Load everything in parallel
       const [settingsResult, permSetsResult, globalPermsResult] = await Promise.all([
         GetSettings(),
         GetOrderedPermissionSets(),
         GetGlobalPermissions(),
       ]);
+
+      // Load CLAUDE.md files separately — these are non-critical
+      let globalMD = '';
+      let defaultMD = '';
+      try { globalMD = await GetGlobalClaudeMD(); } catch { /* ok */ }
+      try { defaultMD = await GetDefaultTemplateMD(); } catch { /* ok */ }
 
       // Convert settings env vars map to array
       const vars: EnvVar[] = [];
@@ -86,7 +111,7 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
       }));
       setOrderedSets(plainSets);
 
-      // Convert global permissions to plain object (v2 format - explicit tool arrays)
+      // Convert global permissions to plain object (v2 format)
       const plainPerms: ClaudeFuPermissions = {
         version: globalPermsResult.version || 2,
         inheritFromGlobal: globalPermsResult.inheritFromGlobal,
@@ -94,6 +119,9 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
         additionalDirectories: globalPermsResult.additionalDirectories || [],
       };
       setGlobalPermissions(plainPerms);
+
+      setGlobalClaudeMD(globalMD);
+      setDefaultTemplateMD(defaultMD);
     } catch (err) {
       console.error('Failed to load settings:', err);
       setError('Failed to load settings');
@@ -106,43 +134,45 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
     setIsSaving(true);
     setError(null);
     try {
-      // Get current settings first
-      const currentSettings = await GetSettings();
-
-      // Convert env vars array back to map
-      const envMap: Record<string, string> = {};
-      for (const { key, value } of envVars) {
-        if (key.trim()) {
-          envMap[key.trim()] = value;
+      // CLAUDE.md tabs save independently
+      if (activeTab === 'global-claude-md') {
+        await SaveGlobalClaudeMD(globalClaudeMD);
+        setMdSaved(true);
+      } else if (activeTab === 'default-claude-md') {
+        await SaveDefaultTemplateMD(defaultTemplateMD);
+        setMdSaved(true);
+      } else {
+        // Save env + permissions for non-MD tabs
+        const currentSettings = await GetSettings();
+        const envMap: Record<string, string> = {};
+        for (const { key, value } of envVars) {
+          if (key.trim()) {
+            envMap[key.trim()] = value;
+          }
         }
+        const updatedSettings = new settings.Settings({
+          ...currentSettings,
+          claudeEnvVars: envMap,
+        });
+        await Promise.all([
+          SaveSettings(updatedSettings),
+          globalPermissions ? SaveGlobalPermissions(globalPermissions as any) : Promise.resolve(),
+        ]);
+        onClose();
       }
-
-      // Create updated settings object
-      const updatedSettings = new settings.Settings({
-        ...currentSettings,
-        claudeEnvVars: envMap,
-      });
-
-      // Save all settings
-      await Promise.all([
-        SaveSettings(updatedSettings),
-        globalPermissions ? SaveGlobalPermissions(globalPermissions as any) : Promise.resolve(),
-      ]);
-      onClose();
     } catch (err) {
       console.error('Failed to save settings:', err);
       setError('Failed to save settings');
     } finally {
       setIsSaving(false);
     }
-  }, [envVars, globalPermissions, onClose]);
+  }, [activeTab, envVars, globalPermissions, globalClaudeMD, defaultTemplateMD, onClose]);
 
   // CMD-S to save
   useSaveShortcut(isOpen, handleSave);
 
   const handleAddVar = () => {
     if (newKey.trim()) {
-      // Check for duplicate keys
       if (envVars.some(v => v.key === newKey.trim())) {
         setError(`Key "${newKey.trim()}" already exists`);
         return;
@@ -171,12 +201,10 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
     }
   };
 
-  // Handle global permissions change from ToolsTabContent
   const handlePermissionsChange = (newPerms: ClaudeFuPermissions) => {
     setGlobalPermissions(newPerms);
   };
 
-  // Handle directories change
   const handleDirectoriesChange = (dirs: string[]) => {
     if (!globalPermissions) return;
     setGlobalPermissions({
@@ -184,6 +212,8 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
       additionalDirectories: dirs,
     });
   };
+
+  const isMDTab = activeTab === 'global-claude-md' || activeTab === 'default-claude-md';
 
   const renderEnvVarsTab = () => (
     <div style={{ padding: '1rem' }}>
@@ -364,10 +394,131 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
     </div>
   );
 
+  const renderClaudeMDTab = (mdContent: string, setMdContent: (v: string) => void, pathLabel: string) => (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      {/* Path + view toggle */}
+      <div style={{
+        padding: '0.5rem 1rem',
+        borderBottom: '1px solid #333',
+        background: '#1a1a1a',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        flexShrink: 0,
+      }}>
+        <div style={{ fontSize: '0.7rem', color: '#666', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {pathLabel}
+        </div>
+        <div style={{ display: 'flex', gap: '2px', background: '#0d0d0d', borderRadius: '4px', padding: '2px' }}>
+          <button
+            onClick={() => setClaudeMDViewMode('edit')}
+            style={{
+              padding: '0.25rem 0.5rem',
+              borderRadius: '3px',
+              border: 'none',
+              background: claudeMDViewMode === 'edit' ? '#333' : 'transparent',
+              color: claudeMDViewMode === 'edit' ? '#fff' : '#666',
+              fontSize: '0.7rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.25rem',
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+            </svg>
+            Edit
+          </button>
+          <button
+            onClick={() => setClaudeMDViewMode('preview')}
+            style={{
+              padding: '0.25rem 0.5rem',
+              borderRadius: '3px',
+              border: 'none',
+              background: claudeMDViewMode === 'preview' ? '#333' : 'transparent',
+              color: claudeMDViewMode === 'preview' ? '#fff' : '#666',
+              fontSize: '0.7rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.25rem',
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+            Preview
+          </button>
+        </div>
+      </div>
+
+      {/* Editor or Preview */}
+      <div style={{ flex: 1, padding: '0.5rem', overflow: 'hidden' }}>
+        {claudeMDViewMode === 'edit' ? (
+          <textarea
+            value={mdContent}
+            onChange={(e) => setMdContent(e.target.value)}
+            placeholder="# Instructions&#10;&#10;Add instructions here..."
+            style={{
+              width: '100%',
+              height: '100%',
+              padding: '0.75rem',
+              borderRadius: '6px',
+              border: '1px solid #333',
+              background: '#0d0d0d',
+              color: '#ccc',
+              fontSize: '0.75rem',
+              fontFamily: 'monospace',
+              lineHeight: 1.5,
+              resize: 'none',
+              outline: 'none',
+              boxSizing: 'border-box',
+            }}
+            onFocus={(e) => e.target.style.borderColor = '#d97757'}
+            onBlur={(e) => e.target.style.borderColor = '#333'}
+          />
+        ) : (
+          <div
+            className="markdown-content"
+            style={{
+              width: '100%',
+              height: '100%',
+              padding: '0.75rem',
+              borderRadius: '6px',
+              border: '1px solid #333',
+              background: '#0d0d0d',
+              color: '#ccc',
+              fontSize: '0.85rem',
+              lineHeight: 1.6,
+              overflow: 'auto',
+              boxSizing: 'border-box',
+              textAlign: 'left',
+            }}
+          >
+            {mdContent ? (
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {mdContent}
+              </ReactMarkdown>
+            ) : (
+              <div style={{ color: '#666', fontStyle: 'italic' }}>
+                No content to preview
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   const tabs: { id: TabId; label: string }[] = [
     { id: 'env', label: 'Environment' },
     { id: 'tools', label: 'Tools' },
     { id: 'directories', label: 'Directories' },
+    { id: 'global-claude-md', label: 'Global CLAUDE.md' },
+    { id: 'default-claude-md', label: 'Default CLAUDE.md' },
   ];
 
   return (
@@ -397,7 +548,7 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
           {tabs.map(tab => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => { setActiveTab(tab.id); setMdSaved(false); }}
               style={{
                 padding: '0.6rem 1.25rem',
                 border: 'none',
@@ -432,10 +583,16 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
               )}
               {activeTab === 'directories' && globalPermissions && (
                 <DirectoriesTabContent
-                  globalDirectories={[]}  // No higher-level globals in the global template editor
+                  globalDirectories={[]}
                   agentDirectories={globalPermissions.additionalDirectories || []}
                   onChange={handleDirectoriesChange}
                 />
+              )}
+              {activeTab === 'global-claude-md' && renderClaudeMDTab(
+                globalClaudeMD, setGlobalClaudeMD, '~/.claude/CLAUDE.md'
+              )}
+              {activeTab === 'default-claude-md' && renderClaudeMDTab(
+                defaultTemplateMD, setDefaultTemplateMD, '~/.claudefu/default-templates/CLAUDE.md'
               )}
             </>
           )}
@@ -490,15 +647,31 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
               padding: '0.5rem 1.25rem',
               borderRadius: '6px',
               border: 'none',
-              background: '#d97757',
+              background: mdSaved ? '#16a34a' : '#d97757',
               color: '#fff',
               cursor: isSaving ? 'not-allowed' : 'pointer',
               fontSize: '0.8rem',
               fontWeight: 500,
               opacity: isSaving ? 0.7 : 1,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.4rem',
             }}
           >
-            {isSaving ? 'Saving...' : 'Save'}
+            {mdSaved ? (
+              <>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+                Saved
+              </>
+            ) : isSaving ? (
+              'Saving...'
+            ) : isMDTab ? (
+              'Save CLAUDE.md'
+            ) : (
+              'Save'
+            )}
           </button>
         </div>
       </div>

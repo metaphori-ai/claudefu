@@ -142,3 +142,67 @@ func (a *App) SaveClaudeMD(folder, content string) error {
 
 	return nil
 }
+
+// GetGlobalClaudeMD reads ~/.claude/CLAUDE.md
+func (a *App) GetGlobalClaudeMD() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get home dir: %w", err)
+	}
+	data, err := os.ReadFile(filepath.Join(home, ".claude", "CLAUDE.md"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("failed to read global CLAUDE.md: %w", err)
+	}
+	return string(data), nil
+}
+
+// SaveGlobalClaudeMD writes ~/.claude/CLAUDE.md
+func (a *App) SaveGlobalClaudeMD(content string) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get home dir: %w", err)
+	}
+	dir := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create .claude dir: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "CLAUDE.md"), []byte(content), 0644); err != nil {
+		return fmt.Errorf("failed to write global CLAUDE.md: %w", err)
+	}
+	return nil
+}
+
+// GetDefaultTemplateMD reads ~/.claudefu/default-templates/CLAUDE.md
+func (a *App) GetDefaultTemplateMD() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get home dir: %w", err)
+	}
+	data, err := os.ReadFile(filepath.Join(home, ".claudefu", "default-templates", "CLAUDE.md"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("failed to read default template CLAUDE.md: %w", err)
+	}
+	return string(data), nil
+}
+
+// SaveDefaultTemplateMD writes ~/.claudefu/default-templates/CLAUDE.md
+func (a *App) SaveDefaultTemplateMD(content string) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get home dir: %w", err)
+	}
+	dir := filepath.Join(home, ".claudefu", "default-templates")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create default-templates dir: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "CLAUDE.md"), []byte(content), 0644); err != nil {
+		return fmt.Errorf("failed to write default template CLAUDE.md: %w", err)
+	}
+	return nil
+}

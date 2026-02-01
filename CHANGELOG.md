@@ -5,6 +5,21 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] - 2026-02-01
+
+### Added
+- **CLAUDE.md Editing in Global Settings** — Two new tabs in Global Settings dialog
+  - "Global CLAUDE.md" edits `~/.claude/CLAUDE.md` (Claude Code's global instructions)
+  - "Default CLAUDE.md" edits `~/.claudefu/default-templates/CLAUDE.md` (template for new agents)
+  - Edit/Preview toggle with markdown rendering (ReactMarkdown + remark-gfm)
+  - Independent save per tab (CMD-S supported)
+- **CLAUDE.md Local/Global Tabs** — Agent CLAUDE.md dialog now has Local and Global tabs
+  - Local tab edits `{agent_folder}/CLAUDE.md` (unchanged behavior)
+  - Global tab edits `~/.claude/CLAUDE.md` (same file as Global Settings)
+
+### Fixed
+- **Placeholder text visibility** — Global CSS rule sets placeholder color to `#555` for clear distinction from input text
+
 ## [0.4.2] - 2026-01-31
 
 ### Added

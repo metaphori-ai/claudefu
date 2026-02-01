@@ -30,6 +30,10 @@ export function CancelSession(arg1, arg2) {
   return window['go']['main']['App']['CancelSession'](arg1, arg2);
 }
 
+export function CheckAgentScaffold(arg1) {
+  return window['go']['main']['App']['CheckAgentScaffold'](arg1);
+}
+
 export function CheckForUpdates() {
   return window['go']['main']['App']['CheckForUpdates']();
 }
@@ -140,6 +144,14 @@ export function GetDefaultMCPToolInstructions() {
 
 export function GetDefaultPermissionSets() {
   return window['go']['main']['App']['GetDefaultPermissionSets']();
+}
+
+export function GetDefaultTemplateMD() {
+  return window['go']['main']['App']['GetDefaultTemplateMD']();
+}
+
+export function GetGlobalClaudeMD() {
+  return window['go']['main']['App']['GetGlobalClaudeMD']();
 }
 
 export function GetGlobalDirectories() {
@@ -342,8 +354,16 @@ export function SaveDefaultPermissionSets(arg1) {
   return window['go']['main']['App']['SaveDefaultPermissionSets'](arg1);
 }
 
+export function SaveDefaultTemplateMD(arg1) {
+  return window['go']['main']['App']['SaveDefaultTemplateMD'](arg1);
+}
+
 export function SaveFile(arg1) {
   return window['go']['main']['App']['SaveFile'](arg1);
+}
+
+export function SaveGlobalClaudeMD(arg1) {
+  return window['go']['main']['App']['SaveGlobalClaudeMD'](arg1);
 }
 
 export function SaveGlobalPermissions(arg1) {
@@ -368,6 +388,10 @@ export function SaveWorkspace(arg1) {
 
 export function SaveWorkspaceWithRename(arg1, arg2) {
   return window['go']['main']['App']['SaveWorkspaceWithRename'](arg1, arg2);
+}
+
+export function ScaffoldAgent(arg1, arg2) {
+  return window['go']['main']['App']['ScaffoldAgent'](arg1, arg2);
 }
 
 export function SelectDirectory(arg1) {

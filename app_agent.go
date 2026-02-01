@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	"claudefu/internal/permissions"
+	"claudefu/internal/scaffold"
+	"claudefu/internal/session"
 	"claudefu/internal/types"
 	"claudefu/internal/workspace"
 )
@@ -25,7 +27,53 @@ func (a *App) getAgentByID(agentID string) *workspace.Agent {
 	return nil
 }
 
-// AddAgent adds a new agent to the current workspace
+// CheckAgentScaffold checks what setup items exist for a folder (bound to frontend).
+func (a *App) CheckAgentScaffold(folder string) (*scaffold.ScaffoldCheck, error) {
+	return scaffold.CheckAgentSetup(folder)
+}
+
+// ScaffoldResult is the result of scaffolding an agent folder.
+type ScaffoldResult struct {
+	SessionID string `json:"sessionId"` // Non-empty if a first session was created
+}
+
+// ScaffoldAgent creates selected missing items for a folder (bound to frontend).
+// If ProjectsDir is created, also creates a first session and returns its ID.
+func (a *App) ScaffoldAgent(folder string, opts scaffold.ScaffoldOptions) (*ScaffoldResult, error) {
+	configPath := ""
+	if a.settings != nil {
+		configPath = a.settings.GetConfigPath()
+	}
+
+	if err := scaffold.EnsureAgentSetup(folder, configPath, opts); err != nil {
+		return nil, err
+	}
+
+	// Permissions are handled here because they need App methods
+	if opts.Permissions {
+		a.copyGlobalPermissionsToAgent(folder)
+		a.applyDefaultPermissionSets(folder)
+	}
+
+	result := &ScaffoldResult{}
+
+	// If we just created the projects dir, create a first session too
+	if opts.ProjectsDir {
+		svc := session.NewService()
+		sessionID, err := svc.CreateSession(folder)
+		if err != nil {
+			fmt.Printf("[WARN] ScaffoldAgent: failed to create first session: %v\n", err)
+		} else {
+			result.SessionID = sessionID
+			fmt.Printf("[DEBUG] ScaffoldAgent: created first session %s for %s\n", sessionID[:8], folder)
+		}
+	}
+
+	return result, nil
+}
+
+// AddAgent adds a new agent to the current workspace.
+// Note: Scaffold + permissions are handled by the frontend via ScaffoldAgent before calling this.
 func (a *App) AddAgent(name, folder string) (*workspace.Agent, error) {
 	if a.currentWorkspace == nil {
 		return nil, fmt.Errorf("no workspace loaded")
@@ -43,13 +91,6 @@ func (a *App) AddAgent(name, folder string) (*workspace.Agent, error) {
 	if err := a.workspace.SaveWorkspace(a.currentWorkspace); err != nil {
 		return nil, err
 	}
-
-	// Copy global ClaudeFu permissions to the new agent
-	a.copyGlobalPermissionsToAgent(folder)
-
-	// Also apply legacy default permission sets (writes to Claude's settings.local.json)
-	// This maintains backward compatibility for users who also use Claude CLI directly
-	a.applyDefaultPermissionSets(folder)
 
 	// Start watching the new agent
 	if a.watcher != nil && a.rt != nil {

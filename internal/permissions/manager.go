@@ -188,8 +188,10 @@ func (m *Manager) CopyGlobalToAgent(agentFolder string) error {
 	}
 
 	// Mark as not inheriting (it's now a copy)
+	// Don't copy additionalDirectories — those stay global-only
 	permsCopy := *globalPerms
 	permsCopy.InheritFromGlobal = false
+	permsCopy.AdditionalDirectories = []string{}
 
 	return m.SaveAgentPermissions(agentFolder, &permsCopy)
 }

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { DialogBase } from './DialogBase';
-import { GetClaudeMD, SaveClaudeMD } from '../../wailsjs/go/main/App';
+import { GetClaudeMD, SaveClaudeMD, GetGlobalClaudeMD, SaveGlobalClaudeMD } from '../../wailsjs/go/main/App';
 import { useSaveShortcut } from '../hooks';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -18,8 +18,9 @@ export function ClaudeSettingsDialog({
   folder,
   agentName,
 }: ClaudeSettingsDialogProps) {
-  // CLAUDE.md state
-  const [content, setContent] = useState('');
+  const [activeTab, setActiveTab] = useState<'local' | 'global'>('local');
+  const [localContent, setLocalContent] = useState('');
+  const [globalContent, setGlobalContent] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -29,7 +30,7 @@ export function ClaudeSettingsDialog({
   // Load data when dialog opens
   useEffect(() => {
     if (isOpen) {
-      loadClaudeMD();
+      loadBoth();
     }
   }, [isOpen, folder]);
 
@@ -41,37 +42,46 @@ export function ClaudeSettingsDialog({
     }
   }, [saved]);
 
-  const loadClaudeMD = async () => {
+  const loadBoth = async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await GetClaudeMD(folder);
-      setContent(data);
-    } catch (err) {
-      // File might not exist, which is fine
-      setContent('');
+      let local = '';
+      let global = '';
+      try { local = await GetClaudeMD(folder); } catch { /* ok */ }
+      try { global = await GetGlobalClaudeMD(); } catch { /* ok */ }
+      setLocalContent(local);
+      setGlobalContent(global);
     } finally {
       setLoading(false);
     }
   };
 
+  const content = activeTab === 'local' ? localContent : globalContent;
+  const setContent = activeTab === 'local' ? setLocalContent : setGlobalContent;
+
   const handleSave = useCallback(async () => {
     setSaving(true);
     setError(null);
     try {
-      await SaveClaudeMD(folder, content);
+      if (activeTab === 'local') {
+        await SaveClaudeMD(folder, localContent);
+      } else {
+        await SaveGlobalClaudeMD(globalContent);
+      }
       setSaved(true);
     } catch (err) {
       setError(`Failed to save: ${err}`);
     } finally {
       setSaving(false);
     }
-  }, [folder, content]);
+  }, [activeTab, folder, localContent, globalContent]);
 
   // CMD-S to save
   useSaveShortcut(isOpen, handleSave);
 
   const displayTitle = agentName ? `${agentName} // CLAUDE.md` : 'CLAUDE.md';
+  const pathDisplay = activeTab === 'local' ? `${folder}/CLAUDE.md` : '~/.claude/CLAUDE.md';
 
   return (
     <DialogBase
@@ -82,6 +92,33 @@ export function ClaudeSettingsDialog({
       height="600px"
     >
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        {/* Tab Bar */}
+        <div style={{
+          display: 'flex',
+          borderBottom: '1px solid #333',
+          background: '#0d0d0d',
+          flexShrink: 0,
+        }}>
+          {(['local', 'global'] as const).map(tab => (
+            <button
+              key={tab}
+              onClick={() => { setActiveTab(tab); setSaved(false); }}
+              style={{
+                padding: '0.6rem 1.25rem',
+                border: 'none',
+                background: 'transparent',
+                color: activeTab === tab ? '#fff' : '#666',
+                borderBottom: activeTab === tab ? '2px solid #d97757' : '2px solid transparent',
+                cursor: 'pointer',
+                fontSize: '0.8rem',
+                fontWeight: activeTab === tab ? 500 : 400,
+              }}
+            >
+              {tab === 'local' ? 'Local' : 'Global'}
+            </button>
+          ))}
+        </div>
+
         {/* Header with path and view toggle */}
         <div style={{
           padding: '0.5rem 1rem',
@@ -98,7 +135,7 @@ export function ClaudeSettingsDialog({
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
           }}>
-            {folder}/CLAUDE.md
+            {pathDisplay}
           </div>
           {/* View Mode Toggle */}
           <div style={{ display: 'flex', gap: '2px', background: '#0d0d0d', borderRadius: '4px', padding: '2px' }}>

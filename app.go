@@ -3,11 +3,13 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 
 	wailsrt "github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"claudefu/internal/auth"
+	"claudefu/internal/defaults"
 	"claudefu/internal/mcpserver"
 	"claudefu/internal/providers"
 	"claudefu/internal/runtime"
@@ -176,6 +178,29 @@ func (a *App) loadPersistedState() {
 
 	// Initialize session service (instant session creation)
 	a.sessionService = session.NewService()
+
+	// Ensure default templates exist (UPSERT: create if missing, never overwrite)
+	a.ensureDefaultTemplates()
+}
+
+// ensureDefaultTemplates creates ~/.claudefu/default-templates/ with default files if missing.
+func (a *App) ensureDefaultTemplates() {
+	if a.settings == nil {
+		return
+	}
+	templatesDir := filepath.Join(a.settings.GetConfigPath(), "default-templates")
+	if err := os.MkdirAll(templatesDir, 0755); err != nil {
+		wailsrt.LogWarning(a.ctx, fmt.Sprintf("Failed to create default-templates dir: %v", err))
+		return
+	}
+
+	// CLAUDE.md template — only write if missing
+	claudeMDPath := filepath.Join(templatesDir, "CLAUDE.md")
+	if _, err := os.Stat(claudeMDPath); os.IsNotExist(err) {
+		if err := os.WriteFile(claudeMDPath, []byte(defaults.ClaudeMDTemplate()), 0644); err != nil {
+			wailsrt.LogWarning(a.ctx, fmt.Sprintf("Failed to write default CLAUDE.md template: %v", err))
+		}
+	}
 }
 
 // loadCurrentWorkspace loads the current workspace and migrates if needed
