@@ -101,10 +101,11 @@ func (s *MCPService) handleAgentQuery(ctx context.Context, req mcp.CallToolReque
 	// both parent and child Claude would connect to the same MCP SSE server.
 	// The child is a stateless query - it doesn't need inter-agent tools.
 	// We also disallow Task to prevent spawning subagents (causes concurrent API conflicts).
+	// Prepend "AgentQuery: " so session list shows these as queries, not regular sessions.
 	args := []string{
 		"--print",
 		"--disallowed-tools", "Task",
-		"-p", query,
+		"-p", "AgentQuery: " + query,
 	}
 
 	// Only append system prompt if configured
@@ -194,10 +195,11 @@ func (s *MCPService) handleSelfQuery(ctx context.Context, req mcp.CallToolReques
 	// both parent and child Claude would connect to the same MCP SSE server.
 	// The child is a stateless query - it doesn't need inter-agent tools.
 	// We also disallow Task to prevent spawning subagents (causes concurrent API conflicts).
+	// Prepend "SelfQuery: " so session list shows these as self-queries, not regular sessions.
 	args := []string{
 		"--print",
 		"--disallowed-tools", "Task",
-		"-p", query,
+		"-p", "SelfQuery: " + query,
 	}
 
 	// Only append system prompt if configured

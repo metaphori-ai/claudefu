@@ -5,6 +5,11 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.8] - 2026-02-01
+
+### Improved
+- **AgentQuery/SelfQuery session labels** — Prepend "AgentQuery: " and "SelfQuery: " to spawned queries so they're identifiable in the session list
+
 ## [0.4.6] - 2026-02-01
 
 ### Fixed
