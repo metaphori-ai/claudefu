@@ -1,11 +1,15 @@
 package mcpserver
 
 import (
+	_ "embed"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"sync"
 )
+
+//go:embed default_tool_instructions.json
+var defaultInstructionsJSON []byte
 
 const (
 	ToolInstructionsFile = "mcp_tool_instructions.json"
@@ -23,6 +27,8 @@ type ToolInstructions struct {
 	SelfQuerySystemPrompt   string `json:"selfQuerySystemPrompt"`   // System prompt appended to SelfQuery calls
 	BrowserAgent            string `json:"browserAgent"`            // BrowserAgent tool description
 	RequestToolPermission   string `json:"requestToolPermission"`   // RequestToolPermission tool description
+	CompactionPrompt        string `json:"compactionPrompt"`        // Compaction summary prompt (not yet wired)
+	CompactionContinuation  string `json:"compactionContinuation"`  // Post-compaction continuation message (not yet wired)
 }
 
 // ToolInstructionsManager handles loading and saving tool instructions
@@ -43,89 +49,15 @@ func NewToolInstructionsManager(configPath string) *ToolInstructionsManager {
 	return m
 }
 
-// DefaultToolInstructions returns the default instructions for all MCP tools
+// DefaultToolInstructions returns the default instructions for all MCP tools.
+// Defaults are loaded from the embedded default_tool_instructions.json file.
 func DefaultToolInstructions() *ToolInstructions {
-	return &ToolInstructions{
-		AgentQuery: `Send a stateless query to another agent in your workspace. Returns their response synchronously.
-
-The target agent will receive your query with context that it's from another agent, and will respond concisely with facts only.
-
-Use this when you need information from another agent's domain (e.g., asking the backend agent about an API endpoint signature).`,
-
-		AgentQuerySystemPrompt: `You are responding to a query from another agent. Respond concisely with facts only. Do NOT offer to make changes or ask follow-up questions.`,
-
-		AgentMessage: `Send a message to one or more specific agents' inboxes. The message will appear in ClaudeFu UI for the user to review and inject into that agent's conversation when ready.
-
-Use this for:
-- Notifying specific agents of changes (e.g., "API schema updated")
-- Sharing information that doesn't need immediate response
-- Coordinating across agents without blocking
-
-The user controls when/if the message gets injected into the target agent's context.
-
-You must specify which agent(s) to message. Use AgentBroadcast if you need to message ALL agents.`,
-
-		AgentBroadcast: `Broadcast a message to ALL agents' inboxes in the workspace. This is rarely needed - prefer AgentMessage for targeted communication.
-
-Use this ONLY when you need to notify every agent about something (e.g., major architectural changes affecting all agents).
-
-The user controls when/if the message gets injected into each agent's context.`,
-
-		NotifyUser: `Display a notification to the user in the ClaudeFu UI.
-
-Use this for:
-- Important status updates (e.g., "Build complete")
-- Warnings that need user attention
-- Success confirmations
-- Questions that need user awareness (not blocking questions)`,
-
-		AskUserQuestion: `Ask the user a question and wait for their response. This tool blocks until the user answers or skips the question.
-
-Use this to:
-- Get user preferences or decisions
-- Clarify ambiguous requirements
-- Offer choices about implementation direction
-
-The question will appear as a dialog in ClaudeFu UI. You can provide multiple choice options for the user.`,
-
-		SelfQuery: `Query your own codebase with full CLAUDE.md context. This spawns a stateless Claude that has access to all your project instructions.
-
-Use this when you need:
-- Deep codebase analysis with full architectural context
-- Quick focused questions that benefit from project knowledge
-- Sub-tasks that don't need their own session history
-
-Unlike Task subagents, SelfQuery has access to CLAUDE.md and all includes.
-
-IMPORTANT: You must provide your agent slug in from_agent so we can identify your folder.`,
-
-		SelfQuerySystemPrompt: `You are responding to a self-query from the same agent. You have full access to CLAUDE.md and project context. Respond with precise, actionable information. Do NOT offer to make changes or ask follow-up questions.`,
-
-		BrowserAgent: `Delegate visual/DOM/CSS investigation to Claude in Browser.
-
-Use this when you need:
-- CSS debugging (computed styles, layout issues)
-- DOM inspection (rendered state, event listeners, a11y tree)
-- Visual verification (screenshots, layout description)
-- Runtime JS execution in browser context
-
-Note: This tool requires the Chrome extension bridge to be running.
-Timeout defaults to 10 minutes - complex investigations take time.`,
-
-		RequestToolPermission: `Request permission to use a tool or command that isn't pre-approved.
-
-Use this when:
-- You need to run a bash command that requires explicit approval (e.g., git push, npm publish)
-- You want to use a tool that was denied in the permission settings
-- You need elevated permissions for a one-time operation
-
-The user can:
-- Grant permission for this one time
-- Grant permission permanently (adds to allow list)
-- Deny the permission
-
-Always explain WHY you need the permission so the user can make an informed decision.`,
+	var ti ToolInstructions
+	if err := json.Unmarshal(defaultInstructionsJSON, &ti); err != nil {
+		// Should never happen with a valid embedded file
+		panic("failed to unmarshal embedded default_tool_instructions.json: " + err.Error())
 	}
+	return &ti
 }
 
 // GetInstructions returns the current tool instructions
@@ -219,6 +151,14 @@ func (m *ToolInstructionsManager) load() error {
 	}
 	if ti.RequestToolPermission == "" {
 		ti.RequestToolPermission = defaults.RequestToolPermission
+		needsSave = true
+	}
+	if ti.CompactionPrompt == "" {
+		ti.CompactionPrompt = defaults.CompactionPrompt
+		needsSave = true
+	}
+	if ti.CompactionContinuation == "" {
+		ti.CompactionContinuation = defaults.CompactionContinuation
 		needsSave = true
 	}
 

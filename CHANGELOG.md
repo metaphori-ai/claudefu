@@ -16,6 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Deduplication: if folder already exists as agent, selects it instead of duplicating
   - Homebrew cask already symlinks binary to `claudefu` on PATH
 
+- **Externalized MCP Tool Instructions** - Default tool prompts moved from hardcoded Go strings to `default_tool_instructions.json` (embedded via `go:embed`)
+  - Single source of truth for all default prompts (12 fields including compaction prompts)
+  - `~/.claudefu/mcp_tool_instructions.json` auto-generated on first launch with identical format
+  - New fields auto-backfilled on upgrade without losing user customizations
+- **Compaction Prompts** - Added configurable `compactionPrompt` and `compactionContinuation` to tool instructions
+  - Stored in same format as all other tool instructions
+  - Customizable via MCP Settings pane (not yet wired to compaction flow)
+
 ### Changed
 - **Slug-Based Plan File Detection** - Replaced regex content scanning with JSONL slug field
   - Plan file path now derived from session slug: `~/.claude/plans/{slug}.md`

@@ -797,6 +797,7 @@ export namespace types {
 	    isSynthetic?: boolean;
 	    stopReason?: string;
 	    usage?: TokenUsage;
+	    slug?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Message(source);
@@ -815,6 +816,7 @@ export namespace types {
 	        this.isSynthetic = source["isSynthetic"];
 	        this.stopReason = source["stopReason"];
 	        this.usage = this.convertValues(source["usage"], TokenUsage);
+	        this.slug = source["slug"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
