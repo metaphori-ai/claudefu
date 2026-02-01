@@ -70,7 +70,9 @@ export function ScaffoldDialog({
         permissions: selected.permissions || false,
       });
       await onConfirm(opts);
-      onClose();
+      // Don't call onClose() here — onConfirm already handles state cleanup
+      // (setScaffoldDialog(null)). Calling onClose would trigger its cancel logic
+      // which clears the session selection that onConfirm just set.
     } catch (err) {
       console.error('Scaffold failed:', err);
     } finally {

@@ -671,17 +671,24 @@ function AppContent() {
   };
 
   // Completes the add-agent flow (called directly or after scaffold dialog)
-  const completeAddAgent = async (folder: string, name: string) => {
+  // scaffoldSessionId: if scaffold just created a first session, select it
+  const completeAddAgent = async (folder: string, name: string, scaffoldSessionId?: string) => {
     try {
       const newAgent = await AddAgent(name, folder);
-      addAgent(newAgent);
 
-      const sessions = await GetSessions(newAgent.id);
-      if (sessions && sessions.length > 0) {
-        const newestSession = sessions[0];
+      // RefreshSessions ensures the backend discovers any scaffold-created session
+      const sessions = await RefreshSessions(newAgent.id);
+      const sessionToSelect = scaffoldSessionId
+        || (sessions && sessions.length > 0 ? sessions[0].id : null);
+
+      // Batch all state updates together (addAgent + selectAgent + selectSession)
+      // to avoid intermediate renders where agent exists but no session is selected
+      addAgent(newAgent);
+      if (sessionToSelect) {
         selectAgent(newAgent.id);
-        selectSession(newestSession.id, folder);
-        setAgentSelectedSession(newAgent.id, newestSession.id);
+        selectSession(sessionToSelect, folder);
+        setAgentSelectedSession(newAgent.id, sessionToSelect);
+        setReloadKey(prev => prev + 1);
       } else {
         selectAgent(newAgent.id);
         clearSelection();
@@ -1763,7 +1770,7 @@ function AppContent() {
               await RefreshSessions(scaffoldDialog.pendingAgentId);
             }
             if (scaffoldDialog.isAddAgent) {
-              await completeAddAgent(scaffoldDialog.folder, scaffoldDialog.name);
+              await completeAddAgent(scaffoldDialog.folder, scaffoldDialog.name, result?.sessionId);
             } else if (scaffoldDialog.pendingAgentId) {
               completeAgentSelect(scaffoldDialog.pendingAgentId, result?.sessionId);
             }
