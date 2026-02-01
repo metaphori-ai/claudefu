@@ -335,6 +335,7 @@ export namespace mcpserver {
 	    selfQuery: boolean;
 	    browserAgent: boolean;
 	    requestToolPermission: boolean;
+	    exitPlanMode: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new ToolAvailability(source);
@@ -350,6 +351,7 @@ export namespace mcpserver {
 	        this.selfQuery = source["selfQuery"];
 	        this.browserAgent = source["browserAgent"];
 	        this.requestToolPermission = source["requestToolPermission"];
+	        this.exitPlanMode = source["exitPlanMode"];
 	    }
 	}
 	export class ToolInstructions {
@@ -363,6 +365,7 @@ export namespace mcpserver {
 	    selfQuerySystemPrompt: string;
 	    browserAgent: string;
 	    requestToolPermission: string;
+	    exitPlanMode: string;
 	    compactionPrompt: string;
 	    compactionContinuation: string;
 	
@@ -382,6 +385,7 @@ export namespace mcpserver {
 	        this.selfQuerySystemPrompt = source["selfQuerySystemPrompt"];
 	        this.browserAgent = source["browserAgent"];
 	        this.requestToolPermission = source["requestToolPermission"];
+	        this.exitPlanMode = source["exitPlanMode"];
 	        this.compactionPrompt = source["compactionPrompt"];
 	        this.compactionContinuation = source["compactionContinuation"];
 	    }

@@ -17,7 +17,7 @@ type Session = types.Session;
  */
 export function useWailsEvents() {
   const { workspaceId, addDiscoveredSession } = useWorkspace();
-  const { setUnreadTotal, setInboxCounts, setMCPPendingQuestion, setMCPPendingPermission, setAgentResponding } = useSession();
+  const { setUnreadTotal, setInboxCounts, setMCPPendingQuestion, setMCPPendingPermission, setMCPPendingPlanReview, setAgentResponding } = useSession();
   const {
     appendMessages,
     isMessageProcessed,
@@ -122,6 +122,33 @@ export function useWailsEvents() {
       EventsOff('mcp:permission-request');
     };
   }, [setMCPPendingPermission]);
+
+  // Subscribe to mcp:planreview events (MCP-based ExitPlanMode)
+  useEffect(() => {
+    const handlePlanReview = (envelope: {
+      payload?: {
+        id?: string;
+        agentSlug?: string;
+        createdAt?: string;
+      };
+    }) => {
+      if (!envelope?.payload?.id) {
+        return;
+      }
+
+      console.log('[MCP:PlanReview] Received plan review event:', envelope.payload.id?.substring(0, 8));
+      setMCPPendingPlanReview({
+        id: envelope.payload.id,
+        agentSlug: envelope.payload.agentSlug || 'unknown',
+        createdAt: envelope.payload.createdAt || new Date().toISOString(),
+      });
+    };
+
+    EventsOn('mcp:planreview', handlePlanReview);
+    return () => {
+      EventsOff('mcp:planreview');
+    };
+  }, [setMCPPendingPlanReview]);
 
   // Subscribe to mcp:inbox events
   useEffect(() => {

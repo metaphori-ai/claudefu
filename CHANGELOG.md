@@ -5,6 +5,19 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.5] - 2026-02-01
+
+### Added
+- **ExitPlanMode MCP tool** — Replaces Claude's built-in ExitPlanMode (which fails in non-interactive CLI mode) with a channel-based MCP tool following the same pattern as AskUserQuestion
+  - Plan SlideInPane auto-opens with Accept/Reject buttons when Claude calls ExitPlanMode
+  - Pulsing "Claude is waiting for your approval" indicator
+  - Reject with optional feedback text that Claude receives to iterate on the plan
+  - 10-minute timeout with graceful cancellation
+- **MCP Settings pane** — Added RequestToolPermission and ExitPlanMode to Tool Availability toggles and Tool Instructions editors
+
+### Fixed
+- **Tool availability defaults for new fields** — Existing `mcp_tool_availability.json` files missing new bool fields now correctly default to `true` instead of `false` (Go zero-value trap fix)
+
 ## [0.4.4] - 2026-02-01
 
 ### Fixed

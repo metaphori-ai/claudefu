@@ -11,6 +11,8 @@ import {mcpserver} from '../models';
 import {menu} from '../models';
 import {settings} from '../models';
 
+export function AcceptPlanReview(arg1:string):Promise<void>;
+
 export function AddAgent(arg1:string,arg2:string):Promise<workspace.Agent>;
 
 export function AlertDialog(arg1:string,arg2:string):Promise<void>;
@@ -169,6 +171,8 @@ export function RefreshMenu():Promise<void>;
 
 export function RefreshSessions(arg1:string):Promise<Array<types.Session>>;
 
+export function RejectPlanReview(arg1:string,arg2:string):Promise<void>;
+
 export function RemoveAgent(arg1:string):Promise<void>;
 
 export function RenameWorkspace(arg1:string,arg2:string):Promise<void>;
@@ -222,6 +226,8 @@ export function SetActiveSession(arg1:string,arg2:string):Promise<void>;
 export function SetSessionName(arg1:string,arg2:string,arg3:string):Promise<void>;
 
 export function SkipMCPQuestion(arg1:string):Promise<void>;
+
+export function SkipPlanReview(arg1:string):Promise<void>;
 
 export function StartHyperLogin():Promise<auth.DeviceAuthInfo>;
 

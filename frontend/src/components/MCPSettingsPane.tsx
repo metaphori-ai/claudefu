@@ -592,6 +592,34 @@ export function MCPSettingsPane({
                           <span style={{ color: '#666', marginLeft: '0.75rem', fontSize: '0.85rem' }}>Query own codebase</span>
                         </div>
                       </label>
+
+                      {/* RequestToolPermission */}
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={toolAvailability.requestToolPermission}
+                          onChange={(e) => updateAvailability('requestToolPermission', e.target.checked)}
+                          style={{ width: '18px', height: '18px', accentColor: '#8b5cf6' }}
+                        />
+                        <div>
+                          <span style={{ color: '#fff' }}>RequestToolPermission</span>
+                          <span style={{ color: '#666', marginLeft: '0.75rem', fontSize: '0.85rem' }}>Request permission for restricted tools</span>
+                        </div>
+                      </label>
+
+                      {/* ExitPlanMode */}
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={toolAvailability.exitPlanMode}
+                          onChange={(e) => updateAvailability('exitPlanMode', e.target.checked)}
+                          style={{ width: '18px', height: '18px', accentColor: '#8b5cf6' }}
+                        />
+                        <div>
+                          <span style={{ color: '#fff' }}>ExitPlanMode</span>
+                          <span style={{ color: '#666', marginLeft: '0.75rem', fontSize: '0.85rem' }}>Plan review approval flow</span>
+                        </div>
+                      </label>
                     </div>
                   </section>
 
@@ -923,6 +951,66 @@ export function MCPSettingsPane({
                       value={toolInstructions.browserAgent || ''}
                       onChange={(e) => updateInstruction('browserAgent', e.target.value)}
                       rows={6}
+                      style={{
+                        width: '100%',
+                        padding: '0.6rem',
+                        borderRadius: '4px',
+                        border: '1px solid #333',
+                        background: '#0a0a0a',
+                        color: '#fff',
+                        fontSize: '0.8rem',
+                        fontFamily: 'monospace',
+                        resize: 'vertical',
+                        lineHeight: '1.4',
+                      }}
+                    />
+                  </div>
+
+                  {/* RequestToolPermission */}
+                  <div>
+                    <label style={{
+                      display: 'block',
+                      color: '#8b5cf6',
+                      fontSize: '0.8rem',
+                      fontWeight: 500,
+                      marginBottom: '0.5rem',
+                    }}>
+                      RequestToolPermission
+                    </label>
+                    <textarea
+                      value={toolInstructions.requestToolPermission || ''}
+                      onChange={(e) => updateInstruction('requestToolPermission', e.target.value)}
+                      rows={5}
+                      style={{
+                        width: '100%',
+                        padding: '0.6rem',
+                        borderRadius: '4px',
+                        border: '1px solid #333',
+                        background: '#0a0a0a',
+                        color: '#fff',
+                        fontSize: '0.8rem',
+                        fontFamily: 'monospace',
+                        resize: 'vertical',
+                        lineHeight: '1.4',
+                      }}
+                    />
+                  </div>
+
+                  {/* ExitPlanMode */}
+                  <div>
+                    <label style={{
+                      display: 'block',
+                      color: '#8b5cf6',
+                      fontSize: '0.8rem',
+                      fontWeight: 500,
+                      marginBottom: '0.5rem',
+                    }}>
+                      ExitPlanMode
+                    </label>
+                    <textarea
+                      value={toolInstructions.exitPlanMode || ''}
+                      onChange={(e) => updateInstruction('exitPlanMode', e.target.value)}
+                      rows={5}
                       style={{
                         width: '100%',
                         padding: '0.6rem',

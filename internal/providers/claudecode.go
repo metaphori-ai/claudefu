@@ -278,6 +278,8 @@ func (s *ClaudeCodeService) buildPermissionArgs(folder string) []string {
 			"mcp__claudefu__AskUserQuestion",
 			"mcp__claudefu__SelfQuery",
 			"mcp__claudefu__BrowserAgent",
+			"mcp__claudefu__ExitPlanMode",
+			"mcp__claudefu__RequestToolPermission",
 		}
 		allowedPatterns = append(allowedPatterns, mcpTools...)
 	}
@@ -294,10 +296,10 @@ func (s *ClaudeCodeService) buildPermissionArgs(folder string) []string {
 	// - Or manually edit settings.local.json
 	denyPatterns := mgr.CompileDenyList(perms)
 
-	// Add built-in AskUserQuestion to deny list when MCP is configured
-	// This forces Claude to use our MCP version instead of built-in
+	// Add built-in tools to deny list when MCP is configured
+	// This forces Claude to use our MCP versions instead of built-in
 	if s.mcpConfig != "" {
-		denyPatterns = append(denyPatterns, "AskUserQuestion")
+		denyPatterns = append(denyPatterns, "AskUserQuestion", "ExitPlanMode")
 	}
 	if len(denyPatterns) > 0 {
 		args = append(args, "--disallowedTools", strings.Join(denyPatterns, ","))

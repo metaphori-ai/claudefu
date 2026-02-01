@@ -215,3 +215,50 @@ func (a *App) GetPendingPermissionRequests() []MCPPendingPermission {
 	}
 	return result
 }
+
+// =============================================================================
+// MCP PLAN REVIEW METHODS (Bound to frontend)
+// =============================================================================
+
+// MCPPendingPlanReview represents a pending plan review for the frontend
+type MCPPendingPlanReview struct {
+	ID        string `json:"id"`
+	AgentSlug string `json:"agentSlug"`
+	CreatedAt string `json:"createdAt"`
+}
+
+// AcceptPlanReview accepts a pending MCP plan review
+func (a *App) AcceptPlanReview(reviewID string) error {
+	if a.mcpServer == nil {
+		return fmt.Errorf("MCP server not initialized")
+	}
+	prm := a.mcpServer.GetPendingPlanReviews()
+	if prm == nil {
+		return fmt.Errorf("pending plan reviews manager not initialized")
+	}
+	return prm.Accept(reviewID)
+}
+
+// RejectPlanReview rejects a pending MCP plan review with optional feedback
+func (a *App) RejectPlanReview(reviewID string, feedback string) error {
+	if a.mcpServer == nil {
+		return fmt.Errorf("MCP server not initialized")
+	}
+	prm := a.mcpServer.GetPendingPlanReviews()
+	if prm == nil {
+		return fmt.Errorf("pending plan reviews manager not initialized")
+	}
+	return prm.Reject(reviewID, feedback)
+}
+
+// SkipPlanReview skips a pending MCP plan review
+func (a *App) SkipPlanReview(reviewID string) error {
+	if a.mcpServer == nil {
+		return fmt.Errorf("MCP server not initialized")
+	}
+	prm := a.mcpServer.GetPendingPlanReviews()
+	if prm == nil {
+		return fmt.Errorf("pending plan reviews manager not initialized")
+	}
+	return prm.Skip(reviewID)
+}

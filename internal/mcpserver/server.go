@@ -24,6 +24,7 @@ type MCPService struct {
 	toolAvailability   *ToolAvailabilityManager
 	pendingQuestions   *PendingQuestionManager
 	pendingPermissions *PendingPermissionRequestManager
+	pendingPlanReviews *PendingPlanReviewManager
 	port               int
 	ctx                context.Context
 	cancel             context.CancelFunc
@@ -42,6 +43,7 @@ func NewMCPService(port int, configPath string, inboxConfigPath string) *MCPServ
 		toolAvailability:   NewToolAvailabilityManager(configPath),
 		pendingQuestions:   NewPendingQuestionManager(),
 		pendingPermissions: NewPendingPermissionRequestManager(),
+		pendingPlanReviews: NewPendingPlanReviewManager(),
 	}
 }
 
@@ -90,6 +92,11 @@ func (s *MCPService) GetPendingPermissions() *PendingPermissionRequestManager {
 	return s.pendingPermissions
 }
 
+// GetPendingPlanReviews returns the pending plan reviews manager
+func (s *MCPService) GetPendingPlanReviews() *PendingPlanReviewManager {
+	return s.pendingPlanReviews
+}
+
 // Start starts the MCP server
 func (s *MCPService) Start() error {
 	s.mu.Lock()
@@ -126,6 +133,7 @@ func (s *MCPService) Start() error {
 	mcpServer.AddTool(CreateSelfQueryTool(instructions.SelfQuery), s.handleSelfQuery)
 	mcpServer.AddTool(CreateBrowserAgentTool(instructions.BrowserAgent), s.handleBrowserAgent)
 	mcpServer.AddTool(CreateRequestToolPermissionTool(instructions.RequestToolPermission), s.handleRequestToolPermission)
+	mcpServer.AddTool(CreateExitPlanModeTool(instructions.ExitPlanMode), s.handleExitPlanMode)
 
 	s.server = mcpServer
 
@@ -182,6 +190,11 @@ func (s *MCPService) Stop() {
 	// Cancel all pending permission requests
 	if s.pendingPermissions != nil {
 		s.pendingPermissions.CancelAll()
+	}
+
+	// Cancel all pending plan reviews
+	if s.pendingPlanReviews != nil {
+		s.pendingPlanReviews.CancelAll()
 	}
 
 	// Close inbox database

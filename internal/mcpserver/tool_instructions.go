@@ -25,6 +25,7 @@ type ToolInstructions struct {
 	SelfQuerySystemPrompt   string `json:"selfQuerySystemPrompt"`   // System prompt appended to SelfQuery calls
 	BrowserAgent            string `json:"browserAgent"`            // BrowserAgent tool description
 	RequestToolPermission   string `json:"requestToolPermission"`   // RequestToolPermission tool description
+	ExitPlanMode            string `json:"exitPlanMode"`            // ExitPlanMode tool description
 	CompactionPrompt        string `json:"compactionPrompt"`        // Compaction summary prompt (not yet wired)
 	CompactionContinuation  string `json:"compactionContinuation"`  // Post-compaction continuation message (not yet wired)
 }
@@ -149,6 +150,10 @@ func (m *ToolInstructionsManager) load() error {
 	}
 	if ti.RequestToolPermission == "" {
 		ti.RequestToolPermission = defaults.RequestToolPermission
+		needsSave = true
+	}
+	if ti.ExitPlanMode == "" {
+		ti.ExitPlanMode = defaults.ExitPlanMode
 		needsSave = true
 	}
 	if ti.CompactionPrompt == "" {

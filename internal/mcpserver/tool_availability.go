@@ -21,6 +21,7 @@ type ToolAvailability struct {
 	SelfQuery             bool `json:"selfQuery"`
 	BrowserAgent          bool `json:"browserAgent"`          // Disabled by default, password-protected
 	RequestToolPermission bool `json:"requestToolPermission"` // Enabled by default
+	ExitPlanMode          bool `json:"exitPlanMode"`          // Enabled by default
 }
 
 // ToolAvailabilityManager handles loading and saving tool availability settings
@@ -52,6 +53,7 @@ func DefaultToolAvailability() *ToolAvailability {
 		SelfQuery:             true,
 		BrowserAgent:          false, // Disabled by default - requires password to enable
 		RequestToolPermission: true,  // Enabled by default
+		ExitPlanMode:          true,  // Enabled by default
 	}
 }
 
@@ -84,6 +86,8 @@ func (m *ToolAvailabilityManager) IsEnabled(toolName string) bool {
 		return m.availability.BrowserAgent
 	case "RequestToolPermission":
 		return m.availability.RequestToolPermission
+	case "ExitPlanMode":
+		return m.availability.ExitPlanMode
 	default:
 		return false
 	}
@@ -127,7 +131,9 @@ func (m *ToolAvailabilityManager) load() error {
 		return err
 	}
 
-	var ta ToolAvailability
+	// Start from defaults so new fields get their default values
+	// (otherwise missing JSON keys unmarshal to false)
+	ta := *DefaultToolAvailability()
 	if err := json.Unmarshal(data, &ta); err != nil {
 		return err
 	}

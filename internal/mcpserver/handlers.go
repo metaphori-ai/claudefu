@@ -718,3 +718,77 @@ func (s *MCPService) handleRequestToolPermission(ctx context.Context, req mcp.Ca
 		return mcp.NewToolResultError(fmt.Sprintf("Permission request timed out after %v", timeout)), nil
 	}
 }
+
+// handleExitPlanMode handles the ExitPlanMode tool call
+// This replaces Claude's built-in ExitPlanMode which fails in non-interactive CLI mode
+func (s *MCPService) handleExitPlanMode(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// Check tool availability
+	if !s.toolAvailability.IsEnabled("ExitPlanMode") {
+		return mcp.NewToolResultError("ExitPlanMode tool is disabled. Enable in MCP Settings > Tool Availability."), nil
+	}
+
+	// Get the raw arguments
+	args, _ := req.Params.Arguments.(map[string]any)
+
+	// Optional: get from_agent for logging
+	fromAgent := "unknown"
+	if args != nil {
+		if fa, ok := args["from_agent"].(string); ok && fa != "" {
+			fromAgent = fa
+		}
+	}
+
+	fmt.Printf("[MCP:ExitPlanMode] Received plan review request from agent %s\n", fromAgent)
+
+	// Create pending plan review with response channel
+	pr := s.pendingPlanReviews.Create(fromAgent)
+
+	// Emit event to frontend to show plan review UI
+	s.emitFunc(types.EventEnvelope{
+		EventType: "mcp:planreview",
+		Payload: map[string]any{
+			"id":        pr.ID,
+			"agentSlug": pr.AgentSlug,
+			"createdAt": pr.CreatedAt.Format(time.RFC3339),
+		},
+	})
+
+	// Block waiting for response, timeout, or context cancellation
+	timeout := s.pendingPlanReviews.GetTimeout()
+	select {
+	case answer, ok := <-pr.ResponseCh:
+		if !ok {
+			// Channel was closed (cancelled)
+			return mcp.NewToolResultError("Plan review was cancelled"), nil
+		}
+		if answer.Skipped {
+			return mcp.NewToolResultError("User skipped the plan review"), nil
+		}
+		if answer.Accepted {
+			fmt.Printf("[MCP:ExitPlanMode] Plan accepted for review %s\n", pr.ID[:8])
+			return mcp.NewToolResultText("Plan approved by user. You can now proceed with implementation."), nil
+		}
+		// Rejected with feedback
+		feedback := answer.Feedback
+		if feedback == "" {
+			feedback = "User rejected the plan without specific feedback."
+		}
+		fmt.Printf("[MCP:ExitPlanMode] Plan rejected for review %s: %s\n", pr.ID[:8], feedback)
+		return mcp.NewToolResultText(fmt.Sprintf("Plan rejected by user. Feedback: %s\n\nPlease revise your plan based on this feedback and try ExitPlanMode again when ready.", feedback)), nil
+
+	case <-ctx.Done():
+		// Context cancelled (e.g., Claude disconnected)
+		s.pendingPlanReviews.Cancel(pr.ID)
+		return mcp.NewToolResultError("Request cancelled"), nil
+
+	case <-s.ctx.Done():
+		// Server shutting down
+		s.pendingPlanReviews.Cancel(pr.ID)
+		return mcp.NewToolResultError("Server shutting down"), nil
+
+	case <-time.After(timeout):
+		// Timeout
+		s.pendingPlanReviews.Cancel(pr.ID)
+		return mcp.NewToolResultError(fmt.Sprintf("Plan review timed out after %v", timeout)), nil
+	}
+}

@@ -170,6 +170,17 @@ func CreateBrowserAgentTool(instruction string) mcp.Tool {
 	)
 }
 
+// CreateExitPlanModeTool creates the ExitPlanMode tool definition
+// This replaces Claude's built-in ExitPlanMode which fails in non-interactive CLI mode
+func CreateExitPlanModeTool(instruction string) mcp.Tool {
+	return mcp.NewTool("ExitPlanMode",
+		mcp.WithDescription(instruction),
+		mcp.WithString("from_agent",
+			mcp.Description("Your agent name/slug for identification (optional)"),
+		),
+	)
+}
+
 // CreateRequestToolPermissionTool creates the RequestToolPermission tool definition
 // This tool allows Claude to request runtime permission for a tool/command that isn't pre-approved
 func CreateRequestToolPermissionTool(instruction string) mcp.Tool {

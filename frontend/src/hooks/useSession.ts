@@ -1,5 +1,5 @@
 import { useContext, useCallback } from 'react';
-import { SessionContext, SessionAction, MCPPendingQuestion, MCPPendingPermission, QueuedMessage } from '../context/SessionContext';
+import { SessionContext, SessionAction, MCPPendingQuestion, MCPPendingPermission, MCPPendingPlanReview, QueuedMessage } from '../context/SessionContext';
 import { mcpserver } from '../../wailsjs/go/models';
 import { Attachment } from '../components/chat/types';
 
@@ -74,6 +74,10 @@ export function useSession() {
     dispatch({ type: 'SET_MCP_PENDING_PERMISSION', payload: permission });
   }, [dispatch]);
 
+  const setMCPPendingPlanReview = useCallback((review: MCPPendingPlanReview | null) => {
+    dispatch({ type: 'SET_MCP_PENDING_PLAN_REVIEW', payload: review });
+  }, [dispatch]);
+
   // Per-agent "Claude is responding" state
   const setAgentResponding = useCallback((agentId: string, isResponding: boolean) => {
     dispatch({ type: 'SET_AGENT_RESPONDING', payload: { agentId, isResponding } });
@@ -132,6 +136,7 @@ export function useSession() {
     inboxDialogAgentId: state.inboxDialogAgentId,
     mcpPendingQuestion: state.mcpPendingQuestion,
     mcpPendingPermission: state.mcpPendingPermission,
+    mcpPendingPlanReview: state.mcpPendingPlanReview,
     respondingAgents: state.respondingAgents,
     messageQueues: state.messageQueues,
     lastSessionIds: state.lastSessionIds,
@@ -152,6 +157,7 @@ export function useSession() {
     removeInboxMessage,
     setMCPPendingQuestion,
     setMCPPendingPermission,
+    setMCPPendingPlanReview,
     setAgentResponding,
     isAgentResponding,
     // Message Queue actions

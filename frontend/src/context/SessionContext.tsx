@@ -25,6 +25,13 @@ export interface MCPPendingQuestion {
   createdAt: string;
 }
 
+// MCP Pending Plan Review from backend event
+export interface MCPPendingPlanReview {
+  id: string;
+  agentSlug: string;
+  createdAt: string;
+}
+
 // MCP Pending Permission Request from backend event
 export interface MCPPendingPermission {
   id: string;
@@ -50,6 +57,8 @@ export interface SessionState {
   mcpPendingQuestion: MCPPendingQuestion | null;
   // MCP Permission Request dialog state
   mcpPendingPermission: MCPPendingPermission | null;
+  // MCP Plan Review dialog state
+  mcpPendingPlanReview: MCPPendingPlanReview | null;
   // Per-agent "Claude is responding" state (survives agent switching)
   respondingAgents: Map<string, boolean>;
   // Per-agent message queue (for queuing messages while Claude is responding)
@@ -74,6 +83,7 @@ export type SessionAction =
   | { type: 'REMOVE_INBOX_MESSAGE'; payload: string }
   | { type: 'SET_MCP_PENDING_QUESTION'; payload: MCPPendingQuestion | null }
   | { type: 'SET_MCP_PENDING_PERMISSION'; payload: MCPPendingPermission | null }
+  | { type: 'SET_MCP_PENDING_PLAN_REVIEW'; payload: MCPPendingPlanReview | null }
   | { type: 'SET_AGENT_RESPONDING'; payload: { agentId: string; isResponding: boolean } }
   // Message Queue actions
   | { type: 'ADD_TO_QUEUE'; payload: { agentId: string; message: QueuedMessage } }
@@ -95,6 +105,7 @@ const initialState: SessionState = {
   inboxDialogAgentId: null,
   mcpPendingQuestion: null,
   mcpPendingPermission: null,
+  mcpPendingPlanReview: null,
   respondingAgents: new Map(),
   messageQueues: new Map(),
   lastSessionIds: new Map(),
@@ -207,6 +218,12 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
       return {
         ...state,
         mcpPendingPermission: action.payload,
+      };
+
+    case 'SET_MCP_PENDING_PLAN_REVIEW':
+      return {
+        ...state,
+        mcpPendingPlanReview: action.payload,
       };
 
     case 'SET_AGENT_RESPONDING': {

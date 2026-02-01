@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { GetConversationPaged, SetActiveSession, ClearActiveSession, SendMessage, MarkSessionViewed, NewSession, ReadPlanFile, TouchPlanFile, AnswerQuestion, CancelSession } from '../../wailsjs/go/main/App';
+import { GetConversationPaged, SetActiveSession, ClearActiveSession, SendMessage, MarkSessionViewed, NewSession, ReadPlanFile, TouchPlanFile, AnswerQuestion, CancelSession, AcceptPlanReview, RejectPlanReview } from '../../wailsjs/go/main/App';
 import { types } from '../../wailsjs/go/models';
 
 // Extracted components
@@ -34,6 +34,10 @@ const spinnerStyles = `
   @keyframes spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
   }
 `;
 
@@ -76,7 +80,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
   const isLoading = localLoading || isContextLoading;
 
   // Per-agent "responding" state from context (survives agent switching)
-  const { setAgentResponding, isAgentResponding, addToQueue, removeFromQueue, shiftQueue, getQueue, setLastSessionId } = useSession();
+  const { setAgentResponding, isAgentResponding, addToQueue, removeFromQueue, shiftQueue, getQueue, setLastSessionId, mcpPendingPlanReview, setMCPPendingPlanReview } = useSession();
   const isSending = isAgentResponding(agentId);
   const queue = getQueue(agentId);
 
@@ -99,6 +103,8 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
   const [planContent, setPlanContent] = useState<string | null>(null);
   const [claudeSettingsOpen, setClaudeSettingsOpen] = useState(false);
   const [permissionsDialogOpen, setPermissionsDialogOpen] = useState(false);
+  const [planReviewFeedback, setPlanReviewFeedback] = useState('');
+  const [planReviewSubmitting, setPlanReviewSubmitting] = useState(false);
 
   // Derive session slug from messages (any message with a slug field)
   const sessionSlug = useMemo(() => {
@@ -107,6 +113,57 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
     }
     return null;
   }, [messages]);
+
+  // Auto-open plan pane when MCP plan review arrives
+  useEffect(() => {
+    if (mcpPendingPlanReview && sessionSlug) {
+      const openPlanForReview = async () => {
+        try {
+          const planPath = await TouchPlanFile(agentId, sessionId);
+          const content = await ReadPlanFile(planPath);
+          setPlanContent(content);
+          setPlanPaneOpen(true);
+          setPlanReviewFeedback('');
+        } catch (err) {
+          console.error('Failed to open plan for review:', err);
+        }
+      };
+      openPlanForReview();
+    }
+  }, [mcpPendingPlanReview, sessionSlug, agentId, sessionId]);
+
+  // Handle accepting a plan review
+  const handleAcceptPlanReview = async () => {
+    if (!mcpPendingPlanReview || planReviewSubmitting) return;
+    setPlanReviewSubmitting(true);
+    try {
+      await AcceptPlanReview(mcpPendingPlanReview.id);
+      setMCPPendingPlanReview(null);
+      setPlanPaneOpen(false);
+      setPlanContent(null);
+    } catch (err) {
+      console.error('Failed to accept plan review:', err);
+    } finally {
+      setPlanReviewSubmitting(false);
+    }
+  };
+
+  // Handle rejecting a plan review with feedback
+  const handleRejectPlanReview = async () => {
+    if (!mcpPendingPlanReview || planReviewSubmitting) return;
+    setPlanReviewSubmitting(true);
+    try {
+      await RejectPlanReview(mcpPendingPlanReview.id, planReviewFeedback);
+      setMCPPendingPlanReview(null);
+      setPlanPaneOpen(false);
+      setPlanContent(null);
+      setPlanReviewFeedback('');
+    } catch (err) {
+      console.error('Failed to reject plan review:', err);
+    } finally {
+      setPlanReviewSubmitting(false);
+    }
+  };
 
   // Permission wizard state (triggered from failed tool calls)
   const [permissionWizardOpen, setPermissionWizardOpen] = useState(false);
@@ -686,16 +743,108 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
           setPlanPaneOpen(false);
           setPlanContent(null);
         }}
-        title="Plan"
+        title={mcpPendingPlanReview ? `Plan Review (from ${mcpPendingPlanReview.agentSlug})` : "Plan"}
         storageKey="planPaneWidth"
       >
-        <div style={{ padding: '1rem', color: '#ccc' }}>
-          {planContent ? (
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {planContent}
-            </ReactMarkdown>
-          ) : (
-            <div style={{ color: '#666' }}>Loading...</div>
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+          {/* Waiting indicator when review is pending */}
+          {mcpPendingPlanReview && (
+            <div style={{
+              padding: '8px 16px',
+              background: 'rgba(217, 119, 87, 0.1)',
+              borderBottom: '1px solid rgba(217, 119, 87, 0.3)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              fontSize: '0.8rem',
+              color: '#d97757'
+            }}>
+              <span style={{
+                display: 'inline-block',
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                background: '#d97757',
+                animation: 'pulse 2s ease-in-out infinite'
+              }} />
+              Claude is waiting for your approval
+            </div>
+          )}
+
+          {/* Plan content */}
+          <div style={{ flex: 1, overflow: 'auto', padding: '1rem', color: '#ccc' }}>
+            {planContent ? (
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {planContent}
+              </ReactMarkdown>
+            ) : (
+              <div style={{ color: '#666' }}>Loading...</div>
+            )}
+          </div>
+
+          {/* Accept/Reject footer when review is pending */}
+          {mcpPendingPlanReview && (
+            <div style={{
+              padding: '12px 16px',
+              borderTop: '1px solid #333',
+              background: '#1a1a1a',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px'
+            }}>
+              <textarea
+                value={planReviewFeedback}
+                onChange={(e) => setPlanReviewFeedback(e.target.value)}
+                placeholder="Optional feedback (used when rejecting)..."
+                style={{
+                  width: '100%',
+                  minHeight: '48px',
+                  padding: '8px',
+                  background: '#111',
+                  border: '1px solid #333',
+                  borderRadius: '4px',
+                  color: '#ccc',
+                  fontSize: '0.8rem',
+                  resize: 'vertical',
+                  fontFamily: 'inherit'
+                }}
+              />
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                <button
+                  onClick={handleRejectPlanReview}
+                  disabled={planReviewSubmitting}
+                  style={{
+                    padding: '6px 16px',
+                    background: '#333',
+                    border: '1px solid #444',
+                    borderRadius: '4px',
+                    color: '#ccc',
+                    cursor: planReviewSubmitting ? 'not-allowed' : 'pointer',
+                    fontSize: '0.8rem',
+                    opacity: planReviewSubmitting ? 0.5 : 1
+                  }}
+                >
+                  {planReviewFeedback ? 'Reject with Feedback' : 'Reject'}
+                </button>
+                <button
+                  onClick={handleAcceptPlanReview}
+                  disabled={planReviewSubmitting}
+                  style={{
+                    padding: '6px 16px',
+                    background: '#d97757',
+                    border: 'none',
+                    borderRadius: '4px',
+                    color: '#fff',
+                    cursor: planReviewSubmitting ? 'not-allowed' : 'pointer',
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                    opacity: planReviewSubmitting ? 0.5 : 1
+                  }}
+                >
+                  Accept Plan
+                </button>
+              </div>
+            </div>
           )}
         </div>
       </SlideInPane>
