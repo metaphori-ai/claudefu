@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Stored in same format as all other tool instructions
   - Customizable via MCP Settings pane (not yet wired to compaction flow)
 
+- **Agent Initialization Dialog** — Checks 4 setup items when adding/selecting an agent
+  - Claude projects directory, Sessions, CLAUDE.md, Permissions
+  - Toggleable checkboxes for missing items, "All set!" when complete
+  - Creates first session automatically when scaffolding projects dir
+  - All 3 agent-switch paths (click, CMD+N, menu) go through scaffold check
+
 ### Changed
 - **Slug-Based Plan File Detection** - Replaced regex content scanning with JSONL slug field
   - Plan file path now derived from session slug: `~/.claude/plans/{slug}.md`
