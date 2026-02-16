@@ -43,6 +43,19 @@ func (a *App) ReadImageAsDataURL(filePath string) (string, error) {
 	return fmt.Sprintf("data:%s;base64,%s", mimeType, encoded), nil
 }
 
+// agentIDs returns a slice of agent IDs from the current workspace.
+// Used to load per-agent backlog databases.
+func (a *App) agentIDs() []string {
+	if a.currentWorkspace == nil {
+		return nil
+	}
+	ids := make([]string, len(a.currentWorkspace.Agents))
+	for i, agent := range a.currentWorkspace.Agents {
+		ids[i] = agent.ID
+	}
+	return ids
+}
+
 // =============================================================================
 // VERSION METHODS (Bound to frontend)
 // =============================================================================

@@ -212,6 +212,35 @@ func (im *InboxManager) Clear(agentID string) {
 	}
 }
 
+// MigrateAgentIDs updates agent IDs in the inbox database.
+// Used when agent IDs are reconciled against the global registry.
+func (im *InboxManager) MigrateAgentIDs(oldToNew map[string]string) {
+	im.mu.Lock()
+	defer im.mu.Unlock()
+
+	if im.store == nil || len(oldToNew) == 0 {
+		return
+	}
+
+	for oldID, newID := range oldToNew {
+		// Update to_agent_id
+		if _, err := im.store.db.Exec(
+			`UPDATE messages SET to_agent_id = ? WHERE to_agent_id = ?`,
+			newID, oldID,
+		); err != nil {
+			log.Printf("Failed to migrate inbox to_agent_id %s → %s: %v", oldID, newID, err)
+		}
+		// Update from_agent_id
+		if _, err := im.store.db.Exec(
+			`UPDATE messages SET from_agent_id = ? WHERE from_agent_id = ?`,
+			newID, oldID,
+		); err != nil {
+			log.Printf("Failed to migrate inbox from_agent_id %s → %s: %v", oldID, newID, err)
+		}
+	}
+	log.Printf("Inbox: migrated agent IDs for %d mappings", len(oldToNew))
+}
+
 // ClearAll removes all messages for all agents (called on workspace switch)
 func (im *InboxManager) ClearAll() {
 	im.mu.Lock()

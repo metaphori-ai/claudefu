@@ -5,6 +5,25 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.10] - 2026-02-15
+
+### Added
+- **Global Agent Registry** — Same folder now gets the same agent UUID across all workspaces
+  - Registry persisted at `~/.claudefu/agents.json` (folder path → UUID mapping)
+  - `GetOrCreateID()` is idempotent: same folder always returns the same UUID
+  - Agent ID reconciliation runs on workspace load and switch, aligning IDs with registry
+  - Duplicate folder prevention: cannot add the same folder twice to one workspace
+
+- **Per-Agent Backlog Databases** — Backlog DBs now stored per-agent instead of per-workspace
+  - Storage moved from `~/.claudefu/backlog/{workspace_id}.db` to `~/.claudefu/backlog/agents/{agent_id}.db`
+  - Aligns with TDA specification; backlog items follow the agent across workspaces
+  - `BacklogManager` refactored to multi-store with lazy-open per agent
+
+- **One-Time Migration** — Automatic migration of existing backlog and inbox data
+  - Old per-workspace backlog DBs migrated to per-agent DBs on startup/workspace switch
+  - Inbox agent IDs updated in-place when reconciliation remaps IDs
+  - Old DBs renamed to `.migrated` suffix (data preserved, idempotent)
+
 ## [0.4.9] - 2026-02-15
 
 ### Added

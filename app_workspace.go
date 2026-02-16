@@ -7,6 +7,7 @@ import (
 
 	wailsrt "github.com/wailsapp/wails/v2/pkg/runtime"
 
+	"claudefu/internal/mcpserver"
 	"claudefu/internal/workspace"
 )
 
@@ -68,8 +69,19 @@ func (a *App) SwitchWorkspace(workspaceID string) (*workspace.Workspace, error) 
 		return nil, err
 	}
 
-	// Step 5: Migrate and save
+	// Step 5: Migrate and reconcile agent IDs against global registry
 	ws = a.workspace.MigrateWorkspace(ws)
+	if a.workspace.Registry != nil {
+		a.reconciledIDs = a.workspace.Registry.ReconcileWorkspace(ws)
+		if len(a.reconciledIDs) > 0 {
+			fmt.Printf("[INFO] SwitchWorkspace: Reconciled %d agent IDs\n", len(a.reconciledIDs))
+			if ws.SelectedSession != nil {
+				if newID, ok := a.reconciledIDs[ws.SelectedSession.AgentID]; ok {
+					ws.SelectedSession.AgentID = newID
+				}
+			}
+		}
+	}
 	if err := a.workspace.SaveWorkspace(ws); err != nil {
 		wailsrt.LogWarning(a.ctx, fmt.Sprintf("Failed to save migrated workspace: %v", err))
 	}
@@ -93,8 +105,25 @@ func (a *App) SwitchWorkspace(workspaceID string) (*workspace.Workspace, error) 
 		if err := a.mcpServer.LoadInbox(ws.ID); err != nil {
 			wailsrt.LogWarning(a.ctx, fmt.Sprintf("Failed to load inbox for workspace: %v", err))
 		}
-		if err := a.mcpServer.LoadBacklog(ws.ID); err != nil {
-			wailsrt.LogWarning(a.ctx, fmt.Sprintf("Failed to load backlog for workspace: %v", err))
+
+		// Migrate inbox agent IDs if reconciliation changed any
+		if len(a.reconciledIDs) > 0 {
+			a.mcpServer.MigrateInboxAgentIDs(a.reconciledIDs)
+		}
+
+		// Migrate old per-workspace backlog DB to per-agent DBs (one-time)
+		backlogPath := filepath.Join(a.settings.GetConfigPath(), "backlog")
+		if err := mcpserver.MigrateFromWorkspaceDB(backlogPath, ws.ID, a.reconciledIDs); err != nil {
+			wailsrt.LogWarning(a.ctx, fmt.Sprintf("Backlog migration warning: %v", err))
+		}
+
+		// Load per-agent backlog databases
+		agentIDs := make([]string, len(ws.Agents))
+		for i, agent := range ws.Agents {
+			agentIDs[i] = agent.ID
+		}
+		if err := a.mcpServer.LoadBacklog(agentIDs); err != nil {
+			wailsrt.LogWarning(a.ctx, fmt.Sprintf("Failed to load backlog: %v", err))
 		}
 	}
 

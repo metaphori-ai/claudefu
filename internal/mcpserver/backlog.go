@@ -9,53 +9,84 @@ import (
 	"github.com/google/uuid"
 )
 
-// BacklogManager manages backlog state with SQLite persistence
+// BacklogManager manages backlog state with per-agent SQLite persistence.
+// Each agent gets its own database at {configPath}/agents/{agent_id}.db.
 type BacklogManager struct {
-	store      *BacklogStore
-	configPath string // ~/.claudefu/backlog
+	stores     map[string]*BacklogStore // agentID → store
+	configPath string                   // ~/.claudefu/backlog
 	mu         sync.RWMutex
 }
 
 // NewBacklogManager creates a new backlog manager with the given config path
 func NewBacklogManager(configPath string) *BacklogManager {
 	return &BacklogManager{
+		stores:     make(map[string]*BacklogStore),
 		configPath: configPath,
 	}
 }
 
-// LoadWorkspace opens the SQLite database for the given workspace
-func (bm *BacklogManager) LoadWorkspace(workspaceID string) error {
+// LoadAgents opens per-agent SQLite databases for the given agent IDs.
+// This replaces the old LoadWorkspace(workspaceID) — now we open one DB per agent.
+func (bm *BacklogManager) LoadAgents(agentIDs []string) error {
 	bm.mu.Lock()
 	defer bm.mu.Unlock()
 
-	// Close existing store if any
-	if bm.store != nil {
-		bm.store.Close()
-		bm.store = nil
+	// Close all existing stores
+	for id, store := range bm.stores {
+		store.Close()
+		delete(bm.stores, id)
 	}
 
-	dbPath := filepath.Join(bm.configPath, workspaceID+".db")
-	store, err := NewBacklogStore(dbPath)
-	if err != nil {
-		return err
+	// Open a store for each agent
+	for _, agentID := range agentIDs {
+		if agentID == "" {
+			continue
+		}
+		dbPath := filepath.Join(bm.configPath, "agents", agentID+".db")
+		store, err := NewBacklogStore(dbPath)
+		if err != nil {
+			log.Printf("Failed to open backlog DB for agent %s: %v", agentID, err)
+			continue
+		}
+		bm.stores[agentID] = store
+		log.Printf("Backlog loaded for agent %s", agentID)
 	}
 
-	bm.store = store
-	log.Printf("Backlog loaded for workspace %s", workspaceID)
 	return nil
 }
 
-// Close closes the SQLite database
+// getStoreOrOpen returns the store for an agent, opening it if not already loaded.
+// Caller must hold bm.mu.Lock() (write lock).
+func (bm *BacklogManager) getStoreOrOpen(agentID string) *BacklogStore {
+	if store, ok := bm.stores[agentID]; ok {
+		return store
+	}
+
+	// Lazy open
+	dbPath := filepath.Join(bm.configPath, "agents", agentID+".db")
+	store, err := NewBacklogStore(dbPath)
+	if err != nil {
+		log.Printf("Failed to lazy-open backlog DB for agent %s: %v", agentID, err)
+		return nil
+	}
+	bm.stores[agentID] = store
+	log.Printf("Backlog lazy-loaded for agent %s", agentID)
+	return store
+}
+
+// Close closes all SQLite databases
 func (bm *BacklogManager) Close() error {
 	bm.mu.Lock()
 	defer bm.mu.Unlock()
 
-	if bm.store != nil {
-		err := bm.store.Close()
-		bm.store = nil
-		return err
+	var lastErr error
+	for id, store := range bm.stores {
+		if err := store.Close(); err != nil {
+			lastErr = err
+		}
+		delete(bm.stores, id)
 	}
-	return nil
+	return lastErr
 }
 
 // AddItem creates a new backlog item with auto-generated UUID and sortOrder
@@ -72,10 +103,12 @@ func (bm *BacklogManager) AddItem(agentID, title, context, status, itemType, tag
 
 	now := time.Now().Unix()
 
+	store := bm.getStoreOrOpen(agentID)
+
 	// Calculate sort_order: max of siblings + 1000
 	sortOrder := 1000
-	if bm.store != nil {
-		maxOrder, err := bm.store.GetMaxSortOrder(agentID, parentID)
+	if store != nil {
+		maxOrder, err := store.GetMaxSortOrder(agentID, parentID)
 		if err != nil {
 			log.Printf("Failed to get max sort order: %v", err)
 		} else {
@@ -98,8 +131,8 @@ func (bm *BacklogManager) AddItem(agentID, title, context, status, itemType, tag
 		UpdatedAt: now,
 	}
 
-	if bm.store != nil {
-		if err := bm.store.AddItem(item); err != nil {
+	if store != nil {
+		if err := store.AddItem(item); err != nil {
 			log.Printf("Failed to save backlog item: %v", err)
 		}
 	}
@@ -107,21 +140,23 @@ func (bm *BacklogManager) AddItem(agentID, title, context, status, itemType, tag
 	return item
 }
 
-// GetItem returns a single backlog item by ID
+// GetItem returns a single backlog item by ID.
+// Since we don't know which agent owns it, we search all open stores.
 func (bm *BacklogManager) GetItem(id string) *BacklogItem {
 	bm.mu.RLock()
 	defer bm.mu.RUnlock()
 
-	if bm.store == nil {
-		return nil
+	for _, store := range bm.stores {
+		item, err := store.GetItem(id)
+		if err != nil {
+			log.Printf("Failed to get backlog item: %v", err)
+			continue
+		}
+		if item != nil {
+			return item
+		}
 	}
-
-	item, err := bm.store.GetItem(id)
-	if err != nil {
-		log.Printf("Failed to get backlog item: %v", err)
-		return nil
-	}
-	return item
+	return nil
 }
 
 // UpdateItem updates an existing backlog item, returns true if found
@@ -129,12 +164,13 @@ func (bm *BacklogManager) UpdateItem(item BacklogItem) bool {
 	bm.mu.Lock()
 	defer bm.mu.Unlock()
 
-	if bm.store == nil {
+	store := bm.getStoreOrOpen(item.AgentID)
+	if store == nil {
 		return false
 	}
 
 	item.UpdatedAt = time.Now().Unix()
-	if err := bm.store.UpdateItem(item); err != nil {
+	if err := store.UpdateItem(item); err != nil {
 		log.Printf("Failed to update backlog item: %v", err)
 		return false
 	}
@@ -146,15 +182,18 @@ func (bm *BacklogManager) DeleteItem(id string) bool {
 	bm.mu.Lock()
 	defer bm.mu.Unlock()
 
-	if bm.store == nil {
-		return false
+	// Search all stores since we don't know the agent
+	for _, store := range bm.stores {
+		item, _ := store.GetItem(id)
+		if item != nil {
+			if err := store.DeleteItem(id); err != nil {
+				log.Printf("Failed to delete backlog item: %v", err)
+				return false
+			}
+			return true
+		}
 	}
-
-	if err := bm.store.DeleteItem(id); err != nil {
-		log.Printf("Failed to delete backlog item: %v", err)
-		return false
-	}
-	return true
+	return false
 }
 
 // DeleteWithChildren removes an item and all its descendants
@@ -162,27 +201,31 @@ func (bm *BacklogManager) DeleteWithChildren(id string) bool {
 	bm.mu.Lock()
 	defer bm.mu.Unlock()
 
-	if bm.store == nil {
-		return false
+	// Search all stores since we don't know the agent
+	for _, store := range bm.stores {
+		item, _ := store.GetItem(id)
+		if item != nil {
+			if err := store.DeleteWithChildren(id); err != nil {
+				log.Printf("Failed to delete backlog item with children: %v", err)
+				return false
+			}
+			return true
+		}
 	}
-
-	if err := bm.store.DeleteWithChildren(id); err != nil {
-		log.Printf("Failed to delete backlog item with children: %v", err)
-		return false
-	}
-	return true
+	return false
 }
 
 // GetItemsByAgent returns all backlog items for a specific agent
 func (bm *BacklogManager) GetItemsByAgent(agentID string) []BacklogItem {
-	bm.mu.RLock()
-	defer bm.mu.RUnlock()
+	bm.mu.Lock()
+	defer bm.mu.Unlock()
 
-	if bm.store == nil {
+	store := bm.getStoreOrOpen(agentID)
+	if store == nil {
 		return []BacklogItem{}
 	}
 
-	items, err := bm.store.GetItemsByAgent(agentID)
+	items, err := store.GetItemsByAgent(agentID)
 	if err != nil {
 		log.Printf("Failed to get backlog items for agent %s: %v", agentID, err)
 		return []BacklogItem{}
@@ -196,20 +239,26 @@ func (bm *BacklogManager) MoveItem(id, newParentID, afterID string) bool {
 	bm.mu.Lock()
 	defer bm.mu.Unlock()
 
-	if bm.store == nil {
-		return false
+	// Find the item across stores
+	var store *BacklogStore
+	var item *BacklogItem
+	for _, s := range bm.stores {
+		it, _ := s.GetItem(id)
+		if it != nil {
+			store = s
+			item = it
+			break
+		}
 	}
-
-	item, err := bm.store.GetItem(id)
-	if err != nil || item == nil {
-		log.Printf("Failed to get item for move: %v", err)
+	if store == nil || item == nil {
+		log.Printf("Failed to get item for move: not found")
 		return false
 	}
 
 	agentID := item.AgentID
 
 	// Get siblings in the target parent
-	siblings, err := bm.store.GetItemsByParent(agentID, newParentID)
+	siblings, err := store.GetItemsByParent(agentID, newParentID)
 	if err != nil {
 		log.Printf("Failed to get siblings for move: %v", err)
 		return false
@@ -250,7 +299,7 @@ func (bm *BacklogManager) MoveItem(id, newParentID, afterID string) bool {
 		}
 		if !foundAfter {
 			// afterID not found in siblings, place at end
-			maxOrder, _ := bm.store.GetMaxSortOrder(agentID, newParentID)
+			maxOrder, _ := store.GetMaxSortOrder(agentID, newParentID)
 			newSortOrder = maxOrder + 1000
 		} else if nextOrder == 0 {
 			// afterID is last, place after it
@@ -263,12 +312,12 @@ func (bm *BacklogManager) MoveItem(id, newParentID, afterID string) bool {
 
 	// If gap is too small (< 2), reindex siblings first
 	if newSortOrder <= 0 {
-		if err := bm.store.ReindexSortOrder(agentID, newParentID); err != nil {
+		if err := store.ReindexSortOrder(agentID, newParentID); err != nil {
 			log.Printf("Failed to reindex sort order: %v", err)
 			return false
 		}
 		// Retry with fresh ordering
-		maxOrder, _ := bm.store.GetMaxSortOrder(agentID, newParentID)
+		maxOrder, _ := store.GetMaxSortOrder(agentID, newParentID)
 		newSortOrder = maxOrder + 1000
 	}
 
@@ -276,7 +325,7 @@ func (bm *BacklogManager) MoveItem(id, newParentID, afterID string) bool {
 	item.ParentID = newParentID
 	item.SortOrder = newSortOrder
 	item.UpdatedAt = time.Now().Unix()
-	if err := bm.store.UpdateItem(*item); err != nil {
+	if err := store.UpdateItem(*item); err != nil {
 		log.Printf("Failed to update moved item: %v", err)
 		return false
 	}
@@ -286,14 +335,15 @@ func (bm *BacklogManager) MoveItem(id, newParentID, afterID string) bool {
 
 // GetTotalCount returns the total number of backlog items for an agent
 func (bm *BacklogManager) GetTotalCount(agentID string) int {
-	bm.mu.RLock()
-	defer bm.mu.RUnlock()
+	bm.mu.Lock()
+	defer bm.mu.Unlock()
 
-	if bm.store == nil {
+	store := bm.getStoreOrOpen(agentID)
+	if store == nil {
 		return 0
 	}
 
-	count, err := bm.store.GetTotalCount(agentID)
+	count, err := store.GetTotalCount(agentID)
 	if err != nil {
 		log.Printf("Failed to get total count: %v", err)
 		return 0
@@ -303,17 +353,29 @@ func (bm *BacklogManager) GetTotalCount(agentID string) int {
 
 // GetNonDoneCount returns items for an agent that are not in "done" status
 func (bm *BacklogManager) GetNonDoneCount(agentID string) int {
-	bm.mu.RLock()
-	defer bm.mu.RUnlock()
+	bm.mu.Lock()
+	defer bm.mu.Unlock()
 
-	if bm.store == nil {
+	store := bm.getStoreOrOpen(agentID)
+	if store == nil {
 		return 0
 	}
 
-	count, err := bm.store.GetNonDoneCount(agentID)
+	count, err := store.GetNonDoneCount(agentID)
 	if err != nil {
 		log.Printf("Failed to get non-done count: %v", err)
 		return 0
 	}
 	return count
+}
+
+// GetOldWorkspaceDBPath returns the path to the old per-workspace backlog DB.
+// Used by migration code to detect and migrate old databases.
+func (bm *BacklogManager) GetOldWorkspaceDBPath(workspaceID string) string {
+	return filepath.Join(bm.configPath, workspaceID+".db")
+}
+
+// GetConfigPath returns the base config path for backlog storage
+func (bm *BacklogManager) GetConfigPath() string {
+	return bm.configPath
 }

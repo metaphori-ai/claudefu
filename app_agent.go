@@ -79,8 +79,13 @@ func (a *App) AddAgent(name, folder string) (*workspace.Agent, error) {
 		return nil, fmt.Errorf("no workspace loaded")
 	}
 
+	// Prevent adding the same folder twice to one workspace
+	if workspace.HasAgentWithFolder(a.currentWorkspace, folder) {
+		return nil, fmt.Errorf("folder already exists in this workspace: %s", folder)
+	}
+
 	agent := workspace.Agent{
-		ID:        workspace.GenerateAgentID(),
+		ID:        a.workspace.GetOrCreateAgentID(folder),
 		Name:      name,
 		Folder:    folder,
 		WatchMode: types.WatchModeFile,

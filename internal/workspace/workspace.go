@@ -147,10 +147,10 @@ func isValidUUID(s string) bool {
 // This handles backwards compatibility for workspaces created before UUID support.
 func (m *Manager) MigrateWorkspace(ws *Workspace) *Workspace {
 	if ws.Version < CurrentWorkspaceVersion {
-		// Migrate agents to have proper UUIDs
+		// Migrate agents to have proper UUIDs (using registry for stability)
 		for i := range ws.Agents {
 			if ws.Agents[i].ID == "" || !isValidUUID(ws.Agents[i].ID) {
-				ws.Agents[i].ID = GenerateAgentID()
+				ws.Agents[i].ID = m.GetOrCreateAgentID(ws.Agents[i].Folder)
 			}
 			// Ensure WatchMode has a default
 			if ws.Agents[i].WatchMode == "" {
@@ -173,6 +173,7 @@ type Session struct {
 // Manager handles workspace operations
 type Manager struct {
 	configPath string
+	Registry   *AgentRegistry
 }
 
 // NewManager creates a new workspace manager
@@ -180,7 +181,34 @@ func NewManager(configPath string) *Manager {
 	// Ensure workspaces directory exists
 	workspacesDir := filepath.Join(configPath, "workspaces")
 	os.MkdirAll(workspacesDir, 0755)
-	return &Manager{configPath: configPath}
+
+	// Initialize and load the global agent registry
+	registry := NewAgentRegistry(configPath)
+	if err := registry.Load(); err != nil {
+		fmt.Printf("Warning: failed to load agent registry: %v\n", err)
+	}
+
+	return &Manager{configPath: configPath, Registry: registry}
+}
+
+// GetOrCreateAgentID returns a stable agent ID for the given folder,
+// using the global registry to ensure the same folder always gets the same UUID.
+func (m *Manager) GetOrCreateAgentID(folder string) string {
+	if m.Registry != nil {
+		return m.Registry.GetOrCreateID(folder)
+	}
+	// Fallback if registry somehow not initialized
+	return GenerateAgentID()
+}
+
+// HasAgentWithFolder checks if any agent in the workspace already has the given folder.
+func HasAgentWithFolder(ws *Workspace, folder string) bool {
+	for _, agent := range ws.Agents {
+		if agent.Folder == folder {
+			return true
+		}
+	}
+	return false
 }
 
 // GetAllWorkspaces returns all workspaces from the workspaces folder

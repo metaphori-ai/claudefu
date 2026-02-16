@@ -36,6 +36,7 @@ type App struct {
 	sessionService   *session.Service // Instant session creation (no CLI wait)
 	terminalManager  *terminal.Manager
 	cliArgs          *CLIArgs         // CLI arguments (e.g., `claudefu .`)
+	reconciledIDs    map[string]string // oldAgentID → newAgentID from registry reconciliation
 }
 
 // NewApp creates a new App application struct
@@ -232,6 +233,20 @@ func (a *App) loadCurrentWorkspace() {
 	// Migrate workspace to latest version (adds UUIDs to agents)
 	ws = a.workspace.MigrateWorkspace(ws)
 
+	// Reconcile agent IDs against global registry (ensures same folder = same UUID)
+	if a.workspace.Registry != nil {
+		a.reconciledIDs = a.workspace.Registry.ReconcileWorkspace(ws)
+		if len(a.reconciledIDs) > 0 {
+			fmt.Printf("[INFO] Reconciled %d agent IDs against global registry\n", len(a.reconciledIDs))
+			// Update selectedSession if its agent ID was reconciled
+			if ws.SelectedSession != nil {
+				if newID, ok := a.reconciledIDs[ws.SelectedSession.AgentID]; ok {
+					ws.SelectedSession.AgentID = newID
+				}
+			}
+		}
+	}
+
 	// DEBUG: Check after migration
 	if ws.SelectedSession != nil {
 		fmt.Printf("[DEBUG] loadCurrentWorkspace: AFTER MIGRATE selectedSession agentId=%s sessionId=%s\n",
@@ -366,7 +381,20 @@ func (a *App) initializeMCPServer() {
 		if err := a.mcpServer.LoadInbox(a.currentWorkspace.ID); err != nil {
 			wailsrt.LogWarning(a.ctx, fmt.Sprintf("Failed to load inbox: %v", err))
 		}
-		if err := a.mcpServer.LoadBacklog(a.currentWorkspace.ID); err != nil {
+
+		// Migrate inbox agent IDs if reconciliation changed any
+		if len(a.reconciledIDs) > 0 {
+			a.mcpServer.MigrateInboxAgentIDs(a.reconciledIDs)
+		}
+
+		// Migrate old per-workspace backlog DB to per-agent DBs (one-time)
+		backlogPath := filepath.Join(a.settings.GetConfigPath(), "backlog")
+		if err := mcpserver.MigrateFromWorkspaceDB(backlogPath, a.currentWorkspace.ID, a.reconciledIDs); err != nil {
+			wailsrt.LogWarning(a.ctx, fmt.Sprintf("Backlog migration warning: %v", err))
+		}
+
+		// Load per-agent backlog databases
+		if err := a.mcpServer.LoadBacklog(a.agentIDs()); err != nil {
 			wailsrt.LogWarning(a.ctx, fmt.Sprintf("Failed to load backlog: %v", err))
 		}
 	}
