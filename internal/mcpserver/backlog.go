@@ -59,12 +59,15 @@ func (bm *BacklogManager) Close() error {
 }
 
 // AddItem creates a new backlog item with auto-generated UUID and sortOrder
-func (bm *BacklogManager) AddItem(agentID, title, context, status, tags, createdBy, parentID string) BacklogItem {
+func (bm *BacklogManager) AddItem(agentID, title, context, status, itemType, tags, createdBy, parentID string) BacklogItem {
 	bm.mu.Lock()
 	defer bm.mu.Unlock()
 
 	if status == "" {
 		status = "idea"
+	}
+	if itemType == "" {
+		itemType = "feature_expansion"
 	}
 
 	now := time.Now().Unix()
@@ -87,6 +90,7 @@ func (bm *BacklogManager) AddItem(agentID, title, context, status, tags, created
 		Title:     title,
 		Context:   context,
 		Status:    status,
+		Type:      itemType,
 		Tags:      tags,
 		CreatedBy: createdBy,
 		SortOrder: sortOrder,

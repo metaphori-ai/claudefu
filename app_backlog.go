@@ -28,11 +28,11 @@ func (a *App) GetBacklogItem(id string) *mcpserver.BacklogItem {
 }
 
 // AddBacklogItem creates a new backlog item for the given agent and emits a change event
-func (a *App) AddBacklogItem(agentID, title, context, status, tags, parentID string) *mcpserver.BacklogItem {
+func (a *App) AddBacklogItem(agentID, title, context, status, itemType, tags, parentID string) *mcpserver.BacklogItem {
 	if a.mcpServer == nil {
 		return nil
 	}
-	item := a.mcpServer.GetBacklog().AddItem(agentID, title, context, status, tags, "user", parentID)
+	item := a.mcpServer.GetBacklog().AddItem(agentID, title, context, status, itemType, tags, "user", parentID)
 	a.emitBacklogChanged(agentID)
 	return &item
 }

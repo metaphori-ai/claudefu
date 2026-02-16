@@ -813,6 +813,7 @@ func (s *MCPService) handleBacklogAdd(ctx context.Context, req mcp.CallToolReque
 	// Optional parameters
 	contextStr := getOptionalString(req, "context")
 	status := getOptionalString(req, "status")
+	itemType := getOptionalString(req, "type")
 	tags := getOptionalString(req, "tags")
 	parentID := getOptionalString(req, "parent_id")
 	fromAgent := getOptionalString(req, "from_agent")
@@ -826,18 +827,21 @@ func (s *MCPService) handleBacklogAdd(ctx context.Context, req mcp.CallToolReque
 	if status == "" {
 		status = "idea"
 	}
+	if itemType == "" {
+		itemType = "feature_expansion"
+	}
 
 	createdBy := fromAgent
 	if createdBy == "" {
 		createdBy = "agent"
 	}
 
-	item := s.backlog.AddItem(agentID, title, contextStr, status, tags, createdBy, parentID)
+	item := s.backlog.AddItem(agentID, title, contextStr, status, itemType, tags, createdBy, parentID)
 
 	// Emit change event
 	s.emitBacklogChanged(agentID)
 
-	return mcp.NewToolResultText(fmt.Sprintf("Created backlog item: %s (id: %s, status: %s)", item.Title, item.ID, item.Status)), nil
+	return mcp.NewToolResultText(fmt.Sprintf("Created backlog item: %s (id: %s, status: %s, type: %s)", item.Title, item.ID, item.Status, item.Type)), nil
 }
 
 // handleBacklogUpdate handles the BacklogUpdate tool call
@@ -862,6 +866,9 @@ func (s *MCPService) handleBacklogUpdate(ctx context.Context, req mcp.CallToolRe
 	}
 	if status := getOptionalString(req, "status"); status != "" {
 		item.Status = status
+	}
+	if itemType := getOptionalString(req, "type"); itemType != "" {
+		item.Type = itemType
 	}
 	if tags := getOptionalString(req, "tags"); tags != "" {
 		item.Tags = tags
@@ -889,7 +896,7 @@ func (s *MCPService) handleBacklogUpdate(ctx context.Context, req mcp.CallToolRe
 	// Emit change event (use item's agentID)
 	s.emitBacklogChanged(item.AgentID)
 
-	return mcp.NewToolResultText(fmt.Sprintf("Updated backlog item: %s (id: %s, status: %s)", item.Title, item.ID, item.Status)), nil
+	return mcp.NewToolResultText(fmt.Sprintf("Updated backlog item: %s (id: %s, status: %s, type: %s)", item.Title, item.ID, item.Status, item.Type)), nil
 }
 
 // handleBacklogList handles the BacklogList tool call
@@ -899,6 +906,7 @@ func (s *MCPService) handleBacklogList(ctx context.Context, req mcp.CallToolRequ
 	}
 
 	statusFilter := getOptionalString(req, "status")
+	typeFilter := getOptionalString(req, "type")
 	tagFilter := getOptionalString(req, "tag")
 	includeContext := getOptionalString(req, "include_context") == "true"
 	fromAgent := getOptionalString(req, "from_agent")
@@ -916,6 +924,17 @@ func (s *MCPService) handleBacklogList(ctx context.Context, req mcp.CallToolRequ
 		filtered := make([]BacklogItem, 0)
 		for _, item := range items {
 			if item.Status == statusFilter {
+				filtered = append(filtered, item)
+			}
+		}
+		items = filtered
+	}
+
+	// Filter by type if specified
+	if typeFilter != "" {
+		filtered := make([]BacklogItem, 0)
+		for _, item := range items {
+			if item.Type == typeFilter {
 				filtered = append(filtered, item)
 			}
 		}
@@ -943,7 +962,7 @@ func (s *MCPService) handleBacklogList(ctx context.Context, req mcp.CallToolRequ
 
 	for _, item := range items {
 		// Build item attributes
-		attrs := fmt.Sprintf("id=\"%s\" status=\"%s\"", item.ID, item.Status)
+		attrs := fmt.Sprintf("id=\"%s\" status=\"%s\" type=\"%s\"", item.ID, item.Status, item.Type)
 		if item.ParentID != "" {
 			attrs += fmt.Sprintf(" parent_id=\"%s\"", item.ParentID)
 		}

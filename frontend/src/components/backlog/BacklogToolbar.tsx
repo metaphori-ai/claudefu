@@ -1,8 +1,10 @@
-import { BacklogStatus, ALL_STATUSES, STATUS_CONFIG } from './types';
+import { BacklogStatus, BacklogType, ALL_STATUSES, ALL_TYPES, STATUS_CONFIG, TYPE_CONFIG } from './types';
 
 interface BacklogToolbarProps {
   statusFilter: BacklogStatus | 'all';
   onStatusFilterChange: (status: BacklogStatus | 'all') => void;
+  typeFilter: BacklogType | 'all';
+  onTypeFilterChange: (type: BacklogType | 'all') => void;
   searchQuery: string;
   onSearchChange: (query: string) => void;
   onAdd: () => void;
@@ -12,6 +14,8 @@ interface BacklogToolbarProps {
 export function BacklogToolbar({
   statusFilter,
   onStatusFilterChange,
+  typeFilter,
+  onTypeFilterChange,
   searchQuery,
   onSearchChange,
   onAdd,
@@ -41,6 +45,26 @@ export function BacklogToolbar({
         <option value="all">All</option>
         {ALL_STATUSES.map((s) => (
           <option key={s} value={s}>{STATUS_CONFIG[s].label}</option>
+        ))}
+      </select>
+
+      {/* Type filter dropdown */}
+      <select
+        value={typeFilter}
+        onChange={(e) => onTypeFilterChange(e.target.value as BacklogType | 'all')}
+        style={{
+          background: '#1a1a1a',
+          border: '1px solid #333',
+          borderRadius: '4px',
+          color: '#ccc',
+          padding: '0.35rem 0.5rem',
+          fontSize: '0.8rem',
+          cursor: 'pointer',
+        }}
+      >
+        <option value="all">All Types</option>
+        {ALL_TYPES.map((t) => (
+          <option key={t} value={t}>{TYPE_CONFIG[t].label}</option>
         ))}
       </select>
 

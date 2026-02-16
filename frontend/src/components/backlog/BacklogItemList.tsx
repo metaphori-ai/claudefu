@@ -1,10 +1,11 @@
 import { useMemo } from 'react';
-import { BacklogItem, BacklogStatus, BacklogTreeNode } from './types';
+import { BacklogItem, BacklogStatus, BacklogType, BacklogTreeNode } from './types';
 import { BacklogItemRow } from './BacklogItemRow';
 
 interface BacklogItemListProps {
   items: BacklogItem[];
   statusFilter: BacklogStatus | 'all';
+  typeFilter: BacklogType | 'all';
   searchQuery: string;
   onEdit: (item: BacklogItem) => void;
   onAddSubtask: (parentId: string) => void;
@@ -65,6 +66,7 @@ function flattenTree(nodes: BacklogTreeNode[]): BacklogTreeNode[] {
 export function BacklogItemList({
   items,
   statusFilter,
+  typeFilter,
   searchQuery,
   onEdit,
   onAddSubtask,
@@ -80,6 +82,11 @@ export function BacklogItemList({
       result = result.filter((item) => item.status === statusFilter);
     }
 
+    // Type filter
+    if (typeFilter !== 'all') {
+      result = result.filter((item) => item.type === typeFilter);
+    }
+
     // Search filter (title + tags)
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -90,7 +97,7 @@ export function BacklogItemList({
     }
 
     return result;
-  }, [items, statusFilter, searchQuery]);
+  }, [items, statusFilter, typeFilter, searchQuery]);
 
   // Build tree and flatten
   const flatNodes = useMemo(() => {

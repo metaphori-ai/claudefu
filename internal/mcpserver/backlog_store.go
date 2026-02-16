@@ -18,6 +18,7 @@ type BacklogItem struct {
 	Title     string `json:"title"`
 	Context   string `json:"context,omitempty"`
 	Status    string `json:"status"`
+	Type      string `json:"type"`
 	Tags      string `json:"tags,omitempty"`
 	CreatedBy string `json:"createdBy,omitempty"`
 	SortOrder int    `json:"sortOrder"`
@@ -63,6 +64,7 @@ func createBacklogSchema(db *sql.DB) error {
 			title TEXT NOT NULL,
 			context TEXT DEFAULT '',
 			status TEXT NOT NULL DEFAULT 'idea',
+			type TEXT NOT NULL DEFAULT 'feature_expansion',
 			tags TEXT DEFAULT '',
 			created_by TEXT DEFAULT '',
 			sort_order INTEGER NOT NULL DEFAULT 0,
@@ -72,10 +74,31 @@ func createBacklogSchema(db *sql.DB) error {
 		CREATE INDEX IF NOT EXISTS idx_agent ON backlog_items(agent_id);
 		CREATE INDEX IF NOT EXISTS idx_parent ON backlog_items(agent_id, parent_id);
 		CREATE INDEX IF NOT EXISTS idx_status ON backlog_items(agent_id, status);
+		CREATE INDEX IF NOT EXISTS idx_type ON backlog_items(agent_id, type);
 		CREATE INDEX IF NOT EXISTS idx_sort ON backlog_items(agent_id, parent_id, sort_order);
 	`
-	_, err := db.Exec(schema)
-	return err
+	if _, err := db.Exec(schema); err != nil {
+		return err
+	}
+
+	// Migrate existing databases: add type column if missing
+	var count int
+	err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('backlog_items') WHERE name = 'type'`).Scan(&count)
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		_, err = db.Exec(`ALTER TABLE backlog_items ADD COLUMN type TEXT NOT NULL DEFAULT 'feature_expansion'`)
+		if err != nil {
+			return err
+		}
+		_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_type ON backlog_items(agent_id, type)`)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // Close closes the database connection
@@ -89,9 +112,9 @@ func (s *BacklogStore) Close() error {
 // AddItem inserts a new backlog item
 func (s *BacklogStore) AddItem(item BacklogItem) error {
 	_, err := s.db.Exec(`
-		INSERT INTO backlog_items (id, agent_id, parent_id, title, context, status, tags, created_by, sort_order, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, item.ID, item.AgentID, item.ParentID, item.Title, item.Context, item.Status, item.Tags, item.CreatedBy, item.SortOrder, item.CreatedAt, item.UpdatedAt)
+		INSERT INTO backlog_items (id, agent_id, parent_id, title, context, status, type, tags, created_by, sort_order, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, item.ID, item.AgentID, item.ParentID, item.Title, item.Context, item.Status, item.Type, item.Tags, item.CreatedBy, item.SortOrder, item.CreatedAt, item.UpdatedAt)
 	return err
 }
 
@@ -99,10 +122,10 @@ func (s *BacklogStore) AddItem(item BacklogItem) error {
 func (s *BacklogStore) GetItem(id string) (*BacklogItem, error) {
 	var item BacklogItem
 	err := s.db.QueryRow(`
-		SELECT id, agent_id, parent_id, title, context, status, tags, created_by, sort_order, created_at, updated_at
+		SELECT id, agent_id, parent_id, title, context, status, type, tags, created_by, sort_order, created_at, updated_at
 		FROM backlog_items
 		WHERE id = ?
-	`, id).Scan(&item.ID, &item.AgentID, &item.ParentID, &item.Title, &item.Context, &item.Status, &item.Tags, &item.CreatedBy, &item.SortOrder, &item.CreatedAt, &item.UpdatedAt)
+	`, id).Scan(&item.ID, &item.AgentID, &item.ParentID, &item.Title, &item.Context, &item.Status, &item.Type, &item.Tags, &item.CreatedBy, &item.SortOrder, &item.CreatedAt, &item.UpdatedAt)
 
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -117,9 +140,9 @@ func (s *BacklogStore) GetItem(id string) (*BacklogItem, error) {
 func (s *BacklogStore) UpdateItem(item BacklogItem) error {
 	_, err := s.db.Exec(`
 		UPDATE backlog_items
-		SET agent_id = ?, parent_id = ?, title = ?, context = ?, status = ?, tags = ?, created_by = ?, sort_order = ?, updated_at = ?
+		SET agent_id = ?, parent_id = ?, title = ?, context = ?, status = ?, type = ?, tags = ?, created_by = ?, sort_order = ?, updated_at = ?
 		WHERE id = ?
-	`, item.AgentID, item.ParentID, item.Title, item.Context, item.Status, item.Tags, item.CreatedBy, item.SortOrder, item.UpdatedAt, item.ID)
+	`, item.AgentID, item.ParentID, item.Title, item.Context, item.Status, item.Type, item.Tags, item.CreatedBy, item.SortOrder, item.UpdatedAt, item.ID)
 	return err
 }
 
@@ -132,7 +155,7 @@ func (s *BacklogStore) DeleteItem(id string) error {
 // GetItemsByAgent returns all backlog items for an agent, ordered by parent_id, sort_order
 func (s *BacklogStore) GetItemsByAgent(agentID string) ([]BacklogItem, error) {
 	rows, err := s.db.Query(`
-		SELECT id, agent_id, parent_id, title, context, status, tags, created_by, sort_order, created_at, updated_at
+		SELECT id, agent_id, parent_id, title, context, status, type, tags, created_by, sort_order, created_at, updated_at
 		FROM backlog_items
 		WHERE agent_id = ?
 		ORDER BY parent_id, sort_order
@@ -147,7 +170,7 @@ func (s *BacklogStore) GetItemsByAgent(agentID string) ([]BacklogItem, error) {
 // GetItemsByParent returns children of a given parent within an agent, ordered by sort_order
 func (s *BacklogStore) GetItemsByParent(agentID, parentID string) ([]BacklogItem, error) {
 	rows, err := s.db.Query(`
-		SELECT id, agent_id, parent_id, title, context, status, tags, created_by, sort_order, created_at, updated_at
+		SELECT id, agent_id, parent_id, title, context, status, type, tags, created_by, sort_order, created_at, updated_at
 		FROM backlog_items
 		WHERE agent_id = ? AND parent_id = ?
 		ORDER BY sort_order
@@ -162,7 +185,7 @@ func (s *BacklogStore) GetItemsByParent(agentID, parentID string) ([]BacklogItem
 // GetItemsByStatus returns items for an agent with a given status, ordered by sort_order
 func (s *BacklogStore) GetItemsByStatus(agentID, status string) ([]BacklogItem, error) {
 	rows, err := s.db.Query(`
-		SELECT id, agent_id, parent_id, title, context, status, tags, created_by, sort_order, created_at, updated_at
+		SELECT id, agent_id, parent_id, title, context, status, type, tags, created_by, sort_order, created_at, updated_at
 		FROM backlog_items
 		WHERE agent_id = ? AND status = ?
 		ORDER BY parent_id, sort_order
@@ -292,7 +315,7 @@ func scanBacklogItems(rows *sql.Rows) ([]BacklogItem, error) {
 	var items []BacklogItem
 	for rows.Next() {
 		var item BacklogItem
-		if err := rows.Scan(&item.ID, &item.AgentID, &item.ParentID, &item.Title, &item.Context, &item.Status, &item.Tags, &item.CreatedBy, &item.SortOrder, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.AgentID, &item.ParentID, &item.Title, &item.Context, &item.Status, &item.Type, &item.Tags, &item.CreatedBy, &item.SortOrder, &item.CreatedAt, &item.UpdatedAt); err != nil {
 			return nil, err
 		}
 		items = append(items, item)

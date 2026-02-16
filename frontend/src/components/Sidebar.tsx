@@ -28,7 +28,7 @@ import { ConfirmDialog } from './ConfirmDialog';
 import { RefreshMenu } from '../../wailsjs/go/main/App';
 import { workspace, types } from '../../wailsjs/go/models';
 import { useWorkspace, useSession, useSessionName, useAgentUnread } from '../hooks';
-import { BacklogItem, BacklogStatus } from './backlog/types';
+import { BacklogItem, BacklogStatus, BacklogType } from './backlog/types';
 
 type Session = types.Session;
 type Agent = workspace.Agent;
@@ -308,6 +308,7 @@ export function Sidebar({
           title: fullItem.title,
           context: fullItem.context || '',
           status: (fullItem.status || 'idea') as BacklogStatus,
+          type: (fullItem.type || 'feature_expansion') as BacklogType,
           tags: fullItem.tags || '',
           createdBy: fullItem.createdBy || '',
           sortOrder: fullItem.sortOrder,

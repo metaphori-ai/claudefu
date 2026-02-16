@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BacklogItem, BacklogStatus, STATUS_CONFIG } from './types';
+import { BacklogItem, BacklogStatus, BacklogType, STATUS_CONFIG, TYPE_CONFIG } from './types';
 
 interface BacklogItemRowProps {
   item: BacklogItem;
@@ -63,6 +63,22 @@ export function BacklogItemRow({
       }}>
         {item.title}
       </span>
+
+      {/* Type badge */}
+      {item.type && TYPE_CONFIG[item.type as BacklogType] && (
+        <span style={{
+          fontSize: '0.6rem',
+          padding: '0.05rem 0.3rem',
+          borderRadius: '3px',
+          border: `1px solid ${TYPE_CONFIG[item.type as BacklogType].color}40`,
+          color: TYPE_CONFIG[item.type as BacklogType].color,
+          marginLeft: '0.5rem',
+          flexShrink: 0,
+          opacity: item.status === 'done' ? 0.5 : 0.8,
+        }}>
+          {TYPE_CONFIG[item.type as BacklogType].label}
+        </span>
+      )}
 
       {/* Tags */}
       {tags.length > 0 && (

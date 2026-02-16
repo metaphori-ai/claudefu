@@ -115,6 +115,8 @@ CLAUDE.md
 build/bin
 node_modules
 frontend/dist
+package.json
+.mcp.json
 .specstory/
 .cursor/
 .claude/

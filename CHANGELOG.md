@@ -15,17 +15,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Hierarchical items with parent/child relationships (subtasks)
   - Sort ordering with 1000-gap strategy and automatic reindexing
   - Tags as comma-separated strings with substring filtering
+  - 8 item types orthogonal to status: `bug_fix`, `new_feature`, `feature_expansion`, `improvement`, `refactor`, `validation`, `tech_debt`, `documentation`
+  - Color-coded type badges in item rows and type filter dropdown in toolbar
 
 - **Backlog MCP Tools** — 3 new tools for Claude agents to manage backlog items
-  - `BacklogAdd` — Create items with title, context, status, tags, and parent_id
+  - `BacklogAdd` — Create items with title, context, status, type, tags, and parent_id
   - `BacklogUpdate` — Modify items; `append:` prefix on context appends instead of replacing
-  - `BacklogList` — List items with status/tag filters; XML output format for clean parsing
+  - `BacklogList` — List items with status/type/tag filters; XML output format for clean parsing
   - `from_agent` required on Add/List to scope items to the calling agent
   - Tool availability toggles and configurable instructions in MCP Settings
 
 - **Backlog UI — BacklogPane** — Right-side slide-in panel for browsing backlog
   - Tree view with indentation for parent/child hierarchy
-  - Status filter dropdown (All / Idea / Planned / In Progress / Parked / Done)
+  - Status filter dropdown and Type filter dropdown
   - Search input filtering by title and tags
   - Color-coded status dots and badges per item
   - Hover actions: Edit, Add Subtask, Delete
@@ -33,7 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Accessible via Backlog button in ControlButtonsRow (with non-done count badge)
 
 - **Backlog UI — BacklogEditorDialog** — Full context editing dialog
-  - Title, Status dropdown, Tags input, and large monospace Context textarea
+  - Title, Status dropdown, Type dropdown, Tags input, and large monospace Context textarea
   - Supports creating new items, editing existing, and adding subtasks
   - Park flow: opens with status pre-set to "parked" and initial context
   - CMD-S keyboard shortcut to save
@@ -48,7 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **BacklogList XML Output** — Switched from markdown bullets to XML format
-  - Each item wrapped in `<item id="..." status="..." tags="...">` with `<title>` and `<context>` children
+  - Each item wrapped in `<item id="..." status="..." type="..." tags="...">` with `<title>` and `<context>` children
   - Prevents context bleed between items when rich SVML/markdown content is present
   - IDs as XML attributes are easily extractable by Claude for BacklogUpdate references
 - **TDA Documentation Updated** — Backend TDA, Frontend TDA, and CLAUDE.md updated with full backlog architecture

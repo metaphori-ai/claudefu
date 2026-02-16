@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { SlideInPane } from './SlideInPane';
 import { BacklogToolbar } from './backlog/BacklogToolbar';
 import { BacklogItemList } from './backlog/BacklogItemList';
-import { BacklogItem, BacklogStatus } from './backlog/types';
+import { BacklogItem, BacklogStatus, BacklogType } from './backlog/types';
 import { mcpserver } from '../../wailsjs/go/models';
 import {
   GetBacklogItems,
@@ -31,6 +31,7 @@ export function BacklogPane({
   const [items, setItems] = useState<BacklogItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState<BacklogStatus | 'all'>('all');
+  const [typeFilter, setTypeFilter] = useState<BacklogType | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Fetch items when pane opens or agentId changes
@@ -47,6 +48,7 @@ export function BacklogPane({
         title: r.title,
         context: r.context || '',
         status: (r.status || 'idea') as BacklogStatus,
+        type: (r.type || 'feature_expansion') as BacklogType,
         tags: r.tags || '',
         createdBy: r.createdBy || '',
         sortOrder: r.sortOrder,
@@ -141,6 +143,8 @@ export function BacklogPane({
       <BacklogToolbar
         statusFilter={statusFilter}
         onStatusFilterChange={setStatusFilter}
+        typeFilter={typeFilter}
+        onTypeFilterChange={setTypeFilter}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         onAdd={() => onAddItem()}
@@ -160,6 +164,7 @@ export function BacklogPane({
         <BacklogItemList
           items={items}
           statusFilter={statusFilter}
+          typeFilter={typeFilter}
           searchQuery={searchQuery}
           onEdit={onEditItem}
           onAddSubtask={(parentId) => onAddItem(parentId)}

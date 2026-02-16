@@ -10,8 +10,8 @@ export function AddAgent(arg1, arg2) {
   return window['go']['main']['App']['AddAgent'](arg1, arg2);
 }
 
-export function AddBacklogItem(arg1, arg2, arg3, arg4, arg5, arg6) {
-  return window['go']['main']['App']['AddBacklogItem'](arg1, arg2, arg3, arg4, arg5, arg6);
+export function AddBacklogItem(arg1, arg2, arg3, arg4, arg5, arg6, arg7) {
+  return window['go']['main']['App']['AddBacklogItem'](arg1, arg2, arg3, arg4, arg5, arg6, arg7);
 }
 
 export function AlertDialog(arg1, arg2) {

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { DialogBase } from './DialogBase';
-import { BacklogItem, BacklogStatus, ALL_STATUSES, STATUS_CONFIG } from './backlog/types';
+import { BacklogItem, BacklogStatus, BacklogType, ALL_STATUSES, ALL_TYPES, STATUS_CONFIG, TYPE_CONFIG } from './backlog/types';
 import { mcpserver } from '../../wailsjs/go/models';
 import { AddBacklogItem, UpdateBacklogItem } from '../../wailsjs/go/main/App';
 import { useSaveShortcut } from '../hooks';
@@ -34,6 +34,7 @@ export function BacklogEditorDialog({
   const [title, setTitle] = useState('');
   const [context, setContext] = useState('');
   const [status, setStatus] = useState<BacklogStatus>('idea');
+  const [type, setType] = useState<BacklogType>('feature_expansion');
   const [tags, setTags] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,12 +49,14 @@ export function BacklogEditorDialog({
         setTitle(item.title);
         setContext(item.context || '');
         setStatus(item.status as BacklogStatus);
+        setType((item.type as BacklogType) || 'feature_expansion');
         setTags(item.tags || '');
       } else {
         // Creating new item
         setTitle('');
         setContext(initialContext || '');
         setStatus(initialStatus || 'idea');
+        setType('feature_expansion');
         setTags('');
       }
       setError(null);
@@ -77,6 +80,7 @@ export function BacklogEditorDialog({
           title: title.trim(),
           context,
           status,
+          type,
           tags: tags.trim(),
           updatedAt: Math.floor(Date.now() / 1000),
         });
@@ -92,6 +96,7 @@ export function BacklogEditorDialog({
           title.trim(),
           context,
           status,
+          type,
           tags.trim(),
           parentId || '',
         );
@@ -176,6 +181,29 @@ export function BacklogEditorDialog({
             >
               {ALL_STATUSES.map((s) => (
                 <option key={s} value={s}>{STATUS_CONFIG[s].label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ flex: '0 0 auto' }}>
+            <label style={labelStyle}>Type</label>
+            <select
+              value={type}
+              onChange={(e) => setType(e.target.value as BacklogType)}
+              style={{
+                background: '#111',
+                border: '1px solid #333',
+                borderRadius: '4px',
+                color: TYPE_CONFIG[type]?.color || '#ccc',
+                padding: '0.5rem',
+                fontSize: '0.85rem',
+                cursor: 'pointer',
+                boxSizing: 'border-box',
+                height: '34px',
+              }}
+            >
+              {ALL_TYPES.map((t) => (
+                <option key={t} value={t}>{TYPE_CONFIG[t].label}</option>
               ))}
             </select>
           </div>

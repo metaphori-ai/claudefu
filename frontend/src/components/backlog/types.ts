@@ -6,6 +6,7 @@ export interface BacklogItem {
   title: string;
   context: string;
   status: BacklogStatus;
+  type: BacklogType;        // nature of work (bug_fix, new_feature, etc.)
   tags: string;             // comma-separated
   createdBy: string;        // "user" or agent slug
   sortOrder: number;
@@ -25,6 +26,33 @@ export const STATUS_CONFIG: Record<BacklogStatus, { label: string; color: string
 };
 
 export const ALL_STATUSES: BacklogStatus[] = ['idea', 'planned', 'in_progress', 'done', 'parked'];
+
+// Type categorization - nature of work (orthogonal to status)
+export type BacklogType =
+  | 'bug_fix'
+  | 'new_feature'
+  | 'feature_expansion'
+  | 'improvement'
+  | 'refactor'
+  | 'validation'
+  | 'tech_debt'
+  | 'documentation';
+
+export const TYPE_CONFIG: Record<BacklogType, { label: string; color: string }> = {
+  bug_fix:           { label: 'Bug Fix',    color: '#ef4444' }, // red
+  new_feature:       { label: 'New Feature', color: '#3b82f6' }, // blue
+  feature_expansion: { label: 'Expansion',  color: '#8b5cf6' }, // purple
+  improvement:       { label: 'Improvement', color: '#f59e0b' }, // amber
+  refactor:          { label: 'Refactor',   color: '#10b981' }, // green
+  validation:        { label: 'Validation', color: '#06b6d4' }, // cyan
+  tech_debt:         { label: 'Tech Debt',  color: '#d97757' }, // orange
+  documentation:     { label: 'Docs',       color: '#6366f1' }, // indigo
+};
+
+export const ALL_TYPES: BacklogType[] = [
+  'bug_fix', 'new_feature', 'feature_expansion', 'improvement',
+  'refactor', 'validation', 'tech_debt', 'documentation',
+];
 
 // Tree node for client-side hierarchy building
 export interface BacklogTreeNode {

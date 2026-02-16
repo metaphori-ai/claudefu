@@ -288,6 +288,7 @@ export namespace mcpserver {
 	    title: string;
 	    context?: string;
 	    status: string;
+	    type: string;
 	    tags?: string;
 	    createdBy?: string;
 	    sortOrder: number;
@@ -306,6 +307,7 @@ export namespace mcpserver {
 	        this.title = source["title"];
 	        this.context = source["context"];
 	        this.status = source["status"];
+	        this.type = source["type"];
 	        this.tags = source["tags"];
 	        this.createdBy = source["createdBy"];
 	        this.sortOrder = source["sortOrder"];

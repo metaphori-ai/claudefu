@@ -15,7 +15,7 @@ export function AcceptPlanReview(arg1:string):Promise<void>;
 
 export function AddAgent(arg1:string,arg2:string):Promise<workspace.Agent>;
 
-export function AddBacklogItem(arg1:string,arg2:string,arg3:string,arg4:string,arg5:string,arg6:string):Promise<mcpserver.BacklogItem>;
+export function AddBacklogItem(arg1:string,arg2:string,arg3:string,arg4:string,arg5:string,arg6:string,arg7:string):Promise<mcpserver.BacklogItem>;
 
 export function AlertDialog(arg1:string,arg2:string):Promise<void>;
 
