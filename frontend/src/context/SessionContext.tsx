@@ -65,6 +65,8 @@ export interface SessionState {
   messageQueues: Map<string, QueuedMessage[]>;
   // Per-agent last session ID (for global auto-submit to know which session to send to)
   lastSessionIds: Map<string, string>;
+  // Per-agent backlog non-done count (for badge)
+  backlogCounts: Map<string, number>;
 }
 
 export type SessionAction =
@@ -93,6 +95,8 @@ export type SessionAction =
   | { type: 'CLEAR_QUEUE'; payload: { agentId: string } }
   // Last session tracking (for global auto-submit)
   | { type: 'SET_LAST_SESSION_ID'; payload: { agentId: string; sessionId: string } }
+  // Backlog counts per agent
+  | { type: 'SET_BACKLOG_COUNT'; payload: { agentId: string; count: number } }
   | { type: 'RESET' };
 
 const initialState: SessionState = {
@@ -109,6 +113,7 @@ const initialState: SessionState = {
   respondingAgents: new Map(),
   messageQueues: new Map(),
   lastSessionIds: new Map(),
+  backlogCounts: new Map(),
 };
 
 function sessionReducer(state: SessionState, action: SessionAction): SessionState {
@@ -286,6 +291,12 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
       const newLastSessionIds = new Map(state.lastSessionIds);
       newLastSessionIds.set(agentId, sessionId);
       return { ...state, lastSessionIds: newLastSessionIds };
+    }
+
+    case 'SET_BACKLOG_COUNT': {
+      const newBacklogCounts = new Map(state.backlogCounts);
+      newBacklogCounts.set(action.payload.agentId, action.payload.count);
+      return { ...state, backlogCounts: newBacklogCounts };
     }
 
     case 'RESET':

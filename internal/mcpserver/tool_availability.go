@@ -22,6 +22,9 @@ type ToolAvailability struct {
 	BrowserAgent          bool `json:"browserAgent"`          // Disabled by default, password-protected
 	RequestToolPermission bool `json:"requestToolPermission"` // Enabled by default
 	ExitPlanMode          bool `json:"exitPlanMode"`          // Enabled by default
+	BacklogAdd            bool `json:"backlogAdd"`            // Enabled by default
+	BacklogUpdate         bool `json:"backlogUpdate"`         // Enabled by default
+	BacklogList           bool `json:"backlogList"`           // Enabled by default
 }
 
 // ToolAvailabilityManager handles loading and saving tool availability settings
@@ -54,6 +57,9 @@ func DefaultToolAvailability() *ToolAvailability {
 		BrowserAgent:          false, // Disabled by default - requires password to enable
 		RequestToolPermission: true,  // Enabled by default
 		ExitPlanMode:          true,  // Enabled by default
+		BacklogAdd:            true,  // Enabled by default
+		BacklogUpdate:         true,  // Enabled by default
+		BacklogList:           true,  // Enabled by default
 	}
 }
 
@@ -88,6 +94,12 @@ func (m *ToolAvailabilityManager) IsEnabled(toolName string) bool {
 		return m.availability.RequestToolPermission
 	case "ExitPlanMode":
 		return m.availability.ExitPlanMode
+	case "BacklogAdd":
+		return m.availability.BacklogAdd
+	case "BacklogUpdate":
+		return m.availability.BacklogUpdate
+	case "BacklogList":
+		return m.availability.BacklogList
 	default:
 		return false
 	}

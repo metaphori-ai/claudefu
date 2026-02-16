@@ -280,6 +280,9 @@ func (s *ClaudeCodeService) buildPermissionArgs(folder string) []string {
 			"mcp__claudefu__BrowserAgent",
 			"mcp__claudefu__ExitPlanMode",
 			"mcp__claudefu__RequestToolPermission",
+			"mcp__claudefu__BacklogAdd",
+			"mcp__claudefu__BacklogUpdate",
+			"mcp__claudefu__BacklogList",
 		}
 		allowedPatterns = append(allowedPatterns, mcpTools...)
 	}

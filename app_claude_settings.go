@@ -111,6 +111,123 @@ func (a *App) SaveClaudePermissions(folder string, allow []string, deny []string
 	return nil
 }
 
+// =============================================================================
+// CLAUDE SETTINGS ENV METHODS (for experimental feature detection)
+// =============================================================================
+
+// GetClaudeSettingsEnv reads the "env" section from {folder}/.claude/settings.local.json
+func (a *App) GetClaudeSettingsEnv(folder string) (map[string]string, error) {
+	if folder == "" {
+		return nil, fmt.Errorf("folder is required")
+	}
+
+	settingsPath := filepath.Join(folder, ".claude", "settings.local.json")
+	return readSettingsEnv(settingsPath)
+}
+
+// GetGlobalClaudeSettingsEnv reads the "env" section from ~/.claude/settings.local.json
+func (a *App) GetGlobalClaudeSettingsEnv() (map[string]string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get home dir: %w", err)
+	}
+
+	settingsPath := filepath.Join(home, ".claude", "settings.local.json")
+	return readSettingsEnv(settingsPath)
+}
+
+// SetClaudeSettingsEnvVar writes a single env var to {folder}/.claude/settings.local.json
+// Preserves all existing content, only modifies the env section.
+// If value is empty, removes the key from the env section.
+func (a *App) SetClaudeSettingsEnvVar(folder, key, value string) error {
+	if folder == "" {
+		return fmt.Errorf("folder is required")
+	}
+	if key == "" {
+		return fmt.Errorf("key is required")
+	}
+
+	settingsPath := filepath.Join(folder, ".claude", "settings.local.json")
+
+	// Read existing settings to preserve other fields
+	var settings map[string]any
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			settings = make(map[string]any)
+			// Create .claude directory if needed
+			claudeDir := filepath.Join(folder, ".claude")
+			if err := os.MkdirAll(claudeDir, 0755); err != nil {
+				return fmt.Errorf("failed to create .claude directory: %w", err)
+			}
+		} else {
+			return fmt.Errorf("failed to read settings: %w", err)
+		}
+	} else {
+		if err := json.Unmarshal(data, &settings); err != nil {
+			return fmt.Errorf("failed to parse settings: %w", err)
+		}
+	}
+
+	// Get or create the env section
+	envMap, ok := settings["env"].(map[string]any)
+	if !ok {
+		envMap = make(map[string]any)
+	}
+
+	// Set or remove the key
+	if value == "" {
+		delete(envMap, key)
+	} else {
+		envMap[key] = value
+	}
+
+	settings["env"] = envMap
+
+	// Write back
+	newData, err := json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal settings: %w", err)
+	}
+
+	if err := os.WriteFile(settingsPath, newData, 0644); err != nil {
+		return fmt.Errorf("failed to write settings: %w", err)
+	}
+
+	return nil
+}
+
+// readSettingsEnv reads the "env" section from a settings JSON file
+func readSettingsEnv(path string) (map[string]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return map[string]string{}, nil
+		}
+		return nil, fmt.Errorf("failed to read settings: %w", err)
+	}
+
+	var settings map[string]any
+	if err := json.Unmarshal(data, &settings); err != nil {
+		return nil, fmt.Errorf("failed to parse settings: %w", err)
+	}
+
+	result := make(map[string]string)
+	if envMap, ok := settings["env"].(map[string]any); ok {
+		for k, v := range envMap {
+			if s, ok := v.(string); ok {
+				result[k] = s
+			}
+		}
+	}
+
+	return result, nil
+}
+
+// =============================================================================
+// CLAUDE.MD METHODS
+// =============================================================================
+
 // GetClaudeMD reads the CLAUDE.md file from an agent's folder
 func (a *App) GetClaudeMD(folder string) (string, error) {
 	if folder == "" {

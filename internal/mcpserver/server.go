@@ -20,6 +20,7 @@ type MCPService struct {
 	workspace          func() *workspace.Workspace
 	emitFunc           func(types.EventEnvelope)
 	inbox              *InboxManager
+	backlog            *BacklogManager
 	toolInstructions   *ToolInstructionsManager
 	toolAvailability   *ToolAvailabilityManager
 	pendingQuestions   *PendingQuestionManager
@@ -35,10 +36,12 @@ type MCPService struct {
 // NewMCPService creates a new MCP service on the specified port
 // configPath is the base config path (e.g., ~/.claudefu)
 // inboxConfigPath is the path to store inbox databases (e.g., ~/.claudefu/inbox)
-func NewMCPService(port int, configPath string, inboxConfigPath string) *MCPService {
+// backlogConfigPath is the path to store backlog databases (e.g., ~/.claudefu/backlog)
+func NewMCPService(port int, configPath string, inboxConfigPath string, backlogConfigPath string) *MCPService {
 	return &MCPService{
 		port:               port,
 		inbox:              NewInboxManager(inboxConfigPath),
+		backlog:            NewBacklogManager(backlogConfigPath),
 		toolInstructions:   NewToolInstructionsManager(configPath),
 		toolAvailability:   NewToolAvailabilityManager(configPath),
 		pendingQuestions:   NewPendingQuestionManager(),
@@ -65,6 +68,11 @@ func (s *MCPService) SetEmitFunc(emitFunc func(types.EventEnvelope)) {
 // GetInbox returns the inbox manager for accessing messages
 func (s *MCPService) GetInbox() *InboxManager {
 	return s.inbox
+}
+
+// GetBacklog returns the backlog manager for accessing backlog items
+func (s *MCPService) GetBacklog() *BacklogManager {
+	return s.backlog
 }
 
 // GetPort returns the port the MCP server is running on
@@ -134,6 +142,9 @@ func (s *MCPService) Start() error {
 	mcpServer.AddTool(CreateBrowserAgentTool(instructions.BrowserAgent), s.handleBrowserAgent)
 	mcpServer.AddTool(CreateRequestToolPermissionTool(instructions.RequestToolPermission), s.handleRequestToolPermission)
 	mcpServer.AddTool(CreateExitPlanModeTool(instructions.ExitPlanMode), s.handleExitPlanMode)
+	mcpServer.AddTool(CreateBacklogAddTool(instructions.BacklogAdd), s.handleBacklogAdd)
+	mcpServer.AddTool(CreateBacklogUpdateTool(instructions.BacklogUpdate), s.handleBacklogUpdate)
+	mcpServer.AddTool(CreateBacklogListTool(instructions.BacklogList), s.handleBacklogList)
 
 	s.server = mcpServer
 
@@ -202,6 +213,11 @@ func (s *MCPService) Stop() {
 		s.inbox.Close()
 	}
 
+	// Close backlog database
+	if s.backlog != nil {
+		s.backlog.Close()
+	}
+
 	s.running = false
 	fmt.Println("[MCP] MCP server stopped")
 }
@@ -215,6 +231,11 @@ func (s *MCPService) Restart() error {
 // LoadInbox opens the inbox database for a workspace
 func (s *MCPService) LoadInbox(workspaceID string) error {
 	return s.inbox.LoadWorkspace(workspaceID)
+}
+
+// LoadBacklog opens the backlog database for a workspace
+func (s *MCPService) LoadBacklog(workspaceID string) error {
+	return s.backlog.LoadWorkspace(workspaceID)
 }
 
 // IsRunning returns whether the MCP server is currently running

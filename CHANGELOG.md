@@ -5,6 +5,54 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Backlog Feature** — Hierarchical, orderable feature memory for both users and Claude agents
+  - Per-agent backlog scoped by `from_agent` slug — each agent maintains its own backlog
+  - Rich context storage: SVML fragments, markdown notes, research, architectural decisions
+  - 5 status values: `idea`, `planned`, `in_progress`, `done`, `parked`
+  - Hierarchical items with parent/child relationships (subtasks)
+  - Sort ordering with 1000-gap strategy and automatic reindexing
+  - Tags as comma-separated strings with substring filtering
+
+- **Backlog MCP Tools** — 3 new tools for Claude agents to manage backlog items
+  - `BacklogAdd` — Create items with title, context, status, tags, and parent_id
+  - `BacklogUpdate` — Modify items; `append:` prefix on context appends instead of replacing
+  - `BacklogList` — List items with status/tag filters; XML output format for clean parsing
+  - `from_agent` required on Add/List to scope items to the calling agent
+  - Tool availability toggles and configurable instructions in MCP Settings
+
+- **Backlog UI — BacklogPane** — Right-side slide-in panel for browsing backlog
+  - Tree view with indentation for parent/child hierarchy
+  - Status filter dropdown (All / Idea / Planned / In Progress / Parked / Done)
+  - Search input filtering by title and tags
+  - Color-coded status dots and badges per item
+  - Hover actions: Edit, Add Subtask, Delete
+  - Item count footer with done/total breakdown
+  - Accessible via Backlog button in ControlButtonsRow (with non-done count badge)
+
+- **Backlog UI — BacklogEditorDialog** — Full context editing dialog
+  - Title, Status dropdown, Tags input, and large monospace Context textarea
+  - Supports creating new items, editing existing, and adding subtasks
+  - Park flow: opens with status pre-set to "parked" and initial context
+  - CMD-S keyboard shortcut to save
+  - Consistent DialogBase styling matching PermissionsDialog (proper footer, padding, border-radius)
+
+- **Backlog Backend** — SQLite persistence with per-agent database files
+  - Storage: `~/.claudefu/backlog/{agent_id}.db`
+  - `BacklogStore` with full CRUD, hierarchy queries, and sort order management
+  - `BacklogManager` with RWMutex thread safety and workspace lifecycle
+  - `backlog:changed` event emission with totalCount/nonDoneCount payload
+  - 7 bound methods: GetBacklogItems, GetBacklogItem, AddBacklogItem, UpdateBacklogItem, DeleteBacklogItem, MoveBacklogItem, GetBacklogCount
+
+### Changed
+- **BacklogList XML Output** — Switched from markdown bullets to XML format
+  - Each item wrapped in `<item id="..." status="..." tags="...">` with `<title>` and `<context>` children
+  - Prevents context bleed between items when rich SVML/markdown content is present
+  - IDs as XML attributes are easily extractable by Claude for BacklogUpdate references
+- **TDA Documentation Updated** — Backend TDA, Frontend TDA, and CLAUDE.md updated with full backlog architecture
+
 ## [0.4.8] - 2026-02-01
 
 ### Improved

@@ -42,6 +42,7 @@ type ClaudeFuPermissions struct {
 	InheritFromGlobal     bool                      `json:"inheritFromGlobal,omitempty"`
 	ToolPermissions       map[string]ToolPermission `json:"toolPermissions"`
 	AdditionalDirectories []string                  `json:"additionalDirectories"`
+	ExperimentalFeatures  map[string]bool           `json:"experimentalFeatures,omitempty"`
 }
 
 // Manager handles permission file operations
@@ -230,6 +231,14 @@ func (m *Manager) CompileAllowList(perms *ClaudeFuPermissions) []string {
 		}
 	}
 
+	// Add tools from enabled experimental features
+	for _, t := range GetToolsForEnabledFeatures(perms.ExperimentalFeatures) {
+		if !seen[t] {
+			seen[t] = true
+			allowList = append(allowList, t)
+		}
+	}
+
 	return allowList
 }
 
@@ -284,6 +293,10 @@ func (m *Manager) CompileAvailableTools(perms *ClaudeFuPermissions) []string {
 			tools = append(tools, "Bash")
 		}
 	}
+
+	// Add tools from enabled experimental features to the available tools pool
+	experimentalTools := GetToolsForEnabledFeatures(perms.ExperimentalFeatures)
+	tools = append(tools, experimentalTools...)
 
 	return tools
 }

@@ -199,3 +199,80 @@ func CreateRequestToolPermissionTool(instruction string) mcp.Tool {
 		),
 	)
 }
+
+// CreateBacklogAddTool creates the BacklogAdd tool definition
+func CreateBacklogAddTool(instruction string) mcp.Tool {
+	return mcp.NewTool("BacklogAdd",
+		mcp.WithDescription(instruction),
+		mcp.WithString("title",
+			mcp.Required(),
+			mcp.Description("One-line summary of the backlog item"),
+		),
+		mcp.WithString("context",
+			mcp.Description("Rich context: SVML fragments, markdown notes, research, architectural decisions"),
+		),
+		mcp.WithString("status",
+			mcp.Description("Item status (default: 'idea')"),
+			mcp.Enum("idea", "planned", "in_progress", "done", "parked"),
+		),
+		mcp.WithString("tags",
+			mcp.Description("Comma-separated tags (e.g., 'frontend,ux,v2')"),
+		),
+		mcp.WithString("parent_id",
+			mcp.Description("UUID of parent item to create as subtask"),
+		),
+		mcp.WithString("from_agent",
+			mcp.Required(),
+			mcp.Description("Your agent name/slug (required — scopes items to your agent's backlog)"),
+		),
+	)
+}
+
+// CreateBacklogUpdateTool creates the BacklogUpdate tool definition
+func CreateBacklogUpdateTool(instruction string) mcp.Tool {
+	return mcp.NewTool("BacklogUpdate",
+		mcp.WithDescription(instruction),
+		mcp.WithString("id",
+			mcp.Required(),
+			mcp.Description("UUID of the backlog item to update"),
+		),
+		mcp.WithString("title",
+			mcp.Description("New title (replaces existing if provided)"),
+		),
+		mcp.WithString("context",
+			mcp.Description("New context content. Use 'append:' prefix to append to existing context instead of replacing."),
+		),
+		mcp.WithString("status",
+			mcp.Description("New status"),
+			mcp.Enum("idea", "planned", "in_progress", "done", "parked"),
+		),
+		mcp.WithString("tags",
+			mcp.Description("New comma-separated tags (replaces existing if provided)"),
+		),
+		mcp.WithString("from_agent",
+			mcp.Description("Your agent name/slug for attribution (optional for update — used for logging)"),
+		),
+	)
+}
+
+// CreateBacklogListTool creates the BacklogList tool definition
+func CreateBacklogListTool(instruction string) mcp.Tool {
+	return mcp.NewTool("BacklogList",
+		mcp.WithDescription(instruction),
+		mcp.WithString("status",
+			mcp.Description("Filter by status (omit for all items)"),
+			mcp.Enum("idea", "planned", "in_progress", "done", "parked"),
+		),
+		mcp.WithString("tag",
+			mcp.Description("Filter by tag (substring match)"),
+		),
+		mcp.WithString("include_context",
+			mcp.Description("Include full context in results ('true'/'false', default: false to save tokens)"),
+			mcp.Enum("true", "false"),
+		),
+		mcp.WithString("from_agent",
+			mcp.Required(),
+			mcp.Description("Your agent name/slug (required — scopes list to your agent's backlog)"),
+		),
+	)
+}

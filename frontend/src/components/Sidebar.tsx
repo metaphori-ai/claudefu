@@ -14,16 +14,21 @@ import {
   InjectInboxMessage,
   NewSession,
   RemoveAgent,
+  GetBacklogCount,
+  GetBacklogItem,
 } from '../../wailsjs/go/main/App';
 import { AgentMenu } from './AgentMenu';
 import { InputDialog } from './InputDialog';
 import { SessionsDialog } from './SessionsDialog';
 import { InboxDialog } from './InboxDialog';
+import { BacklogPane } from './BacklogPane';
+import { BacklogEditorDialog } from './BacklogEditorDialog';
 import { GlobalSettingsDialog } from './GlobalSettingsDialog';
 import { ConfirmDialog } from './ConfirmDialog';
 import { RefreshMenu } from '../../wailsjs/go/main/App';
 import { workspace, types } from '../../wailsjs/go/models';
 import { useWorkspace, useSession, useSessionName, useAgentUnread } from '../hooks';
+import { BacklogItem, BacklogStatus } from './backlog/types';
 
 type Session = types.Session;
 type Agent = workspace.Agent;
@@ -71,6 +76,7 @@ export function Sidebar({
     decrementInboxUnread,
     decrementInboxTotal,
     setInboxCounts,
+    setBacklogCount,
   } = useSession();
 
   // Local UI state (not shared)
@@ -84,9 +90,20 @@ export function Sidebar({
   const [showGlobalSettings, setShowGlobalSettings] = useState(false);
   const [confirmRemoveAgentId, setConfirmRemoveAgentId] = useState<string | null>(null);
 
-  // Load initial inbox counts for all agents
+  // Backlog state
+  const [backlogPaneAgent, setBacklogPaneAgent] = useState<Agent | null>(null);
+  const [backlogEditorState, setBacklogEditorState] = useState<{
+    isOpen: boolean;
+    agentId: string;
+    item: BacklogItem | null;
+    parentId?: string;
+    initialStatus?: BacklogStatus;
+    initialContext?: string;
+  }>({ isOpen: false, agentId: '', item: null });
+
+  // Load initial inbox counts and backlog counts for all agents
   useEffect(() => {
-    const loadInboxCounts = async () => {
+    const loadCounts = async () => {
       for (const agent of agents) {
         try {
           const [unread, total] = await Promise.all([
@@ -97,10 +114,16 @@ export function Sidebar({
         } catch (err) {
           // Ignore errors - MCP might not be enabled for this agent
         }
+        try {
+          const count = await GetBacklogCount(agent.id);
+          setBacklogCount(agent.id, count);
+        } catch (err) {
+          // Ignore errors
+        }
       }
     };
-    loadInboxCounts();
-  }, [agents, setInboxCounts]);
+    loadCounts();
+  }, [agents, setInboxCounts, setBacklogCount]);
 
   // Load session names for all agents on mount and when agents change
   useEffect(() => {
@@ -267,6 +290,57 @@ export function Sidebar({
     }
   };
 
+  // Handle viewing backlog for an agent
+  const handleViewBacklog = (agent: Agent) => {
+    setBacklogPaneAgent(agent);
+  };
+
+  // Handle editing a backlog item (from BacklogPane click)
+  const handleEditBacklogItem = async (item: BacklogItem) => {
+    // Fetch full item to ensure we have latest data
+    try {
+      const fullItem = await GetBacklogItem(item.id);
+      if (fullItem) {
+        const mapped: BacklogItem = {
+          id: fullItem.id,
+          agentId: fullItem.agentId,
+          parentId: fullItem.parentId || '',
+          title: fullItem.title,
+          context: fullItem.context || '',
+          status: (fullItem.status || 'idea') as BacklogStatus,
+          tags: fullItem.tags || '',
+          createdBy: fullItem.createdBy || '',
+          sortOrder: fullItem.sortOrder,
+          createdAt: fullItem.createdAt,
+          updatedAt: fullItem.updatedAt,
+        };
+        setBacklogEditorState({
+          isOpen: true,
+          agentId: item.agentId,
+          item: mapped,
+        });
+      }
+    } catch (err) {
+      // Fall back to the item we already have
+      setBacklogEditorState({
+        isOpen: true,
+        agentId: item.agentId,
+        item,
+      });
+    }
+  };
+
+  // Handle adding a new backlog item (from BacklogPane toolbar or subtask)
+  const handleAddBacklogItem = (parentId?: string) => {
+    if (!backlogPaneAgent) return;
+    setBacklogEditorState({
+      isOpen: true,
+      agentId: backlogPaneAgent.id,
+      item: null,
+      parentId,
+    });
+  };
+
   // Get the agent for the inbox dialog
   const inboxDialogAgent = inboxDialogAgentId
     ? agents.find(a => a.id === inboxDialogAgentId) || null
@@ -368,6 +442,7 @@ export function Sidebar({
               onFinishRename={finishRename}
               onViewSessions={handleViewSessions}
               onViewInbox={handleViewInbox}
+              onViewBacklog={handleViewBacklog}
               onRenameDialogOpen={(a) => {
                 setMenuAgentId(null);
                 setRenameDialogAgent(a);
@@ -529,6 +604,39 @@ export function Sidebar({
         />
       )}
 
+      {/* Backlog Pane */}
+      {backlogPaneAgent && (
+        <BacklogPane
+          isOpen={true}
+          onClose={() => setBacklogPaneAgent(null)}
+          agentId={backlogPaneAgent.id}
+          agentName={backlogPaneAgent.name}
+          onEditItem={handleEditBacklogItem}
+          onAddItem={handleAddBacklogItem}
+        />
+      )}
+
+      {/* Backlog Editor Dialog */}
+      <BacklogEditorDialog
+        isOpen={backlogEditorState.isOpen}
+        onClose={() => setBacklogEditorState({ isOpen: false, agentId: '', item: null })}
+        agentId={backlogEditorState.agentId}
+        item={backlogEditorState.item}
+        parentId={backlogEditorState.parentId}
+        initialStatus={backlogEditorState.initialStatus}
+        initialContext={backlogEditorState.initialContext}
+        onSaved={() => {
+          // Dispatch custom event to refresh BacklogPane
+          window.dispatchEvent(new CustomEvent('claudefu:backlog-changed'));
+          // Also refresh the count
+          if (backlogEditorState.agentId) {
+            GetBacklogCount(backlogEditorState.agentId).then(count => {
+              setBacklogCount(backlogEditorState.agentId, count);
+            }).catch(() => {});
+          }
+        }}
+      />
+
       {/* Global Settings Dialog */}
       <GlobalSettingsDialog
         isOpen={showGlobalSettings}
@@ -575,6 +683,7 @@ interface AgentRowProps {
   onFinishRename: () => void;
   onViewSessions: (agent: Agent) => void;
   onViewInbox: (agent: Agent) => void;
+  onViewBacklog: (agent: Agent) => void;
   onRenameDialogOpen: (agent: Agent) => void;
   onRemove: (agentId: string) => void;
   onCloseMenu: () => void;
@@ -594,12 +703,13 @@ function AgentRow({
   onFinishRename,
   onViewSessions,
   onViewInbox,
+  onViewBacklog,
   onRenameDialogOpen,
   onRemove,
   onCloseMenu,
 }: AgentRowProps) {
   const { sessionNames } = useWorkspace();
-  const { sessionUnread, inboxUnread, inboxTotal } = useAgentUnread(agent.id);
+  const { sessionUnread, inboxUnread, inboxTotal, backlogCount } = useAgentUnread(agent.id);
 
   // Use the reactive hook for session name display
   const sessionDisplayName = useSessionName(agent.id, agent.selectedSessionId || null);
@@ -755,6 +865,27 @@ function AgentRow({
               {inboxUnread} new
             </span>
           )}
+        </div>
+
+        {/* Backlog Row */}
+        <div
+          onClick={() => onViewBacklog(agent)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            padding: '0.4rem 1rem 0.4rem 1.5rem',
+            cursor: 'pointer',
+            color: backlogCount > 0 ? '#d97757' : '#555',
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.background = '#151515'}
+          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '0.5rem' }}>
+            <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
+            <line x1="9" y1="9" x2="15" y2="9" />
+            <line x1="9" y1="13" x2="13" y2="13" />
+          </svg>
+          <span>Backlog{backlogCount > 0 ? ` (${backlogCount})` : ''}</span>
         </div>
 
         {/* Session Row */}

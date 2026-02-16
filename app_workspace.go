@@ -87,11 +87,14 @@ func (a *App) SwitchWorkspace(workspaceID string) (*workspace.Workspace, error) 
 	// Step 8: Start watching all agents (emits per-agent status internally)
 	a.startWatchingAllAgents()
 
-	// Step 9: Restart MCP server and load inbox for new workspace
+	// Step 9: Restart MCP server and load inbox/backlog for new workspace
 	if a.mcpServer != nil {
 		a.mcpServer.Restart()
 		if err := a.mcpServer.LoadInbox(ws.ID); err != nil {
 			wailsrt.LogWarning(a.ctx, fmt.Sprintf("Failed to load inbox for workspace: %v", err))
+		}
+		if err := a.mcpServer.LoadBacklog(ws.ID); err != nil {
+			wailsrt.LogWarning(a.ctx, fmt.Sprintf("Failed to load backlog for workspace: %v", err))
 		}
 	}
 

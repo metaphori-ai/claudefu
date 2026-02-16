@@ -10,6 +10,10 @@ export function AddAgent(arg1, arg2) {
   return window['go']['main']['App']['AddAgent'](arg1, arg2);
 }
 
+export function AddBacklogItem(arg1, arg2, arg3, arg4, arg5, arg6) {
+  return window['go']['main']['App']['AddBacklogItem'](arg1, arg2, arg3, arg4, arg5, arg6);
+}
+
 export function AlertDialog(arg1, arg2) {
   return window['go']['main']['App']['AlertDialog'](arg1, arg2);
 }
@@ -74,12 +78,24 @@ export function CreateWorkspace(arg1) {
   return window['go']['main']['App']['CreateWorkspace'](arg1);
 }
 
+export function DeleteBacklogItem(arg1, arg2) {
+  return window['go']['main']['App']['DeleteBacklogItem'](arg1, arg2);
+}
+
 export function DeleteInboxMessage(arg1, arg2) {
   return window['go']['main']['App']['DeleteInboxMessage'](arg1, arg2);
 }
 
 export function DeleteWorkspace(arg1) {
   return window['go']['main']['App']['DeleteWorkspace'](arg1);
+}
+
+export function DetectExperimentalFeatures(arg1) {
+  return window['go']['main']['App']['DetectExperimentalFeatures'](arg1);
+}
+
+export function EnableExperimentalFeature(arg1, arg2, arg3) {
+  return window['go']['main']['App']['EnableExperimentalFeature'](arg1, arg2, arg3);
 }
 
 export function GetAgent(arg1) {
@@ -110,12 +126,28 @@ export function GetAuthStatus() {
   return window['go']['main']['App']['GetAuthStatus']();
 }
 
+export function GetBacklogCount(arg1) {
+  return window['go']['main']['App']['GetBacklogCount'](arg1);
+}
+
+export function GetBacklogItem(arg1) {
+  return window['go']['main']['App']['GetBacklogItem'](arg1);
+}
+
+export function GetBacklogItems(arg1) {
+  return window['go']['main']['App']['GetBacklogItems'](arg1);
+}
+
 export function GetClaudeMD(arg1) {
   return window['go']['main']['App']['GetClaudeMD'](arg1);
 }
 
 export function GetClaudePermissions(arg1) {
   return window['go']['main']['App']['GetClaudePermissions'](arg1);
+}
+
+export function GetClaudeSettingsEnv(arg1) {
+  return window['go']['main']['App']['GetClaudeSettingsEnv'](arg1);
 }
 
 export function GetConfigPath() {
@@ -154,8 +186,16 @@ export function GetDefaultTemplateMD() {
   return window['go']['main']['App']['GetDefaultTemplateMD']();
 }
 
+export function GetExperimentalFeatureDefinitions() {
+  return window['go']['main']['App']['GetExperimentalFeatureDefinitions']();
+}
+
 export function GetGlobalClaudeMD() {
   return window['go']['main']['App']['GetGlobalClaudeMD']();
+}
+
+export function GetGlobalClaudeSettingsEnv() {
+  return window['go']['main']['App']['GetGlobalClaudeSettingsEnv']();
 }
 
 export function GetGlobalDirectories() {
@@ -288,6 +328,10 @@ export function MarkSessionViewed(arg1, arg2) {
 
 export function MergeToolsFromGlobal(arg1) {
   return window['go']['main']['App']['MergeToolsFromGlobal'](arg1);
+}
+
+export function MoveBacklogItem(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['MoveBacklogItem'](arg1, arg2, arg3, arg4);
 }
 
 export function NewSession(arg1) {
@@ -426,6 +470,10 @@ export function SetActiveSession(arg1, arg2) {
   return window['go']['main']['App']['SetActiveSession'](arg1, arg2);
 }
 
+export function SetClaudeSettingsEnvVar(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SetClaudeSettingsEnvVar'](arg1, arg2, arg3);
+}
+
 export function SetSessionName(arg1, arg2, arg3) {
   return window['go']['main']['App']['SetSessionName'](arg1, arg2, arg3);
 }
@@ -456,6 +504,10 @@ export function TouchPlanFile(arg1, arg2) {
 
 export function UpdateAgent(arg1) {
   return window['go']['main']['App']['UpdateAgent'](arg1);
+}
+
+export function UpdateBacklogItem(arg1) {
+  return window['go']['main']['App']['UpdateBacklogItem'](arg1);
 }
 
 export function WriteTerminal(arg1, arg2) {

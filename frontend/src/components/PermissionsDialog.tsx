@@ -11,11 +11,13 @@ import {
   HasAgentPermissions,
   GetGlobalDirectories,
   MergeToolsFromGlobal,
+  EnableExperimentalFeature,
 } from '../../wailsjs/go/main/App';
 import { useSaveShortcut } from '../hooks';
 import {
   ToolsTabContent,
   DirectoriesTabContent,
+  ExperimentalTabContent,
   ClaudeFuPermissions,
   PermissionSet,
 } from './permissions';
@@ -26,7 +28,7 @@ interface PermissionsDialogProps {
   folder: string;
 }
 
-type TabId = 'tools' | 'directories';
+type TabId = 'tools' | 'directories' | 'experimental';
 
 export function PermissionsDialog({
   isOpen,
@@ -111,6 +113,7 @@ export function PermissionsDialog({
         inheritFromGlobal: perms.inheritFromGlobal,
         toolPermissions: perms.toolPermissions || {},
         additionalDirectories: perms.additionalDirectories || [],
+        experimentalFeatures: perms.experimentalFeatures || {},
       };
       setPermissions(plainPerms);
 
@@ -249,6 +252,17 @@ export function PermissionsDialog({
     });
   };
 
+  // Handle experimental feature toggle
+  const handleToggleExperimentalFeature = async (featureId: string, enabled: boolean) => {
+    try {
+      await EnableExperimentalFeature(folder, featureId, enabled);
+      // Reload permissions to reflect the change
+      await loadPermissions();
+    } catch (err) {
+      setError(`Failed to toggle feature: ${err}`);
+    }
+  };
+
   // Extract folder name for title
   const folderName = folder.split('/').pop() || folder;
 
@@ -268,7 +282,7 @@ export function PermissionsDialog({
           background: '#0d0d0d',
           flexShrink: 0,
         }}>
-          {(['tools', 'directories'] as TabId[]).map(tab => (
+          {(['tools', 'directories', 'experimental'] as TabId[]).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -321,6 +335,13 @@ export function PermissionsDialog({
                   globalDirectories={globalDirectories}
                   agentDirectories={permissions.additionalDirectories || []}
                   onChange={handleDirectoriesChange}
+                />
+              )}
+              {activeTab === 'experimental' && (
+                <ExperimentalTabContent
+                  folder={folder}
+                  experimentalFeatures={permissions.experimentalFeatures || {}}
+                  onToggleFeature={handleToggleExperimentalFeature}
                 />
               )}
             </>

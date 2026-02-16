@@ -29,6 +29,22 @@ export interface ClaudeFuPermissions {
   inheritFromGlobal?: boolean;
   toolPermissions: Record<string, ToolPermission>;
   additionalDirectories: string[];
+  experimentalFeatures?: Record<string, boolean>;
+}
+
+// Experimental feature types
+export interface ExperimentalFeatureDefinition {
+  id: string;
+  name: string;
+  description: string;
+  envVar: string;
+  tools: string[];
+}
+
+export interface ExperimentalFeatureStatus {
+  feature: ExperimentalFeatureDefinition;
+  detected: boolean;
+  source: string; // "project" | "global" | "env" | "none"
 }
 
 // Risk level tiers for display

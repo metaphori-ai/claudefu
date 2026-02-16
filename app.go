@@ -333,7 +333,9 @@ func (a *App) initializeMCPServer() {
 	configPath := a.settings.GetConfigPath()
 	// Inbox databases stored in ~/.claudefu/inbox/
 	inboxPath := filepath.Join(configPath, "inbox")
-	a.mcpServer = mcpserver.NewMCPService(port, configPath, inboxPath)
+	// Backlog databases stored in ~/.claudefu/backlog/
+	backlogPath := filepath.Join(configPath, "backlog")
+	a.mcpServer = mcpserver.NewMCPService(port, configPath, inboxPath, backlogPath)
 
 	// Set up dependencies
 	a.mcpServer.SetClaudeService(a.claude)
@@ -359,10 +361,13 @@ func (a *App) initializeMCPServer() {
 		a.claude.SetMCPServerPort(port)
 	}
 
-	// Load inbox for current workspace
+	// Load inbox and backlog for current workspace
 	if a.currentWorkspace != nil {
 		if err := a.mcpServer.LoadInbox(a.currentWorkspace.ID); err != nil {
 			wailsrt.LogWarning(a.ctx, fmt.Sprintf("Failed to load inbox: %v", err))
+		}
+		if err := a.mcpServer.LoadBacklog(a.currentWorkspace.ID); err != nil {
+			wailsrt.LogWarning(a.ctx, fmt.Sprintf("Failed to load backlog: %v", err))
 		}
 	}
 }

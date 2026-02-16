@@ -112,6 +112,15 @@ export function useSession() {
     return state.messageQueues.get(agentId) || [];
   }, [state.messageQueues]);
 
+  // Backlog count per agent
+  const setBacklogCount = useCallback((agentId: string, count: number) => {
+    dispatch({ type: 'SET_BACKLOG_COUNT', payload: { agentId, count } });
+  }, [dispatch]);
+
+  const getBacklogCount = useCallback((agentId: string): number => {
+    return state.backlogCounts.get(agentId) || 0;
+  }, [state.backlogCounts]);
+
   // Last session tracking (for global auto-submit)
   const setLastSessionId = useCallback((agentId: string, sessionId: string) => {
     dispatch({ type: 'SET_LAST_SESSION_ID', payload: { agentId, sessionId } });
@@ -140,6 +149,7 @@ export function useSession() {
     respondingAgents: state.respondingAgents,
     messageQueues: state.messageQueues,
     lastSessionIds: state.lastSessionIds,
+    backlogCounts: state.backlogCounts,
 
     // Actions
     selectSession,
@@ -160,6 +170,9 @@ export function useSession() {
     setMCPPendingPlanReview,
     setAgentResponding,
     isAgentResponding,
+    // Backlog count actions
+    setBacklogCount,
+    getBacklogCount,
     // Message Queue actions
     addToQueue,
     removeFromQueue,

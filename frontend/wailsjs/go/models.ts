@@ -281,6 +281,38 @@ export namespace main {
 
 export namespace mcpserver {
 	
+	export class BacklogItem {
+	    id: string;
+	    agentId: string;
+	    parentId?: string;
+	    title: string;
+	    context?: string;
+	    status: string;
+	    tags?: string;
+	    createdBy?: string;
+	    sortOrder: number;
+	    createdAt: number;
+	    updatedAt: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new BacklogItem(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.agentId = source["agentId"];
+	        this.parentId = source["parentId"];
+	        this.title = source["title"];
+	        this.context = source["context"];
+	        this.status = source["status"];
+	        this.tags = source["tags"];
+	        this.createdBy = source["createdBy"];
+	        this.sortOrder = source["sortOrder"];
+	        this.createdAt = source["createdAt"];
+	        this.updatedAt = source["updatedAt"];
+	    }
+	}
 	export class InboxMessage {
 	    id: string;
 	    fromAgentId?: string;
@@ -336,6 +368,9 @@ export namespace mcpserver {
 	    browserAgent: boolean;
 	    requestToolPermission: boolean;
 	    exitPlanMode: boolean;
+	    backlogAdd: boolean;
+	    backlogUpdate: boolean;
+	    backlogList: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new ToolAvailability(source);
@@ -352,6 +387,9 @@ export namespace mcpserver {
 	        this.browserAgent = source["browserAgent"];
 	        this.requestToolPermission = source["requestToolPermission"];
 	        this.exitPlanMode = source["exitPlanMode"];
+	        this.backlogAdd = source["backlogAdd"];
+	        this.backlogUpdate = source["backlogUpdate"];
+	        this.backlogList = source["backlogList"];
 	    }
 	}
 	export class ToolInstructions {
@@ -368,6 +406,9 @@ export namespace mcpserver {
 	    exitPlanMode: string;
 	    compactionPrompt: string;
 	    compactionContinuation: string;
+	    backlogAdd: string;
+	    backlogUpdate: string;
+	    backlogList: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ToolInstructions(source);
@@ -388,6 +429,9 @@ export namespace mcpserver {
 	        this.exitPlanMode = source["exitPlanMode"];
 	        this.compactionPrompt = source["compactionPrompt"];
 	        this.compactionContinuation = source["compactionContinuation"];
+	        this.backlogAdd = source["backlogAdd"];
+	        this.backlogUpdate = source["backlogUpdate"];
+	        this.backlogList = source["backlogList"];
 	    }
 	}
 
@@ -495,6 +539,7 @@ export namespace permissions {
 	    inheritFromGlobal?: boolean;
 	    toolPermissions: Record<string, ToolPermission>;
 	    additionalDirectories: string[];
+	    experimentalFeatures?: Record<string, boolean>;
 	
 	    static createFrom(source: any = {}) {
 	        return new ClaudeFuPermissions(source);
@@ -506,6 +551,61 @@ export namespace permissions {
 	        this.inheritFromGlobal = source["inheritFromGlobal"];
 	        this.toolPermissions = this.convertValues(source["toolPermissions"], ToolPermission, true);
 	        this.additionalDirectories = source["additionalDirectories"];
+	        this.experimentalFeatures = source["experimentalFeatures"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class ExperimentalFeatureDefinition {
+	    id: string;
+	    name: string;
+	    description: string;
+	    envVar: string;
+	    tools: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new ExperimentalFeatureDefinition(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.description = source["description"];
+	        this.envVar = source["envVar"];
+	        this.tools = source["tools"];
+	    }
+	}
+	export class ExperimentalFeatureStatus {
+	    feature: ExperimentalFeatureDefinition;
+	    detected: boolean;
+	    source: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ExperimentalFeatureStatus(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.feature = this.convertValues(source["feature"], ExperimentalFeatureDefinition);
+	        this.detected = source["detected"];
+	        this.source = source["source"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

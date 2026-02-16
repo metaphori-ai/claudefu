@@ -17,7 +17,7 @@ type Session = types.Session;
  */
 export function useWailsEvents() {
   const { workspaceId, addDiscoveredSession } = useWorkspace();
-  const { setUnreadTotal, setInboxCounts, setMCPPendingQuestion, setMCPPendingPermission, setMCPPendingPlanReview, setAgentResponding } = useSession();
+  const { setUnreadTotal, setInboxCounts, setMCPPendingQuestion, setMCPPendingPermission, setMCPPendingPlanReview, setAgentResponding, setBacklogCount } = useSession();
   const {
     appendMessages,
     isMessageProcessed,
@@ -178,6 +178,23 @@ export function useWailsEvents() {
       EventsOff('mcp:inbox');
     };
   }, [setInboxCounts]);
+
+  // Subscribe to backlog:changed events (per-agent backlog count updates)
+  useEffect(() => {
+    const handleBacklogChanged = (envelope: {
+      agentId?: string;
+      payload?: { nonDoneCount?: number };
+    }) => {
+      if (envelope?.agentId && envelope.payload?.nonDoneCount !== undefined) {
+        setBacklogCount(envelope.agentId, envelope.payload.nonDoneCount);
+      }
+    };
+
+    EventsOn('backlog:changed', handleBacklogChanged);
+    return () => {
+      EventsOff('backlog:changed');
+    };
+  }, [setBacklogCount]);
 
   // Subscribe to response_complete events (backend signals when Claude CLI process exits)
   // This is the AUTHORITATIVE signal that a response is complete - much more reliable than stop_reason

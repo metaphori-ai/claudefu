@@ -794,3 +794,225 @@ func (s *MCPService) handleExitPlanMode(ctx context.Context, req mcp.CallToolReq
 		return mcp.NewToolResultError(fmt.Sprintf("Plan review timed out after %v", timeout)), nil
 	}
 }
+
+// =============================================================================
+// BACKLOG TOOL HANDLERS
+// =============================================================================
+
+// handleBacklogAdd handles the BacklogAdd tool call
+func (s *MCPService) handleBacklogAdd(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if !s.toolAvailability.IsEnabled("BacklogAdd") {
+		return mcp.NewToolResultError("BacklogAdd tool is disabled. Enable in MCP Settings > Tool Availability."), nil
+	}
+
+	title, err := req.RequireString("title")
+	if err != nil {
+		return mcp.NewToolResultError("title is required"), nil
+	}
+
+	// Optional parameters
+	contextStr := getOptionalString(req, "context")
+	status := getOptionalString(req, "status")
+	tags := getOptionalString(req, "tags")
+	parentID := getOptionalString(req, "parent_id")
+	fromAgent := getOptionalString(req, "from_agent")
+
+	// Resolve agent ID from from_agent slug
+	agentID := s.resolveAgentID(fromAgent)
+	if agentID == "" {
+		return mcp.NewToolResultError("from_agent is required to identify which agent's backlog to add to. Available agents: " + strings.Join(s.getAvailableAgentSlugs(), ", ")), nil
+	}
+
+	if status == "" {
+		status = "idea"
+	}
+
+	createdBy := fromAgent
+	if createdBy == "" {
+		createdBy = "agent"
+	}
+
+	item := s.backlog.AddItem(agentID, title, contextStr, status, tags, createdBy, parentID)
+
+	// Emit change event
+	s.emitBacklogChanged(agentID)
+
+	return mcp.NewToolResultText(fmt.Sprintf("Created backlog item: %s (id: %s, status: %s)", item.Title, item.ID, item.Status)), nil
+}
+
+// handleBacklogUpdate handles the BacklogUpdate tool call
+func (s *MCPService) handleBacklogUpdate(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if !s.toolAvailability.IsEnabled("BacklogUpdate") {
+		return mcp.NewToolResultError("BacklogUpdate tool is disabled. Enable in MCP Settings > Tool Availability."), nil
+	}
+
+	id, err := req.RequireString("id")
+	if err != nil {
+		return mcp.NewToolResultError("id is required"), nil
+	}
+
+	item := s.backlog.GetItem(id)
+	if item == nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Backlog item not found: %s", id)), nil
+	}
+
+	// Apply updates only for provided fields
+	if title := getOptionalString(req, "title"); title != "" {
+		item.Title = title
+	}
+	if status := getOptionalString(req, "status"); status != "" {
+		item.Status = status
+	}
+	if tags := getOptionalString(req, "tags"); tags != "" {
+		item.Tags = tags
+	}
+
+	// Context: support "append:" prefix
+	if contextStr := getOptionalString(req, "context"); contextStr != "" {
+		if strings.HasPrefix(contextStr, "append:") {
+			appendContent := strings.TrimPrefix(contextStr, "append:")
+			if item.Context != "" {
+				item.Context = item.Context + "\n" + appendContent
+			} else {
+				item.Context = appendContent
+			}
+		} else {
+			item.Context = contextStr
+		}
+	}
+
+	ok := s.backlog.UpdateItem(*item)
+	if !ok {
+		return mcp.NewToolResultError("Failed to update backlog item"), nil
+	}
+
+	// Emit change event (use item's agentID)
+	s.emitBacklogChanged(item.AgentID)
+
+	return mcp.NewToolResultText(fmt.Sprintf("Updated backlog item: %s (id: %s, status: %s)", item.Title, item.ID, item.Status)), nil
+}
+
+// handleBacklogList handles the BacklogList tool call
+func (s *MCPService) handleBacklogList(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if !s.toolAvailability.IsEnabled("BacklogList") {
+		return mcp.NewToolResultError("BacklogList tool is disabled. Enable in MCP Settings > Tool Availability."), nil
+	}
+
+	statusFilter := getOptionalString(req, "status")
+	tagFilter := getOptionalString(req, "tag")
+	includeContext := getOptionalString(req, "include_context") == "true"
+	fromAgent := getOptionalString(req, "from_agent")
+
+	// Resolve agent ID from from_agent slug
+	agentID := s.resolveAgentID(fromAgent)
+	if agentID == "" {
+		return mcp.NewToolResultError("from_agent is required to identify which agent's backlog to list. Available agents: " + strings.Join(s.getAvailableAgentSlugs(), ", ")), nil
+	}
+
+	items := s.backlog.GetItemsByAgent(agentID)
+
+	// Filter by status if specified
+	if statusFilter != "" {
+		filtered := make([]BacklogItem, 0)
+		for _, item := range items {
+			if item.Status == statusFilter {
+				filtered = append(filtered, item)
+			}
+		}
+		items = filtered
+	}
+
+	// Filter by tag if specified
+	if tagFilter != "" {
+		filtered := make([]BacklogItem, 0)
+		for _, item := range items {
+			if strings.Contains(strings.ToLower(item.Tags), strings.ToLower(tagFilter)) {
+				filtered = append(filtered, item)
+			}
+		}
+		items = filtered
+	}
+
+	if len(items) == 0 {
+		return mcp.NewToolResultText("No backlog items found."), nil
+	}
+
+	// Format results as XML for clean parsing by Claude
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("<backlog count=\"%d\">\n", len(items)))
+
+	for _, item := range items {
+		// Build item attributes
+		attrs := fmt.Sprintf("id=\"%s\" status=\"%s\"", item.ID, item.Status)
+		if item.ParentID != "" {
+			attrs += fmt.Sprintf(" parent_id=\"%s\"", item.ParentID)
+		}
+		if item.Tags != "" {
+			attrs += fmt.Sprintf(" tags=\"%s\"", item.Tags)
+		}
+		if item.CreatedBy != "" {
+			attrs += fmt.Sprintf(" created_by=\"%s\"", item.CreatedBy)
+		}
+		sb.WriteString(fmt.Sprintf("<item %s>\n", attrs))
+		sb.WriteString(fmt.Sprintf("  <title>%s</title>\n", item.Title))
+
+		if includeContext && item.Context != "" {
+			sb.WriteString(fmt.Sprintf("  <context>\n%s\n  </context>\n", item.Context))
+		} else if !includeContext && item.Context != "" {
+			// Truncate to 100 chars
+			ctxStr := item.Context
+			if len(ctxStr) > 100 {
+				ctxStr = ctxStr[:100] + "..."
+			}
+			sb.WriteString(fmt.Sprintf("  <context>%s</context>\n", ctxStr))
+		}
+		sb.WriteString("</item>\n")
+	}
+
+	sb.WriteString("</backlog>")
+	return mcp.NewToolResultText(sb.String()), nil
+}
+
+// resolveAgentID resolves an agent slug/name to an agent UUID
+func (s *MCPService) resolveAgentID(identifier string) string {
+	if identifier == "" {
+		return ""
+	}
+	agent := s.findMCPEnabledAgent(identifier)
+	if agent == nil {
+		return ""
+	}
+	return agent.ID
+}
+
+// emitBacklogChanged emits a backlog:changed event for a specific agent via the MCP emitter
+func (s *MCPService) emitBacklogChanged(agentID string) {
+	if s.emitFunc == nil {
+		return
+	}
+	s.emitFunc(types.EventEnvelope{
+		AgentID:   agentID,
+		EventType: "backlog:changed",
+		Payload: map[string]any{
+			"totalCount":   s.backlog.GetTotalCount(agentID),
+			"nonDoneCount": s.backlog.GetNonDoneCount(agentID),
+		},
+	})
+}
+
+// getOptionalString extracts an optional string parameter from a tool request
+func getOptionalString(req mcp.CallToolRequest, key string) string {
+	args, ok := req.Params.Arguments.(map[string]any)
+	if !ok || args == nil {
+		return ""
+	}
+	val, ok := args[key]
+	if !ok {
+		return ""
+	}
+	str, ok := val.(string)
+	if !ok {
+		return ""
+	}
+	return str
+}

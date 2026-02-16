@@ -28,6 +28,9 @@ type ToolInstructions struct {
 	ExitPlanMode            string `json:"exitPlanMode"`            // ExitPlanMode tool description
 	CompactionPrompt        string `json:"compactionPrompt"`        // Compaction summary prompt (not yet wired)
 	CompactionContinuation  string `json:"compactionContinuation"`  // Post-compaction continuation message (not yet wired)
+	BacklogAdd              string `json:"backlogAdd"`              // BacklogAdd tool description
+	BacklogUpdate           string `json:"backlogUpdate"`           // BacklogUpdate tool description
+	BacklogList             string `json:"backlogList"`             // BacklogList tool description
 }
 
 // ToolInstructionsManager handles loading and saving tool instructions
@@ -162,6 +165,18 @@ func (m *ToolInstructionsManager) load() error {
 	}
 	if ti.CompactionContinuation == "" {
 		ti.CompactionContinuation = defaults.CompactionContinuation
+		needsSave = true
+	}
+	if ti.BacklogAdd == "" {
+		ti.BacklogAdd = defaults.BacklogAdd
+		needsSave = true
+	}
+	if ti.BacklogUpdate == "" {
+		ti.BacklogUpdate = defaults.BacklogUpdate
+		needsSave = true
+	}
+	if ti.BacklogList == "" {
+		ti.BacklogList = defaults.BacklogList
 		needsSave = true
 	}
 

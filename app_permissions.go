@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 
 	"claudefu/internal/permissions"
 )
@@ -316,6 +317,118 @@ func convertClaudeToClaudeFu(claude ClaudePermissions) *permissions.ClaudeFuPerm
 	}
 
 	return result
+}
+
+// =============================================================================
+// EXPERIMENTAL FEATURE METHODS (Bound to frontend)
+// =============================================================================
+
+// GetExperimentalFeatureDefinitions returns all known experimental feature definitions
+func (a *App) GetExperimentalFeatureDefinitions() []permissions.ExperimentalFeatureDefinition {
+	return permissions.GetAllFeatureDefinitions()
+}
+
+// DetectExperimentalFeatures checks all 3 sources for each known experimental feature
+// Returns detection status per feature (which source it was found in)
+func (a *App) DetectExperimentalFeatures(folder string) ([]permissions.ExperimentalFeatureStatus, error) {
+	// Read env sections from both project and global settings
+	var projectEnv, globalEnv map[string]string
+
+	if folder != "" {
+		env, err := a.GetClaudeSettingsEnv(folder)
+		if err == nil {
+			projectEnv = env
+		}
+	}
+
+	globalEnvResult, err := a.GetGlobalClaudeSettingsEnv()
+	if err == nil {
+		globalEnv = globalEnvResult
+	}
+
+	definitions := permissions.GetAllFeatureDefinitions()
+	statuses := make([]permissions.ExperimentalFeatureStatus, 0, len(definitions))
+
+	for _, feature := range definitions {
+		status := permissions.ExperimentalFeatureStatus{
+			Feature:  feature,
+			Detected: false,
+			Source:   "none",
+		}
+
+		// Check sources in priority order: project > global > process env
+		if val, ok := projectEnv[feature.EnvVar]; ok && val == "1" {
+			status.Detected = true
+			status.Source = "project"
+		} else if val, ok := globalEnv[feature.EnvVar]; ok && val == "1" {
+			status.Detected = true
+			status.Source = "global"
+		} else if os.Getenv(feature.EnvVar) == "1" {
+			status.Detected = true
+			status.Source = "env"
+		}
+
+		statuses = append(statuses, status)
+	}
+
+	return statuses, nil
+}
+
+// EnableExperimentalFeature enables/disables a feature in BOTH:
+// 1. ClaudeFu permissions (ExperimentalFeatures map) - for CLI flag compilation
+// 2. Project .claude/settings.local.json env section - so Claude CLI sees it
+func (a *App) EnableExperimentalFeature(folder, featureID string, enable bool) error {
+	if folder == "" {
+		return fmt.Errorf("folder is required")
+	}
+
+	// Find the feature definition
+	var feature *permissions.ExperimentalFeatureDefinition
+	for _, f := range permissions.GetAllFeatureDefinitions() {
+		if f.ID == featureID {
+			feature = &f
+			break
+		}
+	}
+	if feature == nil {
+		return fmt.Errorf("unknown experimental feature: %s", featureID)
+	}
+
+	// 1. Update ClaudeFu permissions
+	mgr, err := permissions.NewManager()
+	if err != nil {
+		return fmt.Errorf("failed to create permissions manager: %w", err)
+	}
+
+	perms, err := mgr.GetAgentPermissionsOrGlobal(folder)
+	if err != nil {
+		return fmt.Errorf("failed to load permissions: %w", err)
+	}
+
+	if perms.ExperimentalFeatures == nil {
+		perms.ExperimentalFeatures = make(map[string]bool)
+	}
+
+	if enable {
+		perms.ExperimentalFeatures[featureID] = true
+	} else {
+		delete(perms.ExperimentalFeatures, featureID)
+	}
+
+	if err := mgr.SaveAgentPermissions(folder, perms); err != nil {
+		return fmt.Errorf("failed to save permissions: %w", err)
+	}
+
+	// 2. Update project .claude/settings.local.json env var
+	envValue := ""
+	if enable {
+		envValue = "1"
+	}
+	if err := a.SetClaudeSettingsEnvVar(folder, feature.EnvVar, envValue); err != nil {
+		return fmt.Errorf("failed to update Claude settings: %w", err)
+	}
+
+	return nil
 }
 
 // findPermissionTier determines which tier a permission belongs to in a set
