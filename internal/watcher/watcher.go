@@ -33,6 +33,7 @@ type FileWatcher struct {
 	watchedFiles      map[string]bool     // Track watched files
 	loadedAgents      map[string]bool     // Track agents that have completed initial session load
 	activeSessionPath string              // Currently watched active session file (only ONE at a time)
+	pendingChanges    map[string]*time.Timer // path -> debounce timer (batches rapid writes during streaming)
 	mu                sync.RWMutex
 	ctx               context.Context
 	cancel            context.CancelFunc
@@ -52,6 +53,7 @@ func NewFileWatcher() (*FileWatcher, error) {
 		watchedDirs:      make(map[string]bool),
 		watchedFiles:     make(map[string]bool),
 		loadedAgents:     make(map[string]bool),
+		pendingChanges:   make(map[string]*time.Timer),
 		ctx:              ctx,
 		cancel:           cancel,
 	}
@@ -164,7 +166,7 @@ func (fw *FileWatcher) run() {
 				return
 			}
 			if event.Has(fsnotify.Write) {
-				fw.handleFileChange(event.Name)
+				fw.debounceFileChange(event.Name)
 			} else if event.Has(fsnotify.Create) {
 				fw.handleFileCreate(event.Name)
 			}
@@ -175,6 +177,36 @@ func (fw *FileWatcher) run() {
 			// Log error but continue
 		}
 	}
+}
+
+// debounceFileChange coalesces rapid Write events for the same file path.
+// During Claude streaming, fsnotify fires hundreds of Write events per second (~569 bytes each).
+// Without debouncing, handleFileChange runs on each event, re-reading incomplete JSONL lines
+// and finding 0 messages — creating a hot loop that wastes CPU.
+// With debouncing, we process at most once per 200ms interval per file.
+//
+// Strategy: "don't reset" — if a timer already exists, new events are ignored.
+// This ensures periodic processing (~5x/sec) during streaming rather than deferring
+// until 200ms after the LAST write (which could be seconds during a long response).
+func (fw *FileWatcher) debounceFileChange(path string) {
+	fw.mu.Lock()
+	defer fw.mu.Unlock()
+
+	// If a timer is already pending for this path, let it fire
+	if _, exists := fw.pendingChanges[path]; exists {
+		return
+	}
+
+	// Create new timer — fires 200ms from now
+	fw.pendingChanges[path] = time.AfterFunc(200*time.Millisecond, func() {
+		// Remove timer from map first, so new Write events can create a fresh timer
+		fw.mu.Lock()
+		delete(fw.pendingChanges, path)
+		fw.mu.Unlock()
+
+		// Process the accumulated file changes
+		fw.handleFileChange(path)
+	})
 }
 
 // handleFileChange reads new content from a changed file.
@@ -731,6 +763,13 @@ func (fw *FileWatcher) StopAllWatchers() {
 
 	// Clear loaded agents (allows re-loading on next StartWatchingAgent)
 	fw.loadedAgents = make(map[string]bool)
+
+	// Stop all pending debounce timers (prevents stale handleFileChange calls after reset)
+	for path, timer := range fw.pendingChanges {
+		timer.Stop()
+		delete(fw.pendingChanges, path)
+	}
+	fw.pendingChanges = make(map[string]*time.Timer)
 }
 
 // =============================================================================
@@ -775,47 +814,6 @@ func (fw *FileWatcher) ReloadSession(agentID, folder, sessionID string) error {
 // =============================================================================
 // FILE READING
 // =============================================================================
-
-// readNewMessages reads new messages from a file starting at the given position.
-func (fw *FileWatcher) readNewMessages(path string, startPos int64) []types.Message {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil
-	}
-	defer file.Close()
-
-	// Seek to last known position
-	_, err = file.Seek(startPos, 0)
-	if err != nil {
-		return nil
-	}
-
-	var messages []types.Message
-	scanner := bufio.NewScanner(file)
-	// Increase buffer for large lines (images can be 1.5MB+ when base64 encoded)
-	scanBuf := make([]byte, 0, 64*1024)
-	scanner.Buffer(scanBuf, 10*1024*1024) // 10MB max line size
-
-	lineNum := 0
-	for scanner.Scan() {
-		line := scanner.Text()
-		lineNum++
-		if line == "" {
-			continue
-		}
-
-		msg := fw.parseLine(line)
-		if msg != nil {
-			messages = append(messages, *msg)
-			fmt.Printf("[DEBUG] readNewMessages: line %d, len=%d, type=%s, uuid=%s\n", lineNum, len(line), msg.Type, msg.UUID[:8])
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		fmt.Printf("[DEBUG] readNewMessages: scanner error: %v\n", err)
-	}
-
-	return messages
-}
 
 // readNewMessagesLimited reads new messages from startPos up to endPos (exclusive).
 // This prevents reading content that's still being written by Claude Code.
@@ -973,6 +971,15 @@ func (fw *FileWatcher) parseSessionPath(path string) (folder, sessionID string) 
 
 // Close stops the watcher and releases resources.
 func (fw *FileWatcher) Close() {
+	// Stop pending debounce timers before cancelling context
+	// (time.AfterFunc runs independently of context cancellation)
+	fw.mu.Lock()
+	for path, timer := range fw.pendingChanges {
+		timer.Stop()
+		delete(fw.pendingChanges, path)
+	}
+	fw.mu.Unlock()
+
 	fw.cancel()
 	fw.watcher.Close()
 }

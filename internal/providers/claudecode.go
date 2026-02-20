@@ -351,72 +351,17 @@ func (s *ClaudeCodeService) SendMessage(folder, sessionId, message string, attac
 		permissionMode = "plan"
 	}
 
-	// If attachments provided, use stream-json input via stdin
-	if len(attachments) > 0 {
-		return s.sendWithAttachments(path, folder, sessionId, message, attachments, permissionMode)
-	}
-
-	// No attachments: use existing simpler -p approach
-	args := []string{
-		"--print",
-		"--permission-mode", permissionMode,
-		"--resume", sessionId,
-		"-p", message,
-	}
-
-	// Add permission args (tools, allowedTools, disallowedTools, add-dir)
-	args = append(args, s.buildPermissionArgs(folder)...)
-
-	// Add MCP config if configured (enables inter-agent communication)
-	args = append(args, s.getMCPArgs()...)
-
-	cmd := exec.CommandContext(s.ctx, path, args...)
-	cmd.Dir = folder
-	cmd.Env = s.buildEnvironment() // Apply custom env vars (e.g., ANTHROPIC_BASE_URL for proxies)
-
-	// Track the process for potential cancellation
-	s.trackProcess(sessionId, cmd)
-	defer s.untrackProcess(sessionId)
-
-	// Capture output for error reporting
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	// Emit CLI command for debug display
-	if s.emitFunc != nil {
-		cmdStr := path + " " + strings.Join(args, " ")
-		s.emitFunc("debug:cli-command", map[string]any{"command": cmdStr, "sessionId": sessionId})
-	}
-
-	// Start the command (non-blocking)
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start claude: %w", err)
-	}
-
-	fmt.Printf("[DEBUG] SendMessage: started claude PID=%d for session %s\n", cmd.Process.Pid, sessionId)
-
-	// Wait for command to complete (or be cancelled via CancelSession)
-	if err := cmd.Wait(); err != nil {
-		// Check if it was cancelled (context or signal)
-		if s.ctx.Err() != nil {
-			return fmt.Errorf("claude command cancelled: %w", s.ctx.Err())
-		}
-		// Include output in error for debugging
-		output := stderr.String()
-		if output == "" {
-			output = stdout.String()
-		}
-		return fmt.Errorf("claude command failed: %w, output: %s", err, output)
-	}
-
-	return nil
+	// Always use stream-json stdin approach for robust message handling.
+	// This avoids CLI argument parsing issues with special characters (e.g., --- interpreted as option terminator).
+	return s.sendViaStdin(path, folder, sessionId, message, attachments, permissionMode)
 }
 
-// sendWithAttachments sends a message with images via stdin using stream-json format.
+// sendViaStdin sends a message (with optional attachments) via stdin using stream-json format.
+// This is the primary send method — all messages go through stdin to avoid CLI argument parsing
+// issues with special characters like --- (option terminator), quotes, backticks, etc.
 // Required flags: --input-format stream-json, --output-format stream-json, --verbose
-func (s *ClaudeCodeService) sendWithAttachments(claudePath, folder, sessionId, message string, attachments []types.Attachment, permissionMode string) error {
-	fmt.Printf("[DEBUG] sendWithAttachments: folder=%s sessionId=%s message=%q attachments=%d\n", folder, sessionId, message, len(attachments))
+func (s *ClaudeCodeService) sendViaStdin(claudePath, folder, sessionId, message string, attachments []types.Attachment, permissionMode string) error {
+	fmt.Printf("[DEBUG] sendViaStdin: folder=%s sessionId=%s message=%q attachments=%d\n", folder, sessionId, message, len(attachments))
 
 	// Build content blocks array
 	contentBlocks := make([]map[string]any, 0, len(attachments)+1)
@@ -431,7 +376,7 @@ func (s *ClaudeCodeService) sendWithAttachments(claudePath, folder, sessionId, m
 
 	// Add attachment blocks (images or files)
 	for i, att := range attachments {
-		fmt.Printf("[DEBUG] sendWithAttachments: attachment[%d] type=%s mediaType=%s dataLen=%d\n", i, att.Type, att.MediaType, len(att.Data))
+		fmt.Printf("[DEBUG] sendViaStdin: attachment[%d] type=%s mediaType=%s dataLen=%d\n", i, att.Type, att.MediaType, len(att.Data))
 
 		if att.Type == "image" {
 			// Image block - send as base64 image
@@ -483,8 +428,8 @@ func (s *ClaudeCodeService) sendWithAttachments(claudePath, folder, sessionId, m
 	if len(jsonPreview) > 500 {
 		jsonPreview = jsonPreview[:500] + "..."
 	}
-	fmt.Printf("[DEBUG] sendWithAttachments: JSON payload preview: %s\n", jsonPreview)
-	fmt.Printf("[DEBUG] sendWithAttachments: JSON payload total length: %d bytes\n", len(jsonBytes))
+	fmt.Printf("[DEBUG] sendViaStdin: JSON payload preview: %s\n", jsonPreview)
+	fmt.Printf("[DEBUG] sendViaStdin: JSON payload total length: %d bytes\n", len(jsonBytes))
 
 	// Build command args - stream-json input requires these flags
 	args := []string{
@@ -501,7 +446,7 @@ func (s *ClaudeCodeService) sendWithAttachments(claudePath, folder, sessionId, m
 
 	args = append(args, s.getMCPArgs()...)
 
-	fmt.Printf("[DEBUG] sendWithAttachments: running command: %s %v\n", claudePath, args)
+	fmt.Printf("[DEBUG] sendViaStdin: running command: %s %v\n", claudePath, args)
 
 	cmd := exec.CommandContext(s.ctx, claudePath, args...)
 	cmd.Dir = folder
@@ -517,7 +462,7 @@ func (s *ClaudeCodeService) sendWithAttachments(claudePath, folder, sessionId, m
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	fmt.Printf("[DEBUG] sendWithAttachments: executing command...\n")
+	fmt.Printf("[DEBUG] sendViaStdin: executing command...\n")
 
 	// Emit CLI command for debug display (note: with attachments, stdin is piped so we note that)
 	if s.emitFunc != nil {
@@ -530,27 +475,27 @@ func (s *ClaudeCodeService) sendWithAttachments(claudePath, folder, sessionId, m
 		return fmt.Errorf("failed to start claude: %w", err)
 	}
 
-	fmt.Printf("[DEBUG] sendWithAttachments: started claude PID=%d for session %s\n", cmd.Process.Pid, sessionId)
+	fmt.Printf("[DEBUG] sendViaStdin: started claude PID=%d for session %s\n", cmd.Process.Pid, sessionId)
 
 	// Wait for command to complete (or be cancelled via CancelSession)
 	err = cmd.Wait()
-	fmt.Printf("[DEBUG] sendWithAttachments: command completed, err=%v\n", err)
+	fmt.Printf("[DEBUG] sendViaStdin: command completed, err=%v\n", err)
 
 	if err != nil {
 		// Check if it was cancelled (context or signal)
 		if s.ctx.Err() != nil {
-			fmt.Printf("[DEBUG] sendWithAttachments: CANCELLED\n")
+			fmt.Printf("[DEBUG] sendViaStdin: CANCELLED\n")
 			return fmt.Errorf("claude command cancelled: %w", s.ctx.Err())
 		}
 		output := stderr.String()
 		if output == "" {
 			output = stdout.String()
 		}
-		fmt.Printf("[DEBUG] sendWithAttachments: ERROR output: %s\n", output)
+		fmt.Printf("[DEBUG] sendViaStdin: ERROR output: %s\n", output)
 		return fmt.Errorf("claude command failed: %w, output: %s", err, output)
 	}
 
-	fmt.Printf("[DEBUG] sendWithAttachments: SUCCESS\n")
+	fmt.Printf("[DEBUG] sendViaStdin: SUCCESS\n")
 	return nil
 }
 

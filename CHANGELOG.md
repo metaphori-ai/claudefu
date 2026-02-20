@@ -5,6 +5,17 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **`---` pattern causing ClaudeFu to hang** — Messages containing `---` (POSIX option terminator) caused Claude CLI to hang when passed via `-p` argument. All message sending now uses stdin stream-json (`sendViaStdin`), completely bypassing CLI argument parsing. Affects all special characters: `---`, backticks, quotes, etc.
+
+- **File watcher infinite loop during streaming** — During Claude streaming, fsnotify fired hundreds of Write events per second (~569 bytes each). `handleFileChange` ran on every event, read incomplete JSONL lines, found 0 messages, and never advanced `filePos` — creating a CPU-burning hot loop. Added 200ms per-path debounce timer with "don't reset" strategy, reducing processing to ~5 calls/sec during streaming.
+
+### Changed
+- Unified `SendMessage` to always use stdin stream-json (removed separate `-p` CLI argument code path)
+- Removed unused `readNewMessages` method (replaced by `readNewMessagesLimited`)
+
 ## [0.4.10] - 2026-02-15
 
 ### Added
