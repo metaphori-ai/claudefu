@@ -53,12 +53,12 @@ func (a *Agent) GetSlug() string {
 	if a.MCPSlug != "" {
 		return a.MCPSlug
 	}
-	return slugify(a.Name)
+	return Slugify(a.Name)
 }
 
-// slugify converts a name to a URL-friendly slug
+// Slugify converts a name to a URL-friendly slug
 // e.g., "TrueMemory BFF" -> "truememory-bff"
-func slugify(name string) string {
+func Slugify(name string) string {
 	slug := strings.ToLower(name)
 	slug = strings.ReplaceAll(slug, " ", "-")
 	// Remove non-alphanumeric characters except dashes
@@ -412,8 +412,9 @@ func (m *Manager) GetSessions(folder string) ([]Session, error) {
 
 // encodeProjectPath encodes a folder path like Claude Code does
 func encodeProjectPath(path string) string {
-	// Replace / with -
-	return strings.ReplaceAll(path, "/", "-")
+	// Replace / and _ with - (matches Claude CLI encoding)
+	s := strings.ReplaceAll(path, "/", "-")
+	return strings.ReplaceAll(s, "_", "-")
 }
 
 // getSessionPreview reads first user message from session file using the classifier.

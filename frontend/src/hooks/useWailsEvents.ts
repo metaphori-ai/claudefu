@@ -92,6 +92,23 @@ export function useWailsEvents() {
     };
   }, [setMCPPendingQuestion]);
 
+  // Subscribe to mcp:askuser:dismissed events (backend signals question timed out, cancelled, or completed)
+  // This clears the pending question dialog so the UI doesn't get stuck
+  useEffect(() => {
+    const handleAskUserDismissed = (envelope: {
+      payload?: { questionId?: string };
+    }) => {
+      const questionId = envelope?.payload?.questionId;
+      console.log('[MCP:AskUser] Question dismissed:', questionId?.substring(0, 8));
+      setMCPPendingQuestion(null);
+    };
+
+    EventsOn('mcp:askuser:dismissed', handleAskUserDismissed);
+    return () => {
+      EventsOff('mcp:askuser:dismissed');
+    };
+  }, [setMCPPendingQuestion]);
+
   // Subscribe to mcp:permission-request events (MCP-based RequestToolPermission)
   useEffect(() => {
     const handlePermissionRequest = (envelope: {
@@ -123,6 +140,21 @@ export function useWailsEvents() {
     };
   }, [setMCPPendingPermission]);
 
+  // Subscribe to mcp:permission-request:dismissed events
+  useEffect(() => {
+    const handlePermissionDismissed = (envelope: {
+      payload?: { requestId?: string };
+    }) => {
+      console.log('[MCP:PermissionRequest] Dismissed:', envelope?.payload?.requestId?.substring(0, 8));
+      setMCPPendingPermission(null);
+    };
+
+    EventsOn('mcp:permission-request:dismissed', handlePermissionDismissed);
+    return () => {
+      EventsOff('mcp:permission-request:dismissed');
+    };
+  }, [setMCPPendingPermission]);
+
   // Subscribe to mcp:planreview events (MCP-based ExitPlanMode)
   useEffect(() => {
     const handlePlanReview = (envelope: {
@@ -147,6 +179,21 @@ export function useWailsEvents() {
     EventsOn('mcp:planreview', handlePlanReview);
     return () => {
       EventsOff('mcp:planreview');
+    };
+  }, [setMCPPendingPlanReview]);
+
+  // Subscribe to mcp:planreview:dismissed events
+  useEffect(() => {
+    const handlePlanReviewDismissed = (envelope: {
+      payload?: { reviewId?: string };
+    }) => {
+      console.log('[MCP:PlanReview] Dismissed:', envelope?.payload?.reviewId?.substring(0, 8));
+      setMCPPendingPlanReview(null);
+    };
+
+    EventsOn('mcp:planreview:dismissed', handlePlanReviewDismissed);
+    return () => {
+      EventsOff('mcp:planreview:dismissed');
     };
   }, [setMCPPendingPlanReview]);
 

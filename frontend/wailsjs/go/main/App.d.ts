@@ -231,7 +231,7 @@ export function SaveWorkspace(arg1:workspace.Workspace):Promise<void>;
 
 export function SaveWorkspaceWithRename(arg1:workspace.Workspace,arg2:string):Promise<void>;
 
-export function ScaffoldAgent(arg1:string,arg2:scaffold.ScaffoldOptions):Promise<main.ScaffoldResult>;
+export function ScaffoldAgent(arg1:string,arg2:string,arg3:scaffold.ScaffoldOptions):Promise<main.ScaffoldResult>;
 
 export function SelectDirectory(arg1:string):Promise<string>;
 

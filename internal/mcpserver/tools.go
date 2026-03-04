@@ -227,7 +227,7 @@ func CreateBacklogAddTool(instruction string) mcp.Tool {
 		),
 		mcp.WithString("from_agent",
 			mcp.Required(),
-			mcp.Description("Your agent name/slug (required — scopes items to your agent's backlog)"),
+			mcp.Description("CRITICAL: Your OWN agent slug or AGENT_ID from your CLAUDE.md. This determines which backlog database items are stored in. Do NOT use another agent's slug — check the Agent Identity section at the top of your CLAUDE.md."),
 		),
 	)
 }
@@ -284,7 +284,7 @@ func CreateBacklogListTool(instruction string) mcp.Tool {
 		),
 		mcp.WithString("from_agent",
 			mcp.Required(),
-			mcp.Description("Your agent name/slug (required — scopes list to your agent's backlog)"),
+			mcp.Description("CRITICAL: Your OWN agent slug or AGENT_ID from your CLAUDE.md. This determines which backlog you see. Do NOT use another agent's slug — check the Agent Identity section at the top of your CLAUDE.md."),
 		),
 	)
 }

@@ -78,6 +78,9 @@ func (a *App) startup(ctx context.Context) {
 	// Step 5: Start watching all agents (emits per-agent status internally)
 	a.startWatchingAllAgents()
 
+	// Step 5b: Restore per-agent session file watches from persisted SelectedSessionID
+	a.restoreAgentSessionWatches()
+
 	// Step 6: Initialize Claude CLI
 	a.emitLoadingStatus("Initializing Claude CLI...")
 	a.initializeClaude()
@@ -313,6 +316,22 @@ func (a *App) startWatchingAllAgents() {
 	}
 }
 
+// restoreAgentSessionWatches sets up file-level watches for each agent's persisted
+// SelectedSessionID. This ensures all agents' selected sessions are watched from
+// startup, not just the one the user clicks on. Called after startWatchingAllAgents()
+// which only sets up directory-level watchers.
+func (a *App) restoreAgentSessionWatches() {
+	if a.currentWorkspace == nil || a.watcher == nil {
+		return
+	}
+
+	for _, agent := range a.currentWorkspace.Agents {
+		if agent.SelectedSessionID != "" {
+			a.watcher.SetActiveSessionWatch(agent.ID, agent.SelectedSessionID)
+		}
+	}
+}
+
 // initializeClaude initializes the Claude CLI integration
 func (a *App) initializeClaude() {
 	a.claude = providers.NewClaudeCodeService(a.ctx)
@@ -357,6 +376,11 @@ func (a *App) initializeMCPServer() {
 	a.mcpServer.SetWorkspaceGetter(func() *workspace.Workspace {
 		return a.currentWorkspace
 	})
+
+	// Set up global agent registry for cross-workspace slug/UUID resolution
+	if a.workspace.Registry != nil {
+		a.mcpServer.SetRegistry(a.workspace.Registry)
+	}
 
 	// Set up emit function to forward events to Wails
 	a.mcpServer.SetEmitFunc(func(envelope types.EventEnvelope) {

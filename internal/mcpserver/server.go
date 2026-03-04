@@ -18,6 +18,7 @@ type MCPService struct {
 	server             *server.MCPServer
 	claude             *providers.ClaudeCodeService
 	workspace          func() *workspace.Workspace
+	registry           *workspace.AgentRegistry
 	emitFunc           func(types.EventEnvelope)
 	inbox              *InboxManager
 	backlog            *BacklogManager
@@ -63,6 +64,11 @@ func (s *MCPService) SetWorkspaceGetter(getter func() *workspace.Workspace) {
 // SetEmitFunc sets the function to emit Wails events
 func (s *MCPService) SetEmitFunc(emitFunc func(types.EventEnvelope)) {
 	s.emitFunc = emitFunc
+}
+
+// SetRegistry sets the global agent registry for cross-workspace slug/UUID resolution
+func (s *MCPService) SetRegistry(registry *workspace.AgentRegistry) {
+	s.registry = registry
 }
 
 // GetInbox returns the inbox manager for accessing messages

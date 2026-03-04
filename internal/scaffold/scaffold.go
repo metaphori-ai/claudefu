@@ -44,7 +44,7 @@ func CheckAgentSetup(folder string) (*ScaffoldCheck, error) {
 	}
 
 	// Projects dir + sessions-index.json
-	encoded := strings.ReplaceAll(folder, "/", "-")
+	encoded := strings.NewReplacer("/", "-", "_", "-").Replace(folder)
 	projectDir := filepath.Join(home, ".claude", "projects", encoded)
 	indexPath := filepath.Join(projectDir, "sessions-index.json")
 	if _, err := os.Stat(indexPath); err == nil {
@@ -75,9 +75,15 @@ func CheckAgentSetup(folder string) (*ScaffoldCheck, error) {
 	return check, nil
 }
 
+// AgentIdentity holds agent identity info for template replacement.
+type AgentIdentity struct {
+	ID   string // Agent UUID (from global registry)
+	Slug string // Agent slug (for MCP tool calls)
+}
+
 // EnsureAgentSetup creates selected missing items for an agent folder.
 // Safe to call multiple times — only creates files that don't exist.
-func EnsureAgentSetup(folder, configPath string, opts ScaffoldOptions) error {
+func EnsureAgentSetup(folder, configPath string, identity AgentIdentity, opts ScaffoldOptions) error {
 	if folder == "" {
 		return fmt.Errorf("folder is empty")
 	}
@@ -89,7 +95,7 @@ func EnsureAgentSetup(folder, configPath string, opts ScaffoldOptions) error {
 	}
 
 	if opts.ClaudeMD {
-		if err := ensureClaudeMD(folder, configPath); err != nil {
+		if err := ensureClaudeMD(folder, configPath, identity); err != nil {
 			return fmt.Errorf("CLAUDE.md: %w", err)
 		}
 	}
@@ -108,7 +114,7 @@ func ensureClaudeProjectsDir(folder string) error {
 		return err
 	}
 
-	encoded := strings.ReplaceAll(folder, "/", "-")
+	encoded := strings.NewReplacer("/", "-", "_", "-").Replace(folder)
 	projectDir := filepath.Join(home, ".claude", "projects", encoded)
 
 	if err := os.MkdirAll(projectDir, 0755); err != nil {
@@ -132,8 +138,8 @@ func ensureClaudeProjectsDir(folder string) error {
 
 // ensureClaudeMD copies the CLAUDE.md template to the agent folder if missing.
 // Reads from ~/.claudefu/default-templates/CLAUDE.md (user-customizable).
-// Replaces {PROJECT_NAME} with the folder base name.
-func ensureClaudeMD(folder, configPath string) error {
+// Replaces {PROJECT_NAME}, {AGENT_ID}, and {AGENT_SLUG} with actual values.
+func ensureClaudeMD(folder, configPath string, identity AgentIdentity) error {
 	target := filepath.Join(folder, "CLAUDE.md")
 	if _, err := os.Stat(target); err == nil {
 		return nil // Already exists — don't overwrite
@@ -148,6 +154,8 @@ func ensureClaudeMD(folder, configPath string) error {
 
 	projectName := filepath.Base(folder)
 	content := strings.ReplaceAll(string(tmpl), "{PROJECT_NAME}", projectName)
+	content = strings.ReplaceAll(content, "{AGENT_ID}", identity.ID)
+	content = strings.ReplaceAll(content, "{AGENT_SLUG}", identity.Slug)
 
 	return os.WriteFile(target, []byte(content), 0644)
 }

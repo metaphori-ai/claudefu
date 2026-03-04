@@ -13,6 +13,7 @@ import (
 	"claudefu/internal/types"
 	"claudefu/internal/workspace"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/mark3labs/mcp-go/mcp"
 )
@@ -420,6 +421,38 @@ func (s *MCPService) handleNotifyUser(ctx context.Context, req mcp.CallToolReque
 	return mcp.NewToolResultText("Notification sent"), nil
 }
 
+// emitQuestionDismissed tells the frontend to clear the pending question dialog.
+// This fires when the question is answered, skipped, timed out, or cancelled —
+// ensuring the UI never gets stuck showing a stale question dialog.
+func (s *MCPService) emitQuestionDismissed(questionID string) {
+	s.emitFunc(types.EventEnvelope{
+		EventType: "mcp:askuser:dismissed",
+		Payload: map[string]any{
+			"questionId": questionID,
+		},
+	})
+}
+
+// emitPermissionDismissed tells the frontend to clear the pending permission dialog.
+func (s *MCPService) emitPermissionDismissed(requestID string) {
+	s.emitFunc(types.EventEnvelope{
+		EventType: "mcp:permission-request:dismissed",
+		Payload: map[string]any{
+			"requestId": requestID,
+		},
+	})
+}
+
+// emitPlanReviewDismissed tells the frontend to clear the pending plan review dialog.
+func (s *MCPService) emitPlanReviewDismissed(reviewID string) {
+	s.emitFunc(types.EventEnvelope{
+		EventType: "mcp:planreview:dismissed",
+		Payload: map[string]any{
+			"reviewId": reviewID,
+		},
+	})
+}
+
 // emitInboxUpdate emits an inbox update event for the given agent
 func (s *MCPService) emitInboxUpdate(agentID string) {
 	s.emitFunc(types.EventEnvelope{
@@ -493,9 +526,13 @@ func (s *MCPService) handleAskUserQuestion(ctx context.Context, req mcp.CallTool
 	case answer, ok := <-pq.ResponseCh:
 		if !ok {
 			// Channel was closed (cancelled)
+			fmt.Printf("[MCP:AskUser] Question %s channel closed (cancelled)\n", pq.ID[:8])
+			s.emitQuestionDismissed(pq.ID)
 			return mcp.NewToolResultError("Question was cancelled"), nil
 		}
 		if answer.Skipped {
+			fmt.Printf("[MCP:AskUser] Question %s skipped by user\n", pq.ID[:8])
+			s.emitQuestionDismissed(pq.ID)
 			return mcp.NewToolResultError("User skipped the question"), nil
 		}
 		// Return answer as JSON
@@ -505,22 +542,29 @@ func (s *MCPService) handleAskUserQuestion(ctx context.Context, req mcp.CallTool
 		}
 		resultJSON, _ := json.Marshal(result)
 		fmt.Printf("[MCP:AskUser] Returning answer for question %s\n", pq.ID[:8])
+		s.emitQuestionDismissed(pq.ID)
 		return mcp.NewToolResultText(string(resultJSON)), nil
 
 	case <-ctx.Done():
-		// Context cancelled (e.g., Claude disconnected)
+		// Context cancelled (e.g., Claude disconnected from MCP SSE)
+		fmt.Printf("[MCP:AskUser] Question %s: context cancelled (Claude disconnected)\n", pq.ID[:8])
 		s.pendingQuestions.Cancel(pq.ID)
+		s.emitQuestionDismissed(pq.ID)
 		return mcp.NewToolResultError("Request cancelled"), nil
 
 	case <-s.ctx.Done():
 		// Server shutting down
+		fmt.Printf("[MCP:AskUser] Question %s: server shutting down\n", pq.ID[:8])
 		s.pendingQuestions.Cancel(pq.ID)
+		s.emitQuestionDismissed(pq.ID)
 		return mcp.NewToolResultError("Server shutting down"), nil
 
 	case <-time.After(timeout):
-		// Timeout
+		// Timeout — user didn't answer in time
+		fmt.Printf("[MCP:AskUser] Question %s: TIMED OUT after %v\n", pq.ID[:8], timeout)
 		s.pendingQuestions.Cancel(pq.ID)
-		return mcp.NewToolResultError(fmt.Sprintf("Question timed out after %v", timeout)), nil
+		s.emitQuestionDismissed(pq.ID)
+		return mcp.NewToolResultError(fmt.Sprintf("Question timed out after %v. The user did not respond in time.", timeout)), nil
 	}
 }
 
@@ -680,8 +724,10 @@ func (s *MCPService) handleRequestToolPermission(ctx context.Context, req mcp.Ca
 	timeout := s.pendingPermissions.GetTimeout()
 	select {
 	case response, ok := <-pr.ResponseCh:
+		s.emitPermissionDismissed(pr.ID)
 		if !ok {
 			// Channel was closed (cancelled)
+			fmt.Printf("[MCP:RequestToolPermission] Request %s channel closed (cancelled)\n", pr.ID[:8])
 			return mcp.NewToolResultError("Permission request was cancelled"), nil
 		}
 		if !response.Granted {
@@ -706,17 +752,23 @@ func (s *MCPService) handleRequestToolPermission(ctx context.Context, req mcp.Ca
 
 	case <-ctx.Done():
 		// Context cancelled (e.g., Claude disconnected)
+		fmt.Printf("[MCP:RequestToolPermission] Request %s: context cancelled (Claude disconnected)\n", pr.ID[:8])
 		s.pendingPermissions.Cancel(pr.ID)
+		s.emitPermissionDismissed(pr.ID)
 		return mcp.NewToolResultError("Request cancelled"), nil
 
 	case <-s.ctx.Done():
 		// Server shutting down
+		fmt.Printf("[MCP:RequestToolPermission] Request %s: server shutting down\n", pr.ID[:8])
 		s.pendingPermissions.Cancel(pr.ID)
+		s.emitPermissionDismissed(pr.ID)
 		return mcp.NewToolResultError("Server shutting down"), nil
 
 	case <-time.After(timeout):
 		// Timeout
+		fmt.Printf("[MCP:RequestToolPermission] Request %s: TIMED OUT after %v\n", pr.ID[:8], timeout)
 		s.pendingPermissions.Cancel(pr.ID)
+		s.emitPermissionDismissed(pr.ID)
 		return mcp.NewToolResultError(fmt.Sprintf("Permission request timed out after %v", timeout)), nil
 	}
 }
@@ -759,11 +811,14 @@ func (s *MCPService) handleExitPlanMode(ctx context.Context, req mcp.CallToolReq
 	timeout := s.pendingPlanReviews.GetTimeout()
 	select {
 	case answer, ok := <-pr.ResponseCh:
+		s.emitPlanReviewDismissed(pr.ID)
 		if !ok {
 			// Channel was closed (cancelled)
+			fmt.Printf("[MCP:ExitPlanMode] Review %s channel closed (cancelled)\n", pr.ID[:8])
 			return mcp.NewToolResultError("Plan review was cancelled"), nil
 		}
 		if answer.Skipped {
+			fmt.Printf("[MCP:ExitPlanMode] Review %s skipped by user\n", pr.ID[:8])
 			return mcp.NewToolResultError("User skipped the plan review"), nil
 		}
 		if answer.Accepted {
@@ -780,17 +835,23 @@ func (s *MCPService) handleExitPlanMode(ctx context.Context, req mcp.CallToolReq
 
 	case <-ctx.Done():
 		// Context cancelled (e.g., Claude disconnected)
+		fmt.Printf("[MCP:ExitPlanMode] Review %s: context cancelled (Claude disconnected)\n", pr.ID[:8])
 		s.pendingPlanReviews.Cancel(pr.ID)
+		s.emitPlanReviewDismissed(pr.ID)
 		return mcp.NewToolResultError("Request cancelled"), nil
 
 	case <-s.ctx.Done():
 		// Server shutting down
+		fmt.Printf("[MCP:ExitPlanMode] Review %s: server shutting down\n", pr.ID[:8])
 		s.pendingPlanReviews.Cancel(pr.ID)
+		s.emitPlanReviewDismissed(pr.ID)
 		return mcp.NewToolResultError("Server shutting down"), nil
 
 	case <-time.After(timeout):
 		// Timeout
+		fmt.Printf("[MCP:ExitPlanMode] Review %s: TIMED OUT after %v\n", pr.ID[:8], timeout)
 		s.pendingPlanReviews.Cancel(pr.ID)
+		s.emitPlanReviewDismissed(pr.ID)
 		return mcp.NewToolResultError(fmt.Sprintf("Plan review timed out after %v", timeout)), nil
 	}
 }
@@ -818,10 +879,10 @@ func (s *MCPService) handleBacklogAdd(ctx context.Context, req mcp.CallToolReque
 	parentID := getOptionalString(req, "parent_id")
 	fromAgent := getOptionalString(req, "from_agent")
 
-	// Resolve agent ID from from_agent slug
-	agentID := s.resolveAgentID(fromAgent)
-	if agentID == "" {
-		return mcp.NewToolResultError("from_agent is required to identify which agent's backlog to add to. Available agents: " + strings.Join(s.getAvailableAgentSlugs(), ", ")), nil
+	// Resolve agent ID from from_agent (UUID, slug, or name)
+	agentID, err := s.resolveAgentID(fromAgent)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
 	}
 
 	if status == "" {
@@ -911,10 +972,10 @@ func (s *MCPService) handleBacklogList(ctx context.Context, req mcp.CallToolRequ
 	includeContext := getOptionalString(req, "include_context") == "true"
 	fromAgent := getOptionalString(req, "from_agent")
 
-	// Resolve agent ID from from_agent slug
-	agentID := s.resolveAgentID(fromAgent)
-	if agentID == "" {
-		return mcp.NewToolResultError("from_agent is required to identify which agent's backlog to list. Available agents: " + strings.Join(s.getAvailableAgentSlugs(), ", ")), nil
+	// Resolve agent ID from from_agent (UUID, slug, or name)
+	agentID, err := s.resolveAgentID(fromAgent)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
 	}
 
 	items := s.backlog.GetItemsByAgent(agentID)
@@ -992,16 +1053,98 @@ func (s *MCPService) handleBacklogList(ctx context.Context, req mcp.CallToolRequ
 	return mcp.NewToolResultText(sb.String()), nil
 }
 
-// resolveAgentID resolves an agent slug/name to an agent UUID
-func (s *MCPService) resolveAgentID(identifier string) string {
+// resolveAgentID resolves an agent identifier (UUID, slug, or name) to an agent UUID.
+// Resolution chain:
+//  1. Empty → error
+//  2. Valid UUID → validate against global registry → use directly
+//  3. Slug/name → try current workspace agents
+//  4. Slug/name → try global registry (cross-workspace)
+//  5. Not found → "Did you mean?" error with suggestions
+func (s *MCPService) resolveAgentID(identifier string) (string, error) {
 	if identifier == "" {
-		return ""
+		return "", fmt.Errorf("from_agent is required")
 	}
+
+	// Step 1: Is it a UUID? Fast path — validate against global registry
+	if _, err := uuid.Parse(identifier); err == nil {
+		// Valid UUID format — verify it exists in the global registry
+		if s.registry != nil {
+			if info, _ := s.registry.FindByID(identifier); info != nil {
+				fmt.Printf("[MCP:resolveAgent] UUID '%s' found in registry (slug: %s, name: %s)\n", identifier[:8], info.Slug, info.Name)
+				return identifier, nil
+			}
+		}
+		// UUID format but not in registry — still accept it (might be newly created)
+		fmt.Printf("[MCP:resolveAgent] UUID '%s' accepted (not in registry yet)\n", identifier[:8])
+		return identifier, nil
+	}
+
+	// Step 2: Try current workspace agents (existing behavior)
 	agent := s.findMCPEnabledAgent(identifier)
-	if agent == nil {
-		return ""
+	if agent != nil {
+		return agent.ID, nil
 	}
-	return agent.ID
+
+	// Step 3: Try global registry (cross-workspace resolution)
+	if s.registry != nil {
+		if info, folder := s.registry.FindBySlug(identifier); info != nil {
+			fmt.Printf("[MCP:resolveAgent] Cross-workspace match: '%s' → %s (folder: %s)\n", identifier, info.ID[:8], folder)
+			return info.ID, nil
+		}
+	}
+
+	// Step 4: Not found — build "Did you mean?" error
+	return "", s.buildAgentNotFoundError(identifier)
+}
+
+// buildAgentNotFoundError constructs a helpful error message with suggestions
+// from both the current workspace agents and the global registry.
+func (s *MCPService) buildAgentNotFoundError(identifier string) error {
+	// Collect all known slugs for suggestions
+	var allSlugs []string
+	seen := make(map[string]bool)
+
+	// Workspace slugs
+	for _, slug := range s.getAvailableAgentSlugs() {
+		if !seen[slug] {
+			allSlugs = append(allSlugs, slug)
+			seen[slug] = true
+		}
+	}
+
+	// Registry slugs (includes agents from other workspaces)
+	if s.registry != nil {
+		for _, slug := range s.registry.AllSlugs() {
+			if !seen[slug] {
+				allSlugs = append(allSlugs, slug)
+				seen[slug] = true
+			}
+		}
+	}
+
+	if len(allSlugs) == 0 {
+		return fmt.Errorf("agent '%s' not found. No agents are registered", identifier)
+	}
+
+	// Find close matches (simple substring/prefix matching)
+	identifier = strings.ToLower(identifier)
+	var closeMatches []string
+	for _, slug := range allSlugs {
+		slugLower := strings.ToLower(slug)
+		if strings.Contains(slugLower, identifier) || strings.Contains(identifier, slugLower) {
+			closeMatches = append(closeMatches, slug)
+		}
+	}
+
+	if len(closeMatches) > 0 {
+		return fmt.Errorf("agent '%s' not found. Did you mean: %s? All available: %s",
+			identifier,
+			strings.Join(closeMatches, ", "),
+			strings.Join(allSlugs, ", "))
+	}
+
+	return fmt.Errorf("agent '%s' not found. Available agents: %s",
+		identifier, strings.Join(allSlugs, ", "))
 }
 
 // emitBacklogChanged emits a backlog:changed event for a specific agent via the MCP emitter

@@ -39,13 +39,28 @@ type ScaffoldResult struct {
 
 // ScaffoldAgent creates selected missing items for a folder (bound to frontend).
 // If ProjectsDir is created, also creates a first session and returns its ID.
-func (a *App) ScaffoldAgent(folder string, opts scaffold.ScaffoldOptions) (*ScaffoldResult, error) {
+func (a *App) ScaffoldAgent(folder, name string, opts scaffold.ScaffoldOptions) (*ScaffoldResult, error) {
 	configPath := ""
 	if a.settings != nil {
 		configPath = a.settings.GetConfigPath()
 	}
 
-	if err := scaffold.EnsureAgentSetup(folder, configPath, opts); err != nil {
+	// Compute agent identity for CLAUDE.md template replacement.
+	// Prefer canonical slug from global registry (stable across workspaces)
+	// over workspace-local name derivation.
+	agentID := a.workspace.GetOrCreateAgentID(folder)
+	slug := workspace.Slugify(name)
+	if a.workspace.Registry != nil {
+		if info := a.workspace.Registry.GetInfo(folder); info != nil && info.Slug != "" {
+			slug = info.Slug
+		}
+	}
+	identity := scaffold.AgentIdentity{
+		ID:   agentID,
+		Slug: slug,
+	}
+
+	if err := scaffold.EnsureAgentSetup(folder, configPath, identity, opts); err != nil {
 		return nil, err
 	}
 
@@ -89,6 +104,15 @@ func (a *App) AddAgent(name, folder string) (*workspace.Agent, error) {
 		Name:      name,
 		Folder:    folder,
 		WatchMode: types.WatchModeFile,
+	}
+
+	// Sync slug/name to global registry only if not already set (first-write-wins).
+	// This preserves the canonical slug when the same folder is added to multiple workspaces.
+	// Explicit user changes go through UpdateAgent → UpdateAgentMeta.
+	if a.workspace.Registry != nil {
+		if info := a.workspace.Registry.GetInfo(folder); info == nil || info.Slug == "" {
+			a.workspace.Registry.UpdateAgentMeta(folder, agent.GetSlug(), name)
+		}
 	}
 
 	a.currentWorkspace.Agents = append(a.currentWorkspace.Agents, agent)
@@ -253,6 +277,12 @@ func (a *App) UpdateAgent(agent workspace.Agent) error {
 	for i := range a.currentWorkspace.Agents {
 		if a.currentWorkspace.Agents[i].ID == agent.ID {
 			a.currentWorkspace.Agents[i] = agent
+
+			// Sync slug/name to global registry for cross-workspace resolution
+			if a.workspace.Registry != nil {
+				a.workspace.Registry.UpdateAgentMeta(agent.Folder, agent.GetSlug(), agent.Name)
+			}
+
 			return a.workspace.SaveWorkspace(a.currentWorkspace)
 		}
 	}

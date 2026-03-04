@@ -5,16 +5,47 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.12] - 2026-03-03
+
+### Added
+- **Cross-Workspace MCP Agent Resolution** — MCP tools (BacklogAdd, BacklogList, etc.) now resolve agents across all workspaces, not just the active one
+  - `resolveAgentID()` upgraded with 4-step resolution chain: UUID fast path → workspace slug → registry slug → "Did you mean?" error
+  - Agents can pass their UUID directly as `from_agent` for instant resolution without slug lookup
+  - Global registry stores slug/name metadata alongside UUIDs for cross-workspace slug matching
+  - "Did you mean?" errors with substring-matched suggestions when agent not found
+
+- **Registry v2 Format** — Agent registry upgraded from `folder → UUID` to `folder → {id, slug, name}`
+  - Automatic v1→v2 migration on load (transparent, preserves all existing entries)
+  - New methods: `FindByID`, `FindBySlug`, `AllSlugs`, `UpdateAgentMeta`, `GetInfo`
+  - **Canonical slug (first-write-wins)**: Registry slug set once on first registration and preserved across workspaces. Same folder added to a different workspace with a different name won't overwrite the canonical slug. Only explicit user edits via `UpdateAgent` change it.
+
+- **CLAUDE.md Agent Identity Template Variables** — New agents automatically get `{AGENT_ID}` and `{AGENT_SLUG}` in their scaffolded CLAUDE.md
+  - Template at `~/.claudefu/default-templates/CLAUDE.md` now supports `{AGENT_ID}` and `{AGENT_SLUG}` alongside existing `{PROJECT_NAME}`
+  - Prevents agent identity confusion in MCP tool calls (e.g., `from_agent` in BacklogAdd/BacklogList)
+  - `ScaffoldAgent` uses canonical slug from global registry when available, falls back to `Slugify(name)` for new agents
+  - Exported `workspace.Slugify()` for cross-package slug derivation
 
 ### Fixed
+- **Registry slug overwritten on workspace switch** — When the same folder was added to multiple workspaces with different agent names, `ReconcileWorkspace()` and `AddAgent()` would overwrite the canonical registry slug on each workspace load. This broke cross-workspace `from_agent` resolution (e.g., `BacklogList` with `from_agent: "claudefu-main"` would fail if the last-loaded workspace used a different slug). Fixed with first-write-wins semantics: registry slug is set once and only explicit user edits via `UpdateAgent()` can change it.
+
+- **Backlog `from_agent` identity confusion** — Agents could accidentally use another agent's slug as `from_agent`, routing backlog items to the wrong database. Strengthened `from_agent` parameter descriptions in BacklogAdd and BacklogList tools with explicit guidance to check CLAUDE.md Agent Identity section.
+
+- **Folder encoding mismatch for paths with underscores** — Claude CLI encodes folder paths by replacing both `/` and `_` with `-`, but ClaudeFu only replaced `/`. This caused sessions created by ClaudeFu to land in a different directory than where Claude CLI looks, resulting in "No conversation found" errors when resuming. Fixed all 7 encoding locations across 4 files (session creation, scaffold, file watcher, workspace).
+
 - **`---` pattern causing ClaudeFu to hang** — Messages containing `---` (POSIX option terminator) caused Claude CLI to hang when passed via `-p` argument. All message sending now uses stdin stream-json (`sendViaStdin`), completely bypassing CLI argument parsing. Affects all special characters: `---`, backticks, quotes, etc.
 
 - **File watcher infinite loop during streaming** — During Claude streaming, fsnotify fired hundreds of Write events per second (~569 bytes each). `handleFileChange` ran on every event, read incomplete JSONL lines, found 0 messages, and never advanced `filePos` — creating a CPU-burning hot loop. Added 200ms per-path debounce timer with "don't reset" strategy, reducing processing to ~5 calls/sec during streaming.
 
+- **File watcher paused on agent switch** — Switching agents during an active Claude response caused the file watcher to stop monitoring the previous agent's session. Refactored from single `activeSessionPath` to per-agent `agentSessionPaths map[string]string`, so each agent in the workspace watches its own selected session file simultaneously. Added `restoreAgentSessionWatches()` at startup and workspace switch to resume all persisted per-agent watches.
+
+- **MCP AskUserQuestion/RequestToolPermission/ExitPlanMode getting stuck** — When MCP tool handlers timed out, were cancelled, or the context was shut down, the frontend dialog was never dismissed. Added dismiss event emission (`mcp:askuser:dismissed`, `mcp:permission-request:dismissed`, `mcp:planreview:dismissed`) from all handler exit paths (timeout, cancel, context done, shutdown) and corresponding frontend handlers to clear pending UI state.
+
 ### Changed
 - Unified `SendMessage` to always use stdin stream-json (removed separate `-p` CLI argument code path)
 - Removed unused `readNewMessages` method (replaced by `readNewMessagesLimited`)
+- `ClearActiveSession()` no longer unwatches the file watcher — per-agent watching means each agent's session stays monitored even when the user switches to a different agent
+- `ClearActiveSessionWatch()` now takes `agentID string` parameter (was no-args)
+- `resolveAgentID` now returns `(string, error)` instead of `string` for richer error messages
 
 ## [0.4.10] - 2026-02-15
 

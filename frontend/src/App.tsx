@@ -1764,7 +1764,7 @@ function AppContent() {
           agentName={scaffoldDialog.name}
           check={scaffoldDialog.check}
           onConfirm={async (opts) => {
-            const result = await ScaffoldAgent(scaffoldDialog.folder, opts);
+            const result = await ScaffoldAgent(scaffoldDialog.folder, scaffoldDialog.name, opts);
             // If a session was created, refresh so the runtime discovers it
             if (result?.sessionId && scaffoldDialog.pendingAgentId) {
               await RefreshSessions(scaffoldDialog.pendingAgentId);

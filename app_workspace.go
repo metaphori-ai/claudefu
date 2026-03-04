@@ -99,6 +99,9 @@ func (a *App) SwitchWorkspace(workspaceID string) (*workspace.Workspace, error) 
 	// Step 8: Start watching all agents (emits per-agent status internally)
 	a.startWatchingAllAgents()
 
+	// Step 8b: Restore per-agent session file watches from persisted SelectedSessionID
+	a.restoreAgentSessionWatches()
+
 	// Step 9: Restart MCP server and load inbox/backlog for new workspace
 	if a.mcpServer != nil {
 		a.mcpServer.Restart()

@@ -250,9 +250,10 @@ type UsageInfo struct {
 }
 
 // encodeFolder converts folder path to Claude's encoded format.
-// Replaces "/" with "-" to create a flat directory structure.
+// Replaces "/" and "_" with "-" to create a flat directory structure.
 func encodeFolder(folder string) string {
-	return strings.ReplaceAll(folder, "/", "-")
+	s := strings.ReplaceAll(folder, "/", "-")
+	return strings.ReplaceAll(s, "_", "-")
 }
 
 // addToIndex adds a session entry to sessions-index.json.

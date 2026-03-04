@@ -166,8 +166,8 @@ func (a *App) SetActiveSession(agentID, sessionID string) error {
 
 	a.rt.SetActiveSession(agentID, sessionID)
 
-	// Update file watcher to only watch this session file
-	// This saves resources - we don't need 100+ fsnotify watches
+	// Update file watcher — each agent watches one session file (the selected one).
+	// An agent can have 100+ historical sessions; we only watch the active one per agent.
 	if a.watcher != nil {
 		a.watcher.SetActiveSessionWatch(agentID, sessionID)
 	}
@@ -201,13 +201,14 @@ func (a *App) SetActiveSession(agentID, sessionID string) error {
 	return nil
 }
 
-// ClearActiveSession clears the active session
+// ClearActiveSession clears the active session in the runtime (UI view state).
+// NOTE: This does NOT unwatch the agent's session file. With per-agent watching,
+// each agent's selected session stays watched even when the user switches to a
+// different agent. File watcher cleanup happens in StopWatchingAgent (agent removal)
+// or SetActiveSessionWatch (session change within same agent).
 func (a *App) ClearActiveSession() {
 	if a.rt != nil {
 		a.rt.ClearActiveSession()
-	}
-	if a.watcher != nil {
-		a.watcher.ClearActiveSessionWatch()
 	}
 }
 

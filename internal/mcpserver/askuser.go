@@ -82,7 +82,8 @@ func (m *PendingQuestionManager) Answer(id string, answers map[string]string) er
 	pq, exists := m.pending[id]
 	if !exists {
 		m.mu.Unlock()
-		return fmt.Errorf("question %s not found", id)
+		fmt.Printf("[MCP:AskUser] Answer for question %s: NOT FOUND (likely already timed out or cancelled)\n", id[:8])
+		return fmt.Errorf("question %s not found — it may have timed out before your answer was submitted", id)
 	}
 	delete(m.pending, id)
 	m.mu.Unlock()
@@ -90,9 +91,9 @@ func (m *PendingQuestionManager) Answer(id string, answers map[string]string) er
 	// Send answer (non-blocking with buffer)
 	select {
 	case pq.ResponseCh <- &UserAnswer{Answers: answers, Skipped: false}:
-		fmt.Printf("[MCP:AskUser] Answered question %s\n", id[:8])
+		fmt.Printf("[MCP:AskUser] Answered question %s successfully\n", id[:8])
 	default:
-		fmt.Printf("[MCP:AskUser] Warning: question %s response channel full\n", id[:8])
+		fmt.Printf("[MCP:AskUser] Warning: question %s response channel full (handler may have already returned)\n", id[:8])
 	}
 
 	return nil

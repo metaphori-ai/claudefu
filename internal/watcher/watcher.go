@@ -28,12 +28,12 @@ type FileWatcher struct {
 	watcher           *fsnotify.Watcher
 	runtime           *runtime.WorkspaceRuntime
 	workspaceID       string
-	folderToAgentIDs  map[string][]string // folder path -> list of agent UUIDs (multiple agents can share a folder)
-	watchedDirs       map[string]bool     // Track watched directories
-	watchedFiles      map[string]bool     // Track watched files
-	loadedAgents      map[string]bool     // Track agents that have completed initial session load
-	activeSessionPath string              // Currently watched active session file (only ONE at a time)
-	pendingChanges    map[string]*time.Timer // path -> debounce timer (batches rapid writes during streaming)
+	folderToAgentIDs  map[string][]string    // folder path -> list of agent UUIDs (multiple agents can share a folder)
+	watchedDirs       map[string]bool        // Track watched directories
+	watchedFiles      map[string]bool        // Track watched files
+	loadedAgents      map[string]bool        // Track agents that have completed initial session load
+	agentSessionPaths map[string]string      // agentID -> watched session file path (one per agent)
+	pendingChanges    map[string]*time.Timer  // path -> debounce timer (batches rapid writes during streaming)
 	mu                sync.RWMutex
 	ctx               context.Context
 	cancel            context.CancelFunc
@@ -48,14 +48,15 @@ func NewFileWatcher() (*FileWatcher, error) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	fw := &FileWatcher{
-		watcher:          w,
-		folderToAgentIDs: make(map[string][]string),
-		watchedDirs:      make(map[string]bool),
-		watchedFiles:     make(map[string]bool),
-		loadedAgents:     make(map[string]bool),
-		pendingChanges:   make(map[string]*time.Timer),
-		ctx:              ctx,
-		cancel:           cancel,
+		watcher:           w,
+		folderToAgentIDs:  make(map[string][]string),
+		watchedDirs:       make(map[string]bool),
+		watchedFiles:      make(map[string]bool),
+		loadedAgents:      make(map[string]bool),
+		agentSessionPaths: make(map[string]string),
+		pendingChanges:    make(map[string]*time.Timer),
+		ctx:               ctx,
+		cancel:            cancel,
 	}
 
 	go fw.run()
@@ -84,13 +85,15 @@ func (fw *FileWatcher) SetWorkspaceContext(workspaceID string, folderToAgentIDs 
 
 // =============================================================================
 // ACTIVE SESSION WATCHING
-// Only ONE session file should be watched at a time (the active one).
-// This saves resources - we don't need to watch 100+ session files.
-// Directory-level watching handles new file discovery.
+// One session file per agent is watched at a time (the selected session for that agent).
+// Each agent in the workspace can have hundreds of historical sessions — we only
+// watch the one the user has selected in ClaudeFu. Directory-level watching
+// handles new file discovery (Create events).
 // =============================================================================
 
-// SetActiveSessionWatch switches the watched session file to the active session.
-// Unwatches the previous session file and watches the new one.
+// SetActiveSessionWatch sets the watched session file for a specific agent.
+// Unwatches that agent's previous session file (if any) and watches the new one.
+// Other agents' watched sessions are NOT affected.
 func (fw *FileWatcher) SetActiveSessionWatch(agentID, sessionID string) {
 	fw.mu.Lock()
 	defer fw.mu.Unlock()
@@ -115,39 +118,43 @@ func (fw *FileWatcher) SetActiveSessionWatch(agentID, sessionID string) {
 
 	newPath := filepath.Join(GetSessionsDir(folder), sessionID+".jsonl")
 
-	// Skip if already watching this file
-	if fw.activeSessionPath == newPath {
-		fmt.Printf("[DEBUG] SetActiveSessionWatch: already watching %s\n", sessionID[:8])
+	// Skip if this agent is already watching this exact file
+	if fw.agentSessionPaths[agentID] == newPath {
+		fmt.Printf("[DEBUG] SetActiveSessionWatch: agent %s already watching %s\n", agentID[:8], sessionID[:8])
 		return
 	}
 
-	// Unwatch previous active session file
-	if fw.activeSessionPath != "" {
-		fw.watcher.Remove(fw.activeSessionPath)
-		delete(fw.watchedFiles, fw.activeSessionPath)
-		fmt.Printf("[DEBUG] SetActiveSessionWatch: unwatched previous session\n")
+	// Unwatch this agent's previous session file (if any)
+	if oldPath, exists := fw.agentSessionPaths[agentID]; exists {
+		fw.watcher.Remove(oldPath)
+		delete(fw.watchedFiles, oldPath)
+		fmt.Printf("[DEBUG] SetActiveSessionWatch: agent %s unwatched previous session\n", agentID[:8])
 	}
 
-	// Watch new active session file
+	// Watch new session file for this agent
 	if err := fw.watcher.Add(newPath); err == nil {
 		fw.watchedFiles[newPath] = true
-		fw.activeSessionPath = newPath
-		fmt.Printf("[DEBUG] SetActiveSessionWatch: now watching session=%s path=%s\n", sessionID[:8], newPath)
+		fw.agentSessionPaths[agentID] = newPath
+		fmt.Printf("[DEBUG] SetActiveSessionWatch: agent %s now watching session=%s\n", agentID[:8], sessionID[:8])
+
+		// Force an immediate delta read to pick up any messages written while
+		// the file was unwatched (e.g., session was just selected after being idle).
+		go fw.handleFileChange(newPath)
 	} else {
-		fmt.Printf("[DEBUG] SetActiveSessionWatch: failed to watch %s: %v\n", newPath, err)
+		fmt.Printf("[DEBUG] SetActiveSessionWatch: agent %s failed to watch %s: %v\n", agentID[:8], newPath, err)
 	}
 }
 
-// ClearActiveSessionWatch stops watching any session file.
-func (fw *FileWatcher) ClearActiveSessionWatch() {
+// ClearActiveSessionWatch stops watching the session file for a specific agent.
+func (fw *FileWatcher) ClearActiveSessionWatch(agentID string) {
 	fw.mu.Lock()
 	defer fw.mu.Unlock()
 
-	if fw.activeSessionPath != "" {
-		fw.watcher.Remove(fw.activeSessionPath)
-		delete(fw.watchedFiles, fw.activeSessionPath)
-		fmt.Printf("[DEBUG] ClearActiveSessionWatch: unwatched %s\n", fw.activeSessionPath)
-		fw.activeSessionPath = ""
+	if oldPath, exists := fw.agentSessionPaths[agentID]; exists {
+		fw.watcher.Remove(oldPath)
+		delete(fw.watchedFiles, oldPath)
+		delete(fw.agentSessionPaths, agentID)
+		fmt.Printf("[DEBUG] ClearActiveSessionWatch: agent %s unwatched %s\n", agentID[:8], oldPath)
 	}
 }
 
@@ -384,9 +391,9 @@ func (fw *FileWatcher) handleFileCreate(path string) {
 		return
 	}
 
-	// NOTE: We do NOT automatically watch new session files.
-	// Only the ACTIVE session should be watched (via SetActiveSessionWatch).
-	// New sessions that aren't active don't need file watches.
+	// NOTE: New session files are NOT auto-watched here.
+	// The active session per agent is set via SetActiveSessionWatch when the user
+	// selects a session. Each agent has 100+ historical sessions; we only watch one per agent.
 
 	// Load initial messages (file may already have content if created externally)
 	messages, filePos := fw.loadInitialMessages(path)
@@ -557,10 +564,10 @@ func (fw *FileWatcher) StartWatchingAgent(agentID, folder string, lastViewedMap 
 		// Mark initial load complete - now delta reads can proceed
 		rt.MarkInitialLoadDone(agentID, sessionID)
 
-		// NOTE: We do NOT watch individual session files here.
-		// Only the ACTIVE session file should be watched (via SetActiveSessionWatch).
-		// Directory-level watching handles new file creation events.
-		// This saves resources - we don't need 100+ fsnotify watches.
+		// NOTE: Session files are not watched here during initial discovery.
+		// The active session per agent is set via SetActiveSessionWatch when the user
+		// selects a session in the UI. Each agent can have 100+ historical sessions;
+		// we only watch one per agent (the selected one).
 	}
 
 	// Mark agent as loaded to prevent duplicate discovery
@@ -697,11 +704,11 @@ func (fw *FileWatcher) StopWatchingAgent(agentID, folder string) {
 	fw.mu.Lock()
 	defer fw.mu.Unlock()
 
-	// Clear active session watch if it belongs to this agent
-	if fw.activeSessionPath != "" && strings.HasPrefix(fw.activeSessionPath, sessionsDir+"/") {
-		fw.watcher.Remove(fw.activeSessionPath)
-		delete(fw.watchedFiles, fw.activeSessionPath)
-		fw.activeSessionPath = ""
+	// Clear this agent's watched session file
+	if oldPath, exists := fw.agentSessionPaths[agentID]; exists {
+		fw.watcher.Remove(oldPath)
+		delete(fw.watchedFiles, oldPath)
+		delete(fw.agentSessionPaths, agentID)
 	}
 
 	// Clear agent from loadedAgents
@@ -743,8 +750,8 @@ func (fw *FileWatcher) StopAllWatchers() {
 	fw.mu.Lock()
 	defer fw.mu.Unlock()
 
-	// Clear active session watch
-	fw.activeSessionPath = ""
+	// Clear all per-agent session watches
+	fw.agentSessionPaths = make(map[string]string)
 
 	// Unwatch all directories
 	for dir := range fw.watchedDirs {
@@ -955,7 +962,7 @@ func (fw *FileWatcher) parseSessionPath(path string) (folder, sessionID string) 
 	defer fw.mu.RUnlock()
 
 	for f := range fw.folderToAgentIDs {
-		encodedName := strings.ReplaceAll(f, "/", "-")
+		encodedName := strings.NewReplacer("/", "-", "_", "-").Replace(f)
 		expectedDir := filepath.Join(os.Getenv("HOME"), ".claude", "projects", encodedName)
 		if dir == expectedDir {
 			return f, sessionID
@@ -1009,12 +1016,12 @@ func parseTimestampToTime(ts string) time.Time {
 
 // BuildSessionPath constructs the path to a session JSONL file.
 func BuildSessionPath(folder, sessionID string) string {
-	encodedName := strings.ReplaceAll(folder, "/", "-")
+	encodedName := strings.NewReplacer("/", "-", "_", "-").Replace(folder)
 	return filepath.Join(os.Getenv("HOME"), ".claude", "projects", encodedName, sessionID+".jsonl")
 }
 
 // GetSessionsDir returns the directory containing session files for a folder.
 func GetSessionsDir(folder string) string {
-	encodedName := strings.ReplaceAll(folder, "/", "-")
+	encodedName := strings.NewReplacer("/", "-", "_", "-").Replace(folder)
 	return filepath.Join(os.Getenv("HOME"), ".claude", "projects", encodedName)
 }
