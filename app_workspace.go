@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	wailsrt "github.com/wailsapp/wails/v2/pkg/runtime"
 
@@ -75,22 +76,38 @@ func (a *App) SwitchWorkspace(workspaceID string) (*workspace.Workspace, error) 
 		a.reconciledIDs = a.workspace.Registry.ReconcileWorkspace(ws)
 		if len(a.reconciledIDs) > 0 {
 			fmt.Printf("[INFO] SwitchWorkspace: Reconciled %d agent IDs\n", len(a.reconciledIDs))
-			if ws.SelectedSession != nil {
-				if newID, ok := a.reconciledIDs[ws.SelectedSession.AgentID]; ok {
-					ws.SelectedSession.AgentID = newID
-				}
-			}
 		}
 	}
+
+	// Step 5b: Migrate runtime fields from workspace JSON to local/ (one-time)
+	a.workspace.MigrateWorkspaceRuntimeFields(ws)
+
+	// Save cleaned workspace JSON (runtime fields stripped by SaveWorkspace)
 	if err := a.workspace.SaveWorkspace(ws); err != nil {
 		wailsrt.LogWarning(a.ctx, fmt.Sprintf("Failed to save migrated workspace: %v", err))
 	}
+
+	// Step 5c: Load per-machine runtime state and reconcile
+	wsState := a.workspace.LoadWorkspaceState(workspaceID)
+	if len(a.reconciledIDs) > 0 {
+		reconcileWorkspaceState(wsState, a.reconciledIDs)
+	}
+
+	// Update LastOpened timestamp
+	wsState.LastOpened = time.Now()
+	if err := a.workspace.SaveWorkspaceState(workspaceID, wsState); err != nil {
+		wailsrt.LogWarning(a.ctx, fmt.Sprintf("Failed to save workspace state: %v", err))
+	}
+
+	// Populate in-memory workspace from state (for frontend/menu)
+	populateWorkspaceFromState(ws, wsState)
 
 	// Step 6: Set as current
 	if err := a.workspace.SetCurrentWorkspace(workspaceID); err != nil {
 		return nil, err
 	}
 	a.currentWorkspace = ws
+	a.workspaceState = wsState
 
 	// Step 7: Re-initialize runtime
 	a.emitLoadingStatus("Setting up file watchers...")
@@ -213,6 +230,9 @@ func (a *App) DeleteWorkspace(workspaceID string) error {
 		inboxPath := filepath.Join(a.settings.GetConfigPath(), "inbox", workspaceID+".db")
 		os.Remove(inboxPath) // Ignore error if file doesn't exist
 	}
+
+	// Clean up local workspace state file
+	a.workspace.DeleteWorkspaceState(workspaceID)
 
 	return nil
 }

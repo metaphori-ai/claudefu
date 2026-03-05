@@ -2,6 +2,7 @@ package settings
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -27,7 +28,8 @@ type SessionManager struct {
 	mu         sync.RWMutex
 }
 
-// NewSessionManager creates a new session manager
+// NewSessionManager creates a new session manager.
+// Session names stay in root (synced config), session views go to local/ (per-machine state).
 func NewSessionManager(configPath string) (*SessionManager, error) {
 	sm := &SessionManager{
 		configPath: configPath,
@@ -35,7 +37,10 @@ func NewSessionManager(configPath string) (*SessionManager, error) {
 		views:      make(SessionViews),
 	}
 
-	// Load existing session names and views
+	// Migrate session-views.json from root to local/ (one-time)
+	sm.migrateViewsToLocal()
+
+	// Load existing session names (from root — synced config) and views (from local/)
 	_ = sm.load()
 	_ = sm.loadViews()
 
@@ -166,11 +171,37 @@ func (sm *SessionManager) GetAllLastViewed(folder string) map[string]int64 {
 	return make(map[string]int64)
 }
 
-// loadViews reads session view states from disk
-func (sm *SessionManager) loadViews() error {
-	path := filepath.Join(sm.configPath, SessionViewsFile)
+// viewsPath returns the path for session-views.json in local/ (per-machine state)
+func (sm *SessionManager) viewsPath() string {
+	return filepath.Join(sm.configPath, "local", SessionViewsFile)
+}
 
-	data, err := os.ReadFile(path)
+// migrateViewsToLocal moves session-views.json from root to local/ (one-time).
+func (sm *SessionManager) migrateViewsToLocal() {
+	oldPath := filepath.Join(sm.configPath, SessionViewsFile)
+	newPath := sm.viewsPath()
+
+	// Only migrate if old exists and new doesn't
+	if _, err := os.Stat(oldPath); err != nil {
+		return // Old doesn't exist
+	}
+	if _, err := os.Stat(newPath); err == nil {
+		return // New already exists
+	}
+
+	// Ensure local/ directory exists
+	os.MkdirAll(filepath.Join(sm.configPath, "local"), 0755)
+
+	if err := os.Rename(oldPath, newPath); err != nil {
+		fmt.Printf("[WARN] Failed to migrate session-views.json to local/: %v\n", err)
+	} else {
+		fmt.Printf("[INFO] Migrated session-views.json to local/session-views.json\n")
+	}
+}
+
+// loadViews reads session view states from local/ (per-machine state)
+func (sm *SessionManager) loadViews() error {
+	data, err := os.ReadFile(sm.viewsPath())
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil // File doesn't exist, use defaults
@@ -181,14 +212,12 @@ func (sm *SessionManager) loadViews() error {
 	return json.Unmarshal(data, &sm.views)
 }
 
-// saveViews writes session view states to disk
+// saveViews writes session view states to local/ (per-machine state)
 func (sm *SessionManager) saveViews() error {
-	path := filepath.Join(sm.configPath, SessionViewsFile)
-
 	jsonData, err := json.MarshalIndent(sm.views, "", "  ")
 	if err != nil {
 		return err
 	}
 
-	return os.WriteFile(path, jsonData, 0644)
+	return os.WriteFile(sm.viewsPath(), jsonData, 0644)
 }

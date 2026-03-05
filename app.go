@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	wailsrt "github.com/wailsapp/wails/v2/pkg/runtime"
 
@@ -32,6 +33,7 @@ type App struct {
 	claude           *providers.ClaudeCodeService
 	rt               *runtime.WorkspaceRuntime
 	currentWorkspace *workspace.Workspace
+	workspaceState   *workspace.WorkspaceState // Per-machine runtime state (local/workspace-state/)
 	mcpServer        *mcpserver.MCPService
 	sessionService   *session.Service // Instant session creation (no CLI wait)
 	terminalManager  *terminal.Manager
@@ -180,6 +182,14 @@ func (a *App) loadPersistedState() {
 	// Initialize workspace manager
 	a.workspace = workspace.NewManager(sm.GetConfigPath())
 
+	// Ensure local/ directory structure exists (for per-machine runtime state)
+	if err := a.workspace.EnsureLocalDirs(); err != nil {
+		wailsrt.LogWarning(a.ctx, fmt.Sprintf("Failed to create local dirs: %v", err))
+	}
+
+	// Run one-time migrations to move runtime state to local/
+	a.workspace.MigrateCurrentJSON()
+
 	// Initialize session service (instant session creation)
 	a.sessionService = session.NewService()
 
@@ -207,7 +217,8 @@ func (a *App) ensureDefaultTemplates() {
 	}
 }
 
-// loadCurrentWorkspace loads the current workspace and migrates if needed
+// loadCurrentWorkspace loads the current workspace, migrates runtime fields to local/,
+// and populates in-memory state from the workspace state file.
 func (a *App) loadCurrentWorkspace() {
 	if a.workspace == nil {
 		return
@@ -225,14 +236,6 @@ func (a *App) loadCurrentWorkspace() {
 		return
 	}
 
-	// DEBUG: Check if selectedSession was loaded
-	if ws.SelectedSession != nil {
-		fmt.Printf("[DEBUG] loadCurrentWorkspace: LOADED selectedSession agentId=%s sessionId=%s folder=%s\n",
-			ws.SelectedSession.AgentID, ws.SelectedSession.SessionID, ws.SelectedSession.Folder)
-	} else {
-		fmt.Printf("[DEBUG] loadCurrentWorkspace: selectedSession is nil after LoadWorkspace\n")
-	}
-
 	// Migrate workspace to latest version (adds UUIDs to agents)
 	ws = a.workspace.MigrateWorkspace(ws)
 
@@ -241,29 +244,75 @@ func (a *App) loadCurrentWorkspace() {
 		a.reconciledIDs = a.workspace.Registry.ReconcileWorkspace(ws)
 		if len(a.reconciledIDs) > 0 {
 			fmt.Printf("[INFO] Reconciled %d agent IDs against global registry\n", len(a.reconciledIDs))
-			// Update selectedSession if its agent ID was reconciled
-			if ws.SelectedSession != nil {
-				if newID, ok := a.reconciledIDs[ws.SelectedSession.AgentID]; ok {
-					ws.SelectedSession.AgentID = newID
-				}
-			}
 		}
 	}
 
-	// DEBUG: Check after migration
-	if ws.SelectedSession != nil {
-		fmt.Printf("[DEBUG] loadCurrentWorkspace: AFTER MIGRATE selectedSession agentId=%s sessionId=%s\n",
-			ws.SelectedSession.AgentID, ws.SelectedSession.SessionID)
-	} else {
-		fmt.Printf("[DEBUG] loadCurrentWorkspace: selectedSession is nil AFTER MigrateWorkspace\n")
-	}
+	// Migrate runtime fields from workspace JSON to local/workspace-state/ (one-time).
+	// This must happen AFTER reconciliation so extracted agent IDs are correct.
+	a.workspace.MigrateWorkspaceRuntimeFields(ws)
 
-	// Save migrated workspace
+	// Save cleaned workspace JSON (runtime fields stripped by SaveWorkspace)
 	if err := a.workspace.SaveWorkspace(ws); err != nil {
 		wailsrt.LogWarning(a.ctx, fmt.Sprintf("Failed to save migrated workspace: %v", err))
 	}
 
+	// Load per-machine runtime state from local/workspace-state/
+	wsState := a.workspace.LoadWorkspaceState(wsID)
+
+	// Reconcile agent IDs in workspace state if registry changed any
+	if len(a.reconciledIDs) > 0 {
+		reconcileWorkspaceState(wsState, a.reconciledIDs)
+	}
+
+	// Update LastOpened timestamp
+	wsState.LastOpened = time.Now()
+	if err := a.workspace.SaveWorkspaceState(wsID, wsState); err != nil {
+		wailsrt.LogWarning(a.ctx, fmt.Sprintf("Failed to save workspace state: %v", err))
+	}
+
+	// Populate in-memory workspace fields from state (for frontend emission and menu).
+	// SaveWorkspace() strips these before writing to disk.
+	populateWorkspaceFromState(ws, wsState)
+
 	a.currentWorkspace = ws
+	a.workspaceState = wsState
+}
+
+// populateWorkspaceFromState sets runtime fields on the in-memory workspace
+// from the workspace state file. This ensures the frontend and menu see the
+// correct selected session without any changes.
+func populateWorkspaceFromState(ws *workspace.Workspace, state *workspace.WorkspaceState) {
+	if state == nil {
+		return
+	}
+	ws.SelectedSession = state.SelectedSession
+	ws.LastOpened = state.LastOpened
+	for i := range ws.Agents {
+		if sessionID, ok := state.AgentSessions[ws.Agents[i].ID]; ok {
+			ws.Agents[i].SelectedSessionID = sessionID
+		}
+	}
+}
+
+// reconcileWorkspaceState updates agent IDs in workspace state if the global
+// registry reconciled any IDs (e.g., same folder got a different UUID).
+func reconcileWorkspaceState(state *workspace.WorkspaceState, reconciledIDs map[string]string) {
+	if state.SelectedSession != nil {
+		if newID, ok := reconciledIDs[state.SelectedSession.AgentID]; ok {
+			state.SelectedSession.AgentID = newID
+		}
+	}
+	if len(state.AgentSessions) > 0 {
+		newMap := make(map[string]string)
+		for agentID, sessionID := range state.AgentSessions {
+			if newID, ok := reconciledIDs[agentID]; ok {
+				newMap[newID] = sessionID
+			} else {
+				newMap[agentID] = sessionID
+			}
+		}
+		state.AgentSessions = newMap
+	}
 }
 
 // initializeWatcher creates the file watcher
@@ -317,17 +366,18 @@ func (a *App) startWatchingAllAgents() {
 }
 
 // restoreAgentSessionWatches sets up file-level watches for each agent's persisted
-// SelectedSessionID. This ensures all agents' selected sessions are watched from
-// startup, not just the one the user clicks on. Called after startWatchingAllAgents()
-// which only sets up directory-level watchers.
+// session selection. Reads from workspace state (local/) rather than workspace JSON.
+// This ensures all agents' selected sessions are watched from startup, not just
+// the one the user clicks on. Called after startWatchingAllAgents() which only
+// sets up directory-level watchers.
 func (a *App) restoreAgentSessionWatches() {
-	if a.currentWorkspace == nil || a.watcher == nil {
+	if a.currentWorkspace == nil || a.watcher == nil || a.workspaceState == nil {
 		return
 	}
 
 	for _, agent := range a.currentWorkspace.Agents {
-		if agent.SelectedSessionID != "" {
-			a.watcher.SetActiveSessionWatch(agent.ID, agent.SelectedSessionID)
+		if sessionID, ok := a.workspaceState.AgentSessions[agent.ID]; ok && sessionID != "" {
+			a.watcher.SetActiveSessionWatch(agent.ID, sessionID)
 		}
 	}
 }

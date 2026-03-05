@@ -127,6 +127,14 @@ type CurrentWorkspace struct {
 	ID string `json:"id"`
 }
 
+// WorkspaceState holds per-machine runtime state that should NOT be synced.
+// Persisted to ~/.claudefu/local/workspace-state/{workspace_id}.json
+type WorkspaceState struct {
+	SelectedSession *SelectedSession  `json:"selectedSession,omitempty"`
+	LastOpened      time.Time         `json:"lastOpened"`
+	AgentSessions   map[string]string `json:"agentSessions,omitempty"` // agentID -> sessionID
+}
+
 // GenerateWorkspaceID creates a unique workspace ID
 func GenerateWorkspaceID() string {
 	return fmt.Sprintf("ws-%d", time.Now().UnixNano()/1000000)
@@ -239,10 +247,18 @@ func (m *Manager) GetAllWorkspaces() ([]WorkspaceSummary, error) {
 			continue
 		}
 
+		// Source LastOpened from local workspace state (per-machine), not workspace JSON
+		wsState := m.LoadWorkspaceState(ws.ID)
+		lastOpened := wsState.LastOpened
+		if lastOpened.IsZero() {
+			// Fallback: use workspace JSON's LastOpened if state file doesn't exist yet
+			lastOpened = ws.LastOpened
+		}
+
 		workspaces = append(workspaces, WorkspaceSummary{
 			ID:         ws.ID,
 			Name:       ws.Name,
-			LastOpened: ws.LastOpened,
+			LastOpened: lastOpened,
 		})
 	}
 
@@ -254,9 +270,45 @@ func (m *Manager) GetAllWorkspaces() ([]WorkspaceSummary, error) {
 	return workspaces, nil
 }
 
-// GetCurrentWorkspaceID returns the ID of the currently active workspace
+// EnsureLocalDirs creates ~/.claudefu/local/ and subdirectories.
+// Called on startup to ensure the local runtime state directory exists.
+func (m *Manager) EnsureLocalDirs() error {
+	dirs := []string{
+		filepath.Join(m.configPath, "local"),
+		filepath.Join(m.configPath, "local", "workspace-state"),
+	}
+	for _, dir := range dirs {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("failed to create local dir %s: %w", dir, err)
+		}
+	}
+	return nil
+}
+
+// MigrateCurrentJSON moves current.json from root to local/ (one-time).
+func (m *Manager) MigrateCurrentJSON() {
+	oldPath := filepath.Join(m.configPath, "current.json")
+	newPath := filepath.Join(m.configPath, "local", "current.json")
+
+	// Only migrate if old exists and new doesn't
+	if _, err := os.Stat(oldPath); err != nil {
+		return // Old doesn't exist, nothing to migrate
+	}
+	if _, err := os.Stat(newPath); err == nil {
+		return // New already exists, already migrated
+	}
+
+	if err := os.Rename(oldPath, newPath); err != nil {
+		fmt.Printf("[WARN] Failed to migrate current.json to local/: %v\n", err)
+	} else {
+		fmt.Printf("[INFO] Migrated current.json to local/current.json\n")
+	}
+}
+
+// GetCurrentWorkspaceID returns the ID of the currently active workspace.
+// Reads from local/current.json (per-machine state).
 func (m *Manager) GetCurrentWorkspaceID() (string, error) {
-	currentPath := filepath.Join(m.configPath, "current.json")
+	currentPath := filepath.Join(m.configPath, "local", "current.json")
 	data, err := os.ReadFile(currentPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -273,20 +325,120 @@ func (m *Manager) GetCurrentWorkspaceID() (string, error) {
 	return current.ID, nil
 }
 
-// SetCurrentWorkspace sets the currently active workspace ID
+// SetCurrentWorkspace sets the currently active workspace ID.
+// Writes to local/current.json (per-machine state).
 func (m *Manager) SetCurrentWorkspace(id string) error {
 	current := CurrentWorkspace{ID: id}
 	data, err := json.MarshalIndent(current, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(m.configPath, "current.json"), data, 0644)
+	return os.WriteFile(filepath.Join(m.configPath, "local", "current.json"), data, 0644)
 }
 
-// SaveWorkspace saves a workspace configuration
-// Uses workspace ID for filename (stable, no rename issues)
+// LoadWorkspaceState reads per-machine runtime state from local/workspace-state/{id}.json
+func (m *Manager) LoadWorkspaceState(workspaceID string) *WorkspaceState {
+	statePath := filepath.Join(m.configPath, "local", "workspace-state", workspaceID+".json")
+	data, err := os.ReadFile(statePath)
+	if err != nil {
+		// Not found is normal (first run or new workspace)
+		return &WorkspaceState{}
+	}
+
+	var state WorkspaceState
+	if err := json.Unmarshal(data, &state); err != nil {
+		fmt.Printf("[WARN] Failed to parse workspace state %s: %v\n", workspaceID, err)
+		return &WorkspaceState{}
+	}
+	return &state
+}
+
+// SaveWorkspaceState writes per-machine runtime state to local/workspace-state/{id}.json
+func (m *Manager) SaveWorkspaceState(workspaceID string, state *WorkspaceState) error {
+	statePath := filepath.Join(m.configPath, "local", "workspace-state", workspaceID+".json")
+	data, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(statePath, data, 0644)
+}
+
+// DeleteWorkspaceState removes the local workspace state file for a workspace.
+func (m *Manager) DeleteWorkspaceState(workspaceID string) {
+	statePath := filepath.Join(m.configPath, "local", "workspace-state", workspaceID+".json")
+	os.Remove(statePath) // Ignore error if file doesn't exist
+}
+
+// MigrateWorkspaceRuntimeFields extracts runtime fields from a workspace JSON
+// into a WorkspaceState file, then cleans the workspace JSON. One-time migration.
+func (m *Manager) MigrateWorkspaceRuntimeFields(ws *Workspace) {
+	// Check if workspace still has runtime fields
+	hasRuntime := ws.SelectedSession != nil || !ws.LastOpened.IsZero()
+	hasAgentSessions := false
+	for _, agent := range ws.Agents {
+		if agent.SelectedSessionID != "" {
+			hasAgentSessions = true
+			break
+		}
+	}
+
+	if !hasRuntime && !hasAgentSessions {
+		return // Nothing to migrate
+	}
+
+	// Check if we already have a state file
+	statePath := filepath.Join(m.configPath, "local", "workspace-state", ws.ID+".json")
+	if _, err := os.Stat(statePath); err == nil {
+		// State file already exists — just clean the workspace JSON without overwriting state
+		m.cleanWorkspaceRuntimeFields(ws)
+		return
+	}
+
+	// Extract runtime state
+	state := &WorkspaceState{
+		SelectedSession: ws.SelectedSession,
+		LastOpened:       ws.LastOpened,
+		AgentSessions:   make(map[string]string),
+	}
+
+	for _, agent := range ws.Agents {
+		if agent.SelectedSessionID != "" {
+			state.AgentSessions[agent.ID] = agent.SelectedSessionID
+		}
+	}
+
+	// Save to local state file
+	if err := m.SaveWorkspaceState(ws.ID, state); err != nil {
+		fmt.Printf("[WARN] Failed to save workspace state during migration: %v\n", err)
+		return
+	}
+
+	// Clean runtime fields from workspace JSON
+	m.cleanWorkspaceRuntimeFields(ws)
+
+	fmt.Printf("[INFO] Migrated runtime fields from workspace %s to local/workspace-state/\n", ws.ID)
+}
+
+// cleanWorkspaceRuntimeFields removes runtime fields from workspace in-memory
+// and re-saves the workspace JSON without them.
+func (m *Manager) cleanWorkspaceRuntimeFields(ws *Workspace) {
+	ws.SelectedSession = nil
+	ws.LastOpened = time.Time{} // Zero value — omitempty won't help since time marshals even zero
+
+	for i := range ws.Agents {
+		ws.Agents[i].SelectedSessionID = ""
+	}
+}
+
+// SaveWorkspace saves a workspace configuration (config only, no runtime state).
+// Uses workspace ID for filename (stable, no rename issues).
+// Runtime state (selectedSession, lastOpened, agentSessions) is saved separately
+// via SaveWorkspaceState to avoid sync conflicts on multi-machine setups.
+//
+// NOTE: The in-memory workspace may have runtime fields populated (for frontend
+// emission and menu). This method strips them before writing to disk so the
+// workspace JSON stays clean and sync-friendly.
 func (m *Manager) SaveWorkspace(ws *Workspace) error {
-	ws.LastOpened = time.Now()
 	if ws.Created.IsZero() {
 		ws.Created = time.Now()
 	}
@@ -300,17 +452,24 @@ func (m *Manager) SaveWorkspace(ws *Workspace) error {
 	filename := ws.ID + ".json"
 	wsPath := filepath.Join(m.configPath, "workspaces", filename)
 
-	data, err := json.MarshalIndent(ws, "", "  ")
+	// Create a copy with runtime fields stripped for serialization.
+	// Runtime state lives in local/workspace-state/ to avoid sync conflicts.
+	toSave := *ws
+	toSave.SelectedSession = nil
+	toSave.LastOpened = time.Time{}
+	// Copy agents slice to avoid mutating the caller's in-memory workspace
+	toSave.Agents = make([]Agent, len(ws.Agents))
+	copy(toSave.Agents, ws.Agents)
+	for i := range toSave.Agents {
+		toSave.Agents[i].SelectedSessionID = ""
+	}
+
+	data, err := json.MarshalIndent(&toSave, "", "  ")
 	if err != nil {
 		return err
 	}
 
-	if err := os.WriteFile(wsPath, data, 0644); err != nil {
-		return err
-	}
-
-	// Update current workspace
-	return m.SetCurrentWorkspace(ws.ID)
+	return os.WriteFile(wsPath, data, 0644)
 }
 
 // SaveWorkspaceWithRename is kept for API compatibility but just calls SaveWorkspace
@@ -342,15 +501,25 @@ func (m *Manager) LoadWorkspace(id string) (*Workspace, error) {
 // CreateWorkspace creates a new workspace with a generated ID
 func (m *Manager) CreateWorkspace(name string) (*Workspace, error) {
 	ws := &Workspace{
-		ID:         GenerateWorkspaceID(),
-		Name:       name,
-		Agents:     []Agent{},
-		Created:    time.Now(),
-		LastOpened: time.Now(),
+		ID:      GenerateWorkspaceID(),
+		Name:    name,
+		Agents:  []Agent{},
+		Created: time.Now(),
 	}
 
 	if err := m.SaveWorkspace(ws); err != nil {
 		return nil, err
+	}
+
+	// Save initial workspace state (LastOpened) to local/
+	state := &WorkspaceState{LastOpened: time.Now()}
+	if err := m.SaveWorkspaceState(ws.ID, state); err != nil {
+		fmt.Printf("[WARN] Failed to save initial workspace state: %v\n", err)
+	}
+
+	// Set as current workspace
+	if err := m.SetCurrentWorkspace(ws.ID); err != nil {
+		fmt.Printf("[WARN] Failed to set current workspace: %v\n", err)
 	}
 
 	return ws, nil

@@ -172,28 +172,40 @@ func (a *App) SetActiveSession(agentID, sessionID string) error {
 		a.watcher.SetActiveSessionWatch(agentID, sessionID)
 	}
 
-	// Persist the selected session to workspace JSON so it survives reload
-	if a.currentWorkspace != nil {
-		// Find the agent and update its per-agent SelectedSessionID
+	// Persist the selected session to workspace state (local/, not workspace JSON).
+	// This avoids sync conflicts since workspace state is per-machine.
+	if a.currentWorkspace != nil && a.workspaceState != nil {
+		// Find the agent's folder
 		var folder string
 		for i := range a.currentWorkspace.Agents {
 			if a.currentWorkspace.Agents[i].ID == agentID {
-				a.currentWorkspace.Agents[i].SelectedSessionID = sessionID
+				a.currentWorkspace.Agents[i].SelectedSessionID = sessionID // Keep in-memory for menu/frontend
 				folder = a.currentWorkspace.Agents[i].Folder
 				break
 			}
 		}
 
-		// Update workspace-level SelectedSession (tracks THE active agent+session)
+		// Update in-memory workspace (for frontend emission and menu)
 		a.currentWorkspace.SelectedSession = &workspace.SelectedSession{
 			AgentID:   agentID,
 			SessionID: sessionID,
 			Folder:    folder,
 		}
 
-		// Save workspace to persist both selections
-		if err := a.workspace.SaveWorkspace(a.currentWorkspace); err != nil {
-			fmt.Printf("[WARN] Failed to save workspace after SetActiveSession: %v\n", err)
+		// Update workspace state (source of truth for persistence)
+		if a.workspaceState.AgentSessions == nil {
+			a.workspaceState.AgentSessions = make(map[string]string)
+		}
+		a.workspaceState.AgentSessions[agentID] = sessionID
+		a.workspaceState.SelectedSession = &workspace.SelectedSession{
+			AgentID:   agentID,
+			SessionID: sessionID,
+			Folder:    folder,
+		}
+
+		// Save to local/workspace-state/ (fast, no sync conflict)
+		if err := a.workspace.SaveWorkspaceState(a.currentWorkspace.ID, a.workspaceState); err != nil {
+			fmt.Printf("[WARN] Failed to save workspace state after SetActiveSession: %v\n", err)
 			// Don't return error - selection still works in memory
 		}
 	}

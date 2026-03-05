@@ -5,6 +5,18 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.13] - 2026-03-05
+
+### Fixed
+- **Syncthing sync conflicts on runtime state files** — Per-machine ephemeral state (selected session, current workspace, last-viewed timestamps) was stored in synced config files, causing constant `*-sync-conflict-*` files when using ClaudeFu on multiple machines. Decoupled runtime state into `~/.claudefu/local/` which can be `.stignore`d:
+  - `session-views.json` → `local/session-views.json` (last-viewed timestamps, written every session click)
+  - `current.json` → `local/current.json` (active workspace ID, written every workspace switch)
+  - Workspace runtime fields (`selectedSession`, `lastOpened`, per-agent `selectedSessionId`) → `local/workspace-state/{workspace_id}.json`
+  - Shared data (workspaces, agents, inbox, backlog, settings) remains in synced root — only ephemeral view state moves
+  - One-time automatic migration on first launch: old files moved to new locations if not already present
+  - `SaveWorkspace()` now strips runtime fields via copy-and-strip pattern, keeping in-memory structs populated for frontend/menu while writing clean config-only JSON to disk
+  - Zero frontend changes required — backend populates in-memory workspace from state file on load
+
 ## [0.4.12] - 2026-03-03
 
 ### Added
