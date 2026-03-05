@@ -96,11 +96,17 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
   // Ref for InputArea imperative control (setValue, focus)
   const inputAreaRef = useRef<InputAreaHandle>(null);
 
+  // Draft persistence across agent switches
+  const draftsRef = useRef<Map<string, { text: string; attachments: Attachment[] }>>(new Map());
+  const prevAgentIdRef = useRef<string>(agentId);
+
   // Toggle states for prompt controls
   const [newSessionMode, setNewSessionMode] = useState(false);
   const [planningMode, setPlanningMode] = useState(false);
   const [planPaneOpen, setPlanPaneOpen] = useState(false);
   const [planContent, setPlanContent] = useState<string | null>(null);
+  const [planFilePath, setPlanFilePath] = useState<string | null>(null);
+  const [planError, setPlanError] = useState<string | null>(null);
   const [claudeSettingsOpen, setClaudeSettingsOpen] = useState(false);
   const [permissionsDialogOpen, setPermissionsDialogOpen] = useState(false);
   const [planReviewFeedback, setPlanReviewFeedback] = useState('');
@@ -118,14 +124,18 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
   useEffect(() => {
     if (mcpPendingPlanReview && sessionSlug) {
       const openPlanForReview = async () => {
+        setPlanError(null);
         try {
           const planPath = await TouchPlanFile(agentId, sessionId);
+          setPlanFilePath(planPath);
           const content = await ReadPlanFile(planPath);
-          setPlanContent(content);
+          setPlanContent(content || null); // empty string → null (shows "empty" state)
           setPlanPaneOpen(true);
           setPlanReviewFeedback('');
-        } catch (err) {
+        } catch (err: any) {
           console.error('Failed to open plan for review:', err);
+          setPlanError(err?.message || String(err));
+          setPlanPaneOpen(true); // Still open pane so user sees the error
         }
       };
       openPlanForReview();
@@ -172,6 +182,50 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
 
   // Attachment state (lifted from InputArea, displayed in ControlButtonsRow)
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+
+  // Save/restore drafts when switching agents
+  useEffect(() => {
+    const prevAgentId = prevAgentIdRef.current;
+    if (prevAgentId === agentId) return;
+
+    // Save draft for the agent we're leaving
+    const currentText = inputAreaRef.current?.getValue() || '';
+    if (currentText || attachments.length > 0) {
+      const draft = { text: currentText, attachments };
+      draftsRef.current.set(prevAgentId, draft);
+      // Persist to localStorage (text only — skip image base64 to avoid quota issues)
+      const textOnly = { text: currentText, attachments: attachments.filter(a => a.type !== 'image') };
+      try { localStorage.setItem(`draft:${prevAgentId}`, JSON.stringify(textOnly)); } catch {}
+    } else {
+      draftsRef.current.delete(prevAgentId);
+      try { localStorage.removeItem(`draft:${prevAgentId}`); } catch {}
+    }
+
+    // Restore draft for the agent we're switching to
+    const saved = draftsRef.current.get(agentId);
+    if (saved) {
+      inputAreaRef.current?.setValue(saved.text);
+      setAttachments(saved.attachments);
+    } else {
+      // Try localStorage fallback (survives app restart)
+      try {
+        const stored = localStorage.getItem(`draft:${agentId}`);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          inputAreaRef.current?.setValue(parsed.text || '');
+          setAttachments(parsed.attachments || []);
+        } else {
+          inputAreaRef.current?.setValue('');
+          setAttachments([]);
+        }
+      } catch {
+        inputAreaRef.current?.setValue('');
+        setAttachments([]);
+      }
+    }
+
+    prevAgentIdRef.current = agentId;
+  }, [agentId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Refs for special flows (AnswerQuestion needs to pause watcher)
   const watcherPausedRef = useRef<boolean>(false);
@@ -500,6 +554,8 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
         setNewSessionMode(false);
         setIsCreatingSession(false);
         setAttachments([]);  // Clear attachments on new session
+        draftsRef.current.delete(agentId);
+        try { localStorage.removeItem(`draft:${agentId}`); } catch {}
         if (onSessionCreated) {
           onSessionCreated(newSessionId, message);
         }
@@ -534,9 +590,11 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
     try {
       await SendMessage(agentId, sessionId, message, backendAttachments, planningMode);
       logDebug('ChatView', 'SEND_COMPLETE', { success: true });
-      // Clear attachments and planning mode on successful send
+      // Clear attachments, planning mode, and persisted draft on successful send
       setAttachments([]);
       setPlanningMode(false);
+      draftsRef.current.delete(agentId);
+      try { localStorage.removeItem(`draft:${agentId}`); } catch {}
       // Note: isWaitingForResponse stays true - it gets cleared when assistant message arrives
     } catch (err) {
       console.error('Failed to send message:', err);
@@ -556,14 +614,18 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
   // Handle opening plan pane - touch file if it doesn't exist yet
   const handleViewPlan = async () => {
     if (!sessionSlug) return;
+    setPlanError(null);
+    setPlanContent(null);
+    setPlanPaneOpen(true); // Open immediately so user sees loading state
     try {
       // TouchPlanFile creates the file if needed and returns its path
       const planPath = await TouchPlanFile(agentId, sessionId);
+      setPlanFilePath(planPath);
       const content = await ReadPlanFile(planPath);
-      setPlanContent(content);
-      setPlanPaneOpen(true);
-    } catch (err) {
+      setPlanContent(content || null); // empty string → null (shows "empty" state)
+    } catch (err: any) {
       console.error('Failed to open plan file:', err);
+      setPlanError(err?.message || String(err));
     }
   };
 
@@ -743,11 +805,32 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
         onClose={() => {
           setPlanPaneOpen(false);
           setPlanContent(null);
+          setPlanFilePath(null);
+          setPlanError(null);
         }}
         title={mcpPendingPlanReview ? `Plan Review (from ${mcpPendingPlanReview.agentSlug})` : "Plan"}
         storageKey="planPaneWidth"
       >
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+          {/* Plan file path */}
+          {planFilePath && (
+            <div style={{
+              padding: '4px 16px',
+              borderBottom: '1px solid #222',
+              fontSize: '0.7rem',
+              color: '#555',
+              fontFamily: 'monospace',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              flexShrink: 0
+            }}
+            title={planFilePath}
+            >
+              {planFilePath}
+            </div>
+          )}
+
           {/* Waiting indicator when review is pending */}
           {mcpPendingPlanReview && (
             <div style={{
@@ -774,12 +857,19 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
 
           {/* Plan content */}
           <div style={{ flex: 1, overflow: 'auto', padding: '1rem', color: '#ccc' }}>
-            {planContent ? (
+            {planError ? (
+              <div style={{ color: '#e88' }}>
+                <div style={{ marginBottom: '8px', fontWeight: 500 }}>Failed to load plan</div>
+                <div style={{ fontSize: '0.85rem', color: '#a66', fontFamily: 'monospace' }}>{planError}</div>
+              </div>
+            ) : planContent ? (
               <ReactMarkdown remarkPlugins={[remarkGfm]}>
                 {planContent}
               </ReactMarkdown>
             ) : (
-              <div style={{ color: '#666' }}>Loading...</div>
+              <div style={{ color: '#666' }}>
+                {planFilePath ? 'Plan file is empty' : 'Loading...'}
+              </div>
             )}
           </div>
 

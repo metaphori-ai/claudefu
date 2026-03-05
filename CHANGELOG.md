@@ -5,6 +5,11 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.14] - 2026-03-05
+
+### Added
+- **Message draft persistence across agent switches** — Typing a message in one agent and switching to another no longer loses the draft. Drafts (text + file attachments) are saved per-agent in memory and restored when switching back. Text drafts also persist to localStorage so they survive app restarts. Image attachments are excluded from localStorage to avoid quota limits but are preserved for same-session agent switches.
+
 ## [0.4.13] - 2026-03-05
 
 ### Fixed
