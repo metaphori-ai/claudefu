@@ -5,6 +5,11 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.15] - 2026-03-05
+
+### Fixed
+- **"Inject into Prompt" button in Inbox dialog now works** — Previously clicked "Inject into Prompt" sent the message directly to Claude CLI via backend, bypassing the input area entirely. Now it prepends the formatted message into InputArea for user review and editing before sending. Message stays in inbox (marked as read) for future reference. Uses the established custom DOM event pattern (`claudefu:inject-into-prompt`) for Sidebar→ChatView communication.
+
 ## [0.4.14] - 2026-03-05
 
 ### Added

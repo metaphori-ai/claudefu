@@ -227,6 +227,43 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
     prevAgentIdRef.current = agentId;
   }, [agentId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Listen for inbox inject events (Sidebar dispatches when user clicks "Inject into Prompt")
+  useEffect(() => {
+    const handleInject = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.text && inputAreaRef.current) {
+        const currentText = inputAreaRef.current.getValue() || '';
+        const newText = currentText ? detail.text + currentText : detail.text;
+        inputAreaRef.current.setValue(newText);
+        inputAreaRef.current.focus();
+      }
+    };
+    window.addEventListener('claudefu:inject-into-prompt', handleInject);
+    return () => window.removeEventListener('claudefu:inject-into-prompt', handleInject);
+  }, []);
+
+  // Check for pending inbox inject (stored by Sidebar when injecting into a different agent)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('claudefu:pendingInject');
+      if (raw) {
+        const { agentId: targetId, text } = JSON.parse(raw);
+        if (targetId === agentId && text) {
+          localStorage.removeItem('claudefu:pendingInject');
+          // Use rAF to ensure InputArea ref is ready after mount
+          requestAnimationFrame(() => {
+            if (inputAreaRef.current) {
+              const currentText = inputAreaRef.current.getValue() || '';
+              const newText = currentText ? text + currentText : text;
+              inputAreaRef.current.setValue(newText);
+              inputAreaRef.current.focus();
+            }
+          });
+        }
+      }
+    } catch {}
+  }, [agentId]);
+
   // Refs for special flows (AnswerQuestion needs to pause watcher)
   const watcherPausedRef = useRef<boolean>(false);
 

@@ -11,7 +11,6 @@ import {
   GetInboxTotalCount,
   MarkInboxMessageRead,
   DeleteInboxMessage,
-  InjectInboxMessage,
   NewSession,
   RemoveAgent,
   GetBacklogCount,
@@ -347,22 +346,40 @@ export function Sidebar({
     ? agents.find(a => a.id === inboxDialogAgentId) || null
     : null;
 
-  // Handle injecting an inbox message into the current session
+  // Handle injecting an inbox message into the prompt InputArea
   const handleInjectMessage = async (messageId: string) => {
-    if (!inboxDialogAgentId || !selectedSessionId) return;
-    try {
-      await InjectInboxMessage(inboxDialogAgentId, messageId, selectedSessionId);
-      // Remove from local list after injection
-      const msg = inboxMessages.find(m => m.id === messageId);
-      removeInboxMessage(messageId);
-      // Update counts - message was deleted after injection
-      if (msg && !msg.read) {
-        decrementInboxUnread(inboxDialogAgentId);
-      }
-      decrementInboxTotal(inboxDialogAgentId);
-    } catch (err) {
-      console.error('Failed to inject message:', err);
+    if (!inboxDialogAgentId) return;
+
+    // Find the message in frontend state
+    const msg = inboxMessages.find(m => m.id === messageId);
+    if (!msg) return;
+
+    // Format the inject text
+    const injectText = `[Message from ${msg.fromAgentName} at ${msg.timestamp}]\n${msg.message}\n---\n`;
+
+    if (inboxDialogAgentId !== selectedAgentId) {
+      // Inbox belongs to a different agent — switch to it first, store pending inject
+      localStorage.setItem('claudefu:pendingInject', JSON.stringify({ agentId: inboxDialogAgentId, text: injectText }));
+      onAgentSelect(inboxDialogAgentId);
+    } else {
+      // Same agent — dispatch directly to active ChatView
+      window.dispatchEvent(new CustomEvent('claudefu:inject-into-prompt', {
+        detail: { text: injectText }
+      }));
     }
+
+    // Mark as read via backend (keeps message in inbox for reference)
+    if (!msg.read) {
+      try {
+        await MarkInboxMessageRead(inboxDialogAgentId, messageId);
+        decrementInboxUnread(inboxDialogAgentId);
+      } catch (err) {
+        console.error('Failed to mark inbox message read:', err);
+      }
+    }
+
+    // Close the inbox dialog
+    closeInboxDialog();
   };
 
   // Handle deleting an inbox message
