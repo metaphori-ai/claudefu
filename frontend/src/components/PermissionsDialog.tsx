@@ -6,7 +6,6 @@ import {
   GetOrderedPermissionSets,
   HasExistingClaudeSettings,
   ImportFromClaudeSettings,
-  SyncToClaudeSettings,
   RevertAgentToGlobal,
   HasAgentPermissions,
   GetGlobalDirectories,
@@ -167,19 +166,8 @@ export function PermissionsDialog({
     }
   };
 
-  // Handle sync to Claude settings
-  const handleSyncToClaude = async () => {
-    try {
-      // Save first to ensure we're syncing latest
-      if (permissions) {
-        await SaveAgentPermissions(folder, permissions as any);
-      }
-      await SyncToClaudeSettings(folder);
-      setSaved(true);
-    } catch (err) {
-      setError(`Failed to sync: ${err}`);
-    }
-  };
+  // Note: Sync to Claude's settings.local.json now happens automatically
+  // on every SaveAgentPermissions call (backend auto-sync)
 
   // Handle revert to global (only resets tools, preserves directories)
   const handleRevertToGlobal = async () => {
@@ -327,7 +315,6 @@ export function PermissionsDialog({
                   onMergeFromGlobal={handleMergeFromGlobal}
                   onReplaceWithGlobal={handleRevertToGlobal}
                   onImportFromClaude={handleImport}
-                  onSyncToClaude={handleSyncToClaude}
                 />
               )}
               {activeTab === 'directories' && (

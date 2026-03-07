@@ -338,6 +338,10 @@ export function NewSession(arg1) {
   return window['go']['main']['App']['NewSession'](arg1);
 }
 
+export function NormalizeDirPath(arg1) {
+  return window['go']['main']['App']['NormalizeDirPath'](arg1);
+}
+
 export function PreviewMergeTools(arg1) {
   return window['go']['main']['App']['PreviewMergeTools'](arg1);
 }

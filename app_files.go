@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"claudefu/internal/permissions"
 )
 
 // =============================================================================
@@ -91,14 +93,14 @@ func (a *App) ListFiles(agentID string, query string, maxResults int) ([]FileInf
 	// Build list of root directories to search
 	roots := []string{agent.Folder}
 	for _, dir := range perms.AdditionalDirectories {
-		// Expand ~ to home directory
-		if strings.HasPrefix(dir, "~") {
-			home, _ := os.UserHomeDir()
-			dir = filepath.Join(home, dir[1:])
+		// Expand stored paths to real filesystem paths (~/svml → /Users/jasdeep/svml)
+		expanded, err := permissions.ExpandPath(dir)
+		if err != nil {
+			continue
 		}
 		// Only add if directory exists
-		if info, err := os.Stat(dir); err == nil && info.IsDir() {
-			roots = append(roots, dir)
+		if info, err := os.Stat(expanded); err == nil && info.IsDir() {
+			roots = append(roots, expanded)
 		}
 	}
 

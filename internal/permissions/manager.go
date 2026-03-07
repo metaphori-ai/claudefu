@@ -132,6 +132,9 @@ func (m *Manager) SaveGlobalPermissions(perms *ClaudeFuPermissions) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	// Normalize directory paths before persisting (lazy migration)
+	perms.AdditionalDirectories = NormalizeDirectories(perms.AdditionalDirectories)
+
 	path := filepath.Join(m.globalConfigPath, GlobalPermissionsFile)
 	return m.writePermissionsFile(path, perms)
 }
@@ -157,6 +160,9 @@ func (m *Manager) LoadAgentPermissions(agentFolder string) (*ClaudeFuPermissions
 func (m *Manager) SaveAgentPermissions(agentFolder string, perms *ClaudeFuPermissions) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	// Normalize directory paths before persisting (lazy migration)
+	perms.AdditionalDirectories = NormalizeDirectories(perms.AdditionalDirectories)
 
 	// Ensure .claude directory exists
 	claudeDir := filepath.Join(agentFolder, ClaudeSettingsDir)
@@ -346,6 +352,11 @@ func (m *Manager) readPermissionsFile(path string) (*ClaudeFuPermissions, error)
 		return nil, err
 	}
 
+	// Normalize directories in-memory on load (lazy migration for display).
+	// This deduplicates ~/svml and /Users/jasdeep/svml immediately.
+	// The normalized form persists to disk on the next save.
+	perms.AdditionalDirectories = NormalizeDirectories(perms.AdditionalDirectories)
+
 	return &perms, nil
 }
 
@@ -376,7 +387,7 @@ func (m *Manager) migrateV1ToV2(data []byte) (*ClaudeFuPermissions, error) {
 		Version:               2,
 		InheritFromGlobal:     v1Perms.InheritFromGlobal,
 		ToolPermissions:       make(map[string]ToolPermission),
-		AdditionalDirectories: v1Perms.AdditionalDirectories,
+		AdditionalDirectories: NormalizeDirectories(v1Perms.AdditionalDirectories),
 	}
 
 	// Convert each permission set from level-based to explicit arrays
@@ -446,7 +457,8 @@ func filterDenied(tools []string, denySet map[string]bool) []string {
 }
 
 // CompileDirectories unions global + agent directories for CLI --add-dir flags
-// This implements the layered directories model where global dirs are always included
+// This implements the layered directories model where global dirs are always included.
+// Returns expanded filesystem paths (~/svml → /Users/jasdeep/svml) for exec.Command.
 func (m *Manager) CompileDirectories(agentFolder string) ([]string, error) {
 	global, err := m.LoadGlobalPermissions()
 	if err != nil {
@@ -460,13 +472,13 @@ func (m *Manager) CompileDirectories(agentFolder string) ([]string, error) {
 
 	// Union: global dirs + agent dirs (deduplicated)
 	seen := make(map[string]bool)
-	var result []string
+	var canonical []string
 
 	// Global directories first
 	for _, d := range global.AdditionalDirectories {
 		if !seen[d] {
 			seen[d] = true
-			result = append(result, d)
+			canonical = append(canonical, d)
 		}
 	}
 
@@ -475,9 +487,20 @@ func (m *Manager) CompileDirectories(agentFolder string) ([]string, error) {
 		for _, d := range agent.AdditionalDirectories {
 			if !seen[d] {
 				seen[d] = true
-				result = append(result, d)
+				canonical = append(canonical, d)
 			}
 		}
+	}
+
+	// Expand all paths for real filesystem usage (~/svml → /Users/jasdeep/svml)
+	// Go's exec.Command does NOT perform shell expansion, so ~ must be resolved
+	var result []string
+	for _, d := range canonical {
+		expanded, err := ExpandPath(d)
+		if err != nil {
+			continue // Skip paths that can't be expanded
+		}
+		result = append(result, expanded)
 	}
 
 	return result, nil

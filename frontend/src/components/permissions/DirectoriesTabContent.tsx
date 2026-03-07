@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { SelectDirectory } from '../../../wailsjs/go/main/App';
+import { SelectDirectory, NormalizeDirPath } from '../../../wailsjs/go/main/App';
 
 interface DirectoriesTabContentProps {
   globalDirectories: string[];  // Read-only, from global permissions
@@ -14,12 +14,14 @@ export function DirectoriesTabContent({
 }: DirectoriesTabContentProps) {
   const [newDir, setNewDir] = useState('');
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     const trimmed = newDir.trim();
     if (!trimmed) return;
+    // Normalize path (e.g., /Users/jasdeep/svml → ~/svml)
+    const normalized = await NormalizeDirPath(trimmed);
     // Check both global and agent lists to avoid duplicates
-    if (!agentDirectories.includes(trimmed) && !globalDirectories.includes(trimmed)) {
-      onChange([...agentDirectories, trimmed]);
+    if (!agentDirectories.includes(normalized) && !globalDirectories.includes(normalized)) {
+      onChange([...agentDirectories, normalized]);
     }
     setNewDir('');
   };
@@ -31,8 +33,11 @@ export function DirectoriesTabContent({
   const handleBrowse = async () => {
     try {
       const selected = await SelectDirectory('Select Directory');
-      if (selected && !agentDirectories.includes(selected) && !globalDirectories.includes(selected)) {
-        onChange([...agentDirectories, selected]);
+      if (!selected) return;
+      // Normalize path (e.g., /Users/jasdeep/svml → ~/svml)
+      const normalized = await NormalizeDirPath(selected);
+      if (!agentDirectories.includes(normalized) && !globalDirectories.includes(normalized)) {
+        onChange([...agentDirectories, normalized]);
       }
     } catch (err) {
       console.error('Failed to select directory:', err);
@@ -227,7 +232,7 @@ export function DirectoriesTabContent({
             value={newDir}
             onChange={(e) => setNewDir(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
-            placeholder="/path/to/directory"
+            placeholder="~/path or /absolute/path"
             style={{
               flex: 1,
               padding: '0.5rem 0.75rem',

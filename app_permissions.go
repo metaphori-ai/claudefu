@@ -68,7 +68,8 @@ func (a *App) GetAgentPermissionsOrGlobal(folder string) (*permissions.ClaudeFuP
 	return mgr.GetAgentPermissionsOrGlobal(folder)
 }
 
-// SaveAgentPermissions saves permissions for a specific agent folder
+// SaveAgentPermissions saves permissions for a specific agent folder.
+// Automatically syncs to Claude's settings.local.json after saving.
 func (a *App) SaveAgentPermissions(folder string, perms permissions.ClaudeFuPermissions) error {
 	if folder == "" {
 		return fmt.Errorf("folder is required")
@@ -79,7 +80,17 @@ func (a *App) SaveAgentPermissions(folder string, perms permissions.ClaudeFuPerm
 		return fmt.Errorf("failed to create permissions manager: %w", err)
 	}
 
-	return mgr.SaveAgentPermissions(folder, &perms)
+	if err := mgr.SaveAgentPermissions(folder, &perms); err != nil {
+		return err
+	}
+
+	// Auto-sync to Claude's settings.local.json so CLI picks up changes immediately
+	if syncErr := a.SyncToClaudeSettings(folder); syncErr != nil {
+		fmt.Printf("[Permissions] Auto-sync to settings.local.json failed: %v\n", syncErr)
+		// Don't fail the save — the ClaudeFu permissions are saved, sync is best-effort
+	}
+
+	return nil
 }
 
 // RevertAgentToGlobal resets agent tool permissions to match the global template
@@ -176,8 +187,20 @@ func (a *App) SyncToClaudeSettings(folder string) error {
 	allowList := mgr.CompileAllowList(perms)
 	denyList := mgr.CompileDenyList(perms)
 
+	// Convert stored paths to Claude's gitignore-style syntax for settings.local.json
+	// ~/svml stays as ~/svml (Claude understands ~)
+	// /mnt/external becomes //mnt/external (// = absolute in gitignore syntax)
+	claudeDirs := make([]string, 0, len(perms.AdditionalDirectories))
+	for _, d := range perms.AdditionalDirectories {
+		expanded, err := permissions.ExpandPath(d)
+		if err != nil {
+			continue
+		}
+		claudeDirs = append(claudeDirs, permissions.ToClaudeSettingsPath(expanded))
+	}
+
 	// Write to Claude's settings.local.json using existing method
-	return a.SaveClaudePermissions(folder, allowList, denyList, perms.AdditionalDirectories)
+	return a.SaveClaudePermissions(folder, allowList, denyList, claudeDirs)
 }
 
 // ImportFromClaudeSettings reads existing settings.local.json and converts to ClaudeFu format
@@ -264,13 +287,25 @@ func (a *App) GetOrderedPermissionSets() []permissions.PermissionSet {
 	return sets
 }
 
+// NormalizeDirPath converts any path format to ClaudeFu's canonical storage format.
+// Called from frontend after directory browse or manual input.
+// Examples: /Users/jasdeep/svml → ~/svml, //Users/jasdeep/svml → ~/svml
+func (a *App) NormalizeDirPath(path string) string {
+	normalized, err := permissions.NormalizePath(path)
+	if err != nil || normalized == "" {
+		return path // Return original if normalization fails
+	}
+	return normalized
+}
+
 // convertClaudeToClaudeFu converts Claude's allow/deny list to ClaudeFu's v2 format
 func convertClaudeToClaudeFu(claude ClaudePermissions) *permissions.ClaudeFuPermissions {
 	// Create result with v2 structure
+	// Normalize imported directory paths (handles // prefix from gitignore syntax)
 	result := &permissions.ClaudeFuPermissions{
 		Version:               2,
 		ToolPermissions:       make(map[string]permissions.ToolPermission),
-		AdditionalDirectories: claude.AdditionalDirectories,
+		AdditionalDirectories: permissions.NormalizeDirectories(claude.AdditionalDirectories),
 	}
 
 	// Initialize all sets with empty arrays

@@ -179,6 +179,8 @@ export function MoveBacklogItem(arg1:string,arg2:string,arg3:string,arg4:string)
 
 export function NewSession(arg1:string):Promise<string>;
 
+export function NormalizeDirPath(arg1:string):Promise<string>;
+
 export function PreviewMergeTools(arg1:string):Promise<permissions.PermissionsDiff>;
 
 export function PreviewRevertTools(arg1:string):Promise<permissions.PermissionsDiff>;

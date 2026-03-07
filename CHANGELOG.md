@@ -5,6 +5,14 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.16] - 2026-03-07
+
+### Fixed
+- **Permission path handling — normalize, expand, and convert** — Three new utility functions (`NormalizePath`, `ExpandPath`, `ToClaudeSettingsPath`) fix two bugs: (1) `--add-dir ~/svml` passed literal `~` to CLI because Go's `exec.Command` doesn't expand shell tilde, (2) `SyncToClaudeSettings` wrote `/Users/jasdeep/svml` which Claude Code interpreted as project-relative (gitignore syntax: `/path` = project-relative, `//path` = absolute). Paths are now stored in canonical `~/relative` format, expanded to real filesystem paths for `--add-dir`, and converted to gitignore syntax (`~/` or `//`) for `settings.local.json`.
+- **Duplicate directory entries auto-consolidated** — Entering both `~/svml` and `/Users/jasdeep/svml` previously created duplicate entries. Paths are now normalized on read (in-memory) so duplicates collapse immediately, and persist on next save. Covers v1→v2 migration and import-from-Claude paths too.
+- **Auto-sync permissions to settings.local.json on save** — `SaveAgentPermissions` now automatically syncs to Claude's `settings.local.json` after saving (best-effort, doesn't fail the save). Removed the manual "Sync to settings.local" button from the UI since every save now triggers sync.
+- **Directory browse shows canonical paths** — Browsing for a directory via native file picker now normalizes the result (e.g., `/Users/jasdeep/svml` → `~/svml`) before displaying in the UI.
+
 ## [0.4.15] - 2026-03-05
 
 ### Fixed
