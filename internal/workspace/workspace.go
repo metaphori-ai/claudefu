@@ -354,9 +354,24 @@ func (m *Manager) LoadWorkspaceState(workspaceID string) *WorkspaceState {
 }
 
 // SaveWorkspaceState writes per-machine runtime state to local/workspace-state/{id}.json
+// Uses a snapshot copy to avoid concurrent map read/write panics during JSON serialization.
 func (m *Manager) SaveWorkspaceState(workspaceID string, state *WorkspaceState) error {
 	statePath := filepath.Join(m.configPath, "local", "workspace-state", workspaceID+".json")
-	data, err := json.MarshalIndent(state, "", "  ")
+
+	// Snapshot the map to avoid concurrent map iteration panic
+	// (SetActiveSession writes to AgentSessions while SaveWorkspaceState serializes it)
+	snapshot := &WorkspaceState{
+		SelectedSession: state.SelectedSession,
+		LastOpened:       state.LastOpened,
+	}
+	if state.AgentSessions != nil {
+		snapshot.AgentSessions = make(map[string]string, len(state.AgentSessions))
+		for k, v := range state.AgentSessions {
+			snapshot.AgentSessions[k] = v
+		}
+	}
+
+	data, err := json.MarshalIndent(snapshot, "", "  ")
 	if err != nil {
 		return err
 	}

@@ -446,22 +446,28 @@ func (rt *WorkspaceRuntime) GetPlanFilePath(agentID, sessionID string) string {
 
 	agentState, ok := rt.agentStates[agentID]
 	if !ok {
+		fmt.Printf("[DEBUG] GetPlanFilePath: agent %s not found in runtime\n", agentID)
 		return ""
 	}
 
 	session, ok := agentState.Sessions[sessionID]
 	if !ok {
+		fmt.Printf("[DEBUG] GetPlanFilePath: session %s not found for agent %s (have %d sessions)\n", sessionID, agentID, len(agentState.Sessions))
 		return ""
 	}
 
 	if session.Slug == "" {
+		fmt.Printf("[DEBUG] GetPlanFilePath: session %s has no slug\n", sessionID)
 		return ""
 	}
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
+		fmt.Printf("[DEBUG] GetPlanFilePath: UserHomeDir error: %v\n", err)
 		return ""
 	}
-	return filepath.Join(homeDir, ".claude", "plans", session.Slug+".md")
+	planPath := filepath.Join(homeDir, ".claude", "plans", session.Slug+".md")
+	fmt.Printf("[DEBUG] GetPlanFilePath: %s → %s\n", session.Slug, planPath)
+	return planPath
 }
 
 // =============================================================================

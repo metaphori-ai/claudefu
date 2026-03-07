@@ -219,6 +219,9 @@ cd claudefu/app
 # Install frontend dependencies
 cd frontend && npm install && cd ..
 
+# Install Wails CLI (requires Go 1.21+)
+go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
 # Development mode with hot reload
 wails dev
 

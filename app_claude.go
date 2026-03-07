@@ -114,7 +114,8 @@ func (a *App) GetPlanFilePath(agentID, sessionID string) string {
 func (a *App) TouchPlanFile(agentID, sessionID string) (string, error) {
 	planPath := a.GetPlanFilePath(agentID, sessionID)
 	if planPath == "" {
-		return "", fmt.Errorf("no slug available for this session")
+		fmt.Printf("[DEBUG] TouchPlanFile: GetPlanFilePath returned empty for agent=%s session=%s\n", agentID, sessionID)
+		return "", fmt.Errorf("no plan file path available (session may not have a slug yet)")
 	}
 
 	// Ensure directory exists

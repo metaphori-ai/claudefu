@@ -5,6 +5,17 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.17] - 2026-03-07
+
+### Fixed
+- **Concurrent map panic in SaveWorkspaceState** — `SetActiveSession` writes to the `AgentSessions` map while `SaveWorkspaceState` serializes it via `json.MarshalIndent`, causing a concurrent map read/write panic. Fixed by snapshotting the map before serialization.
+
+### Improved
+- **Enhanced MCP debug logging** — `findMCPEnabledAgent` now logs all available agents (with slug and MCP status) when no match is found, making slug mismatches easier to diagnose. Inbox message persistence and retrieval now log success/failure with agent IDs.
+- **Plan file debug logging** — `GetPlanFilePath` and `TouchPlanFile` now log at every exit point, helping diagnose "no plan file" issues when sessions lack slugs.
+- **README dev setup** — Added missing `go install wails` instruction to development setup steps.
+- **Release script Slack posting** — Split changelog into multiple Slack messages to avoid the 3000-character block limit that was truncating release notes.
+
 ## [0.4.16] - 2026-03-07
 
 ### Fixed

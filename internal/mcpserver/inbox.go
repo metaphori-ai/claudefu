@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"fmt"
 	"log"
 	"path/filepath"
 	"sync"
@@ -92,8 +93,12 @@ func (im *InboxManager) AddMessage(toAgentID string, fromAgentID, fromAgentName,
 
 	if im.store != nil {
 		if err := im.store.AddMessage(msg); err != nil {
-			log.Printf("Failed to save inbox message: %v", err)
+			fmt.Printf("[MCP:Inbox] FAILED to persist message %s to agent %s: %v\n", msg.ID, toAgentID, err)
+		} else {
+			fmt.Printf("[MCP:Inbox] Persisted message %s from '%s' to agent %s\n", msg.ID, fromAgentName, toAgentID)
 		}
+	} else {
+		fmt.Printf("[MCP:Inbox] WARNING: No store loaded, message %s NOT persisted (to agent %s)\n", msg.ID, toAgentID)
 	}
 
 	return msg
@@ -110,9 +115,10 @@ func (im *InboxManager) GetMessages(agentID string) []InboxMessage {
 
 	msgs, err := im.store.GetMessages(agentID)
 	if err != nil {
-		log.Printf("Failed to get inbox messages: %v", err)
+		fmt.Printf("[MCP:Inbox] FAILED to get messages for agent %s: %v\n", agentID, err)
 		return []InboxMessage{}
 	}
+	fmt.Printf("[MCP:Inbox] GetMessages for agent %s: %d messages\n", agentID, len(msgs))
 	return msgs
 }
 

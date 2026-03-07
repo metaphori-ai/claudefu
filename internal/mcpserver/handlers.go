@@ -30,16 +30,27 @@ func (s *MCPService) findMCPEnabledAgent(identifier string) *workspace.Agent {
 	for i := range ws.Agents {
 		agent := &ws.Agents[i]
 		if !agent.GetMCPEnabled() {
+			fmt.Printf("[MCP:findAgent] Skipping '%s' (slug: %s) — MCP disabled\n", agent.Name, agent.GetSlug())
 			continue // Skip agents with MCP disabled
 		}
 		// Match by slug (custom or derived) or case-insensitive name
 		agentSlug := strings.ToLower(agent.GetSlug())
 		if agentSlug == identifier || strings.EqualFold(agent.Name, identifier) {
-			fmt.Printf("[MCP:findAgent] Found '%s' -> %s (ID: %s)\n", identifier, agent.Name, agent.ID)
+			fmt.Printf("[MCP:findAgent] Found '%s' -> %s (slug: %s, ID: %s)\n", identifier, agent.Name, agentSlug, agent.ID)
 			return agent
 		}
 	}
-	fmt.Printf("[MCP:findAgent] No match for '%s' in %d agents\n", identifier, len(ws.Agents))
+	// Log all available agents for debugging slug mismatches
+	var available []string
+	for i := range ws.Agents {
+		agent := &ws.Agents[i]
+		mcpStatus := "mcp:on"
+		if !agent.GetMCPEnabled() {
+			mcpStatus = "mcp:OFF"
+		}
+		available = append(available, fmt.Sprintf("%s (slug:%s, %s)", agent.Name, agent.GetSlug(), mcpStatus))
+	}
+	fmt.Printf("[MCP:findAgent] No match for '%s'. Available agents: [%s]\n", identifier, strings.Join(available, ", "))
 	return nil
 }
 
@@ -455,11 +466,14 @@ func (s *MCPService) emitPlanReviewDismissed(reviewID string) {
 
 // emitInboxUpdate emits an inbox update event for the given agent
 func (s *MCPService) emitInboxUpdate(agentID string) {
+	unread := s.inbox.GetUnreadCount(agentID)
+	total := s.inbox.GetTotalCount(agentID)
+	fmt.Printf("[MCP:Inbox] Emitting update for agent %s: unread=%d, total=%d\n", agentID, unread, total)
 	s.emitFunc(types.EventEnvelope{
 		AgentID:   agentID,
 		EventType: "mcp:inbox",
 		Payload: map[string]any{
-			"unreadCount": s.inbox.GetUnreadCount(agentID),
+			"unreadCount": unread,
 		},
 	})
 }

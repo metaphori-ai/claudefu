@@ -223,7 +223,7 @@ else
     echo "  sha256 \"$SHA256\""
 fi
 
-# Post changelog to Slack
+# Post changelog to Slack (split into multiple messages to avoid 3000-char block limit)
 
 # Check if SLACK_WEBHOOK is configured
 if [ -z "$SLACK_WEBHOOK" ]; then
@@ -233,54 +233,82 @@ else
     CHANGELOG_SECTION=$(awk "/^## \[$VERSION_NUM\]/{flag=1; next} /^## \[/{flag=0} flag" "$REPO_ROOT/CHANGELOG.md")
 
     if [ -n "$CHANGELOG_SECTION" ]; then
-        # Convert markdown to Slack mrkdwn:
-        # - **bold** → *bold*
-        # - ### Header → *Header*
-        SLACK_TEXT=$(echo "$CHANGELOG_SECTION" | \
-            sed 's/\*\*\([^*]*\)\*\*/*\1*/g' | \
-            sed 's/^### \(.*\)/*\1*/g' | \
-            sed 's/^## \(.*\)/*\1*/g')
+        SLACK_ERRORS=0
 
-        # Build Slack payload
-        SLACK_PAYLOAD=$(cat <<EOFSLACK
-{
-    "blocks": [
-        {
-            "type": "header",
-            "text": {
-                "type": "plain_text",
-                "text": "ClaudeFu $VERSION Released",
-                "emoji": true
-            }
-        },
-        {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": $(echo "$SLACK_TEXT" | jq -Rs .)
-            }
-        },
-        {
-            "type": "divider"
-        },
-        {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": "*Install:* \`brew tap metaphori-ai/claudefu && brew install --cask claudefu\`"
-            }
-        }
-    ]
-}
-EOFSLACK
-)
+        # --- Post 1: Release header ---
+        HEADER_PAYLOAD=$(jq -n --arg title "ClaudeFu $VERSION Released" '{
+            blocks: [
+                { type: "header", text: { type: "plain_text", text: $title, emoji: true } }
+            ]
+        }')
+        RESP=$(curl -s -X POST -H 'Content-type: application/json' --data "$HEADER_PAYLOAD" "$SLACK_WEBHOOK")
+        [ "$RESP" != "ok" ] && echo -e "${YELLOW}  Warning: Slack header post returned: $RESP${NC}" && SLACK_ERRORS=$((SLACK_ERRORS+1))
 
-        # Post to Slack
-        SLACK_RESPONSE=$(curl -s -X POST -H 'Content-type: application/json' --data "$SLACK_PAYLOAD" "$SLACK_WEBHOOK")
-        if [ "$SLACK_RESPONSE" = "ok" ]; then
+        # --- Post 2+: One message per ### section ---
+        # Split changelog by ### headers and post each as a separate message
+        CURRENT_SECTION=""
+        CURRENT_HEADER=""
+
+        while IFS= read -r line || [ -n "$line" ]; do
+            if [[ "$line" =~ ^###\  ]]; then
+                # If we have a previous section buffered, post it
+                if [ -n "$CURRENT_HEADER" ] && [ -n "$CURRENT_SECTION" ]; then
+                    # Convert markdown to Slack mrkdwn
+                    SLACK_TEXT=$(echo "$CURRENT_SECTION" | \
+                        sed 's/\*\*\([^*]*\)\*\*/*\1*/g')
+
+                    SECTION_PAYLOAD=$(jq -n \
+                        --arg header "*${CURRENT_HEADER}*" \
+                        --arg body "$SLACK_TEXT" \
+                        '{ blocks: [
+                            { type: "section", text: { type: "mrkdwn", text: ($header + "\n" + $body) } }
+                        ]}')
+                    RESP=$(curl -s -X POST -H 'Content-type: application/json' --data "$SECTION_PAYLOAD" "$SLACK_WEBHOOK")
+                    [ "$RESP" != "ok" ] && echo -e "${YELLOW}  Warning: Slack section post returned: $RESP${NC}" && SLACK_ERRORS=$((SLACK_ERRORS+1))
+                fi
+                # Start new section
+                CURRENT_HEADER="${line#\#\#\# }"
+                CURRENT_SECTION=""
+            else
+                # Accumulate lines into current section (skip leading blank lines)
+                if [ -n "$CURRENT_HEADER" ]; then
+                    if [ -n "$CURRENT_SECTION" ] || [ -n "$line" ]; then
+                        CURRENT_SECTION="${CURRENT_SECTION}${line}
+"
+                    fi
+                fi
+            fi
+        done <<< "$CHANGELOG_SECTION"
+
+        # Post the last buffered section
+        if [ -n "$CURRENT_HEADER" ] && [ -n "$CURRENT_SECTION" ]; then
+            SLACK_TEXT=$(echo "$CURRENT_SECTION" | \
+                sed 's/\*\*\([^*]*\)\*\*/*\1*/g')
+
+            SECTION_PAYLOAD=$(jq -n \
+                --arg header "*${CURRENT_HEADER}*" \
+                --arg body "$SLACK_TEXT" \
+                '{ blocks: [
+                    { type: "section", text: { type: "mrkdwn", text: ($header + "\n" + $body) } }
+                ]}')
+            RESP=$(curl -s -X POST -H 'Content-type: application/json' --data "$SECTION_PAYLOAD" "$SLACK_WEBHOOK")
+            [ "$RESP" != "ok" ] && echo -e "${YELLOW}  Warning: Slack section post returned: $RESP${NC}" && SLACK_ERRORS=$((SLACK_ERRORS+1))
+        fi
+
+        # --- Final post: Install instructions ---
+        INSTALL_PAYLOAD=$(jq -n '{
+            blocks: [
+                { type: "divider" },
+                { type: "section", text: { type: "mrkdwn", text: "*Install:* `brew tap metaphori-ai/claudefu && brew install --cask claudefu`" } }
+            ]
+        }')
+        RESP=$(curl -s -X POST -H 'Content-type: application/json' --data "$INSTALL_PAYLOAD" "$SLACK_WEBHOOK")
+        [ "$RESP" != "ok" ] && echo -e "${YELLOW}  Warning: Slack footer post returned: $RESP${NC}" && SLACK_ERRORS=$((SLACK_ERRORS+1))
+
+        if [ "$SLACK_ERRORS" -eq 0 ]; then
             echo -e "${GREEN}Changelog posted to Slack!${NC}"
         else
-            echo -e "${YELLOW}Warning: Slack post returned: $SLACK_RESPONSE${NC}"
+            echo -e "${YELLOW}Warning: $SLACK_ERRORS Slack post(s) had issues${NC}"
         fi
     else
         echo -e "${YELLOW}Warning: Could not extract changelog for version $VERSION_NUM${NC}"
