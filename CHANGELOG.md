@@ -5,7 +5,10 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.18] - 2026-03-07
+
+### Fixed
+- **Draft persistence actually works across agent switches** — The v0.4.14 implementation was broken because `ChatView` has a React `key` prop including `agentId`, causing full component remount on agent switch. The old `prevAgentIdRef` approach never detected changes (ref initialized to the *new* agent on mount). Fixed by lifting the `draftsRef` Map to `App.tsx` (survives remounts) and using mount/unmount lifecycle: restore draft on mount, save to `draftsRef` + localStorage on unmount. Added `onInputChange` callback from `InputArea` to keep the current draft ref in sync.
 
 ### Improved
 - **Extracted Slack changelog posting into standalone script** — Split `scripts/release.sh` Slack posting logic (~90 lines) into `scripts/post-changelog.sh` for ad-hoc use (e.g., `./scripts/post-changelog.sh v0.4.16`). Release script now calls it as a non-fatal step.

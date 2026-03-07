@@ -59,6 +59,7 @@ interface InputAreaProps {
   onQueue: (content: string, attachments: Attachment[]) => void;
   onRemoveFromQueue: (id: string) => void;
   onEditQueueMessage: (message: QueuedMessage) => void;
+  onInputChange?: (value: string) => void;  // Called on every input change (for draft tracking)
 }
 
 // File picker state
@@ -111,7 +112,8 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
   queue,
   onQueue,
   onRemoveFromQueue,
-  onEditQueueMessage
+  onEditQueueMessage,
+  onInputChange
 }, ref) {
   // Input state lives here - isolated from parent re-renders
   const [inputValue, setInputValue] = useState('');
@@ -453,9 +455,11 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
   };
 
   // Adjust height when inputValue changes (e.g., after send clears it)
+  // Also notify parent for draft tracking
   useEffect(() => {
     adjustTextareaHeight();
-  }, [inputValue]);
+    onInputChange?.(inputValue);
+  }, [inputValue]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Generate new random verbs when sending starts
   useEffect(() => {

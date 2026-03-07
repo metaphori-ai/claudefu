@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import './App.css';
 import { Sidebar } from './components/Sidebar';
 import { ChatView } from './components/ChatView';
+import type { DraftState } from './components/chat/types';
 import { InputDialog } from './components/InputDialog';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { ManageWorkspacesDialog } from './components/ManageWorkspacesDialog';
@@ -102,6 +103,9 @@ function AppContent() {
     isAddAgent: boolean; // true = Add Agent flow, false = Select Agent flow
     pendingAgentId?: string; // for Select Agent flow
   } | null>(null);
+
+  // Draft persistence across ChatView remounts (survives agent switching)
+  const draftsRef = useRef<Map<string, DraftState>>(new Map());
 
   // MCP notification state
   const [notification, setNotification] = useState<{
@@ -1409,6 +1413,7 @@ function AppContent() {
               onSessionCreated={handleNewSessionCreated}
               initialMessage={pendingInitialMessage || undefined}
               isExternallyCreatingSession={isCreatingNewSessionExternally}
+              draftsRef={draftsRef}
             />
           ) : (
             <div style={{

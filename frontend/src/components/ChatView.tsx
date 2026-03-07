@@ -41,7 +41,7 @@ const spinnerStyles = `
   }
 `;
 
-export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreated, initialMessage, isExternallyCreatingSession }: ChatViewProps) {
+export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreated, initialMessage, isExternallyCreatingSession, draftsRef }: ChatViewProps) {
   // Inject spinner animation styles
   useEffect(() => {
     const styleId = 'chatview-spinner-styles';
@@ -96,9 +96,8 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
   // Ref for InputArea imperative control (setValue, focus)
   const inputAreaRef = useRef<InputAreaHandle>(null);
 
-  // Draft persistence across agent switches
-  const draftsRef = useRef<Map<string, { text: string; attachments: Attachment[] }>>(new Map());
-  const prevAgentIdRef = useRef<string>(agentId);
+  // Ref to track current input value for draft save on unmount
+  const currentDraftRef = useRef<{ text: string; attachments: Attachment[] }>({ text: '', attachments: [] });
 
   // Toggle states for prompt controls
   const [newSessionMode, setNewSessionMode] = useState(false);
@@ -183,49 +182,48 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
   // Attachment state (lifted from InputArea, displayed in ControlButtonsRow)
   const [attachments, setAttachments] = useState<Attachment[]>([]);
 
-  // Save/restore drafts when switching agents
+  // Restore draft on mount (from parent's draftsRef or localStorage fallback)
   useEffect(() => {
-    const prevAgentId = prevAgentIdRef.current;
-    if (prevAgentId === agentId) return;
-
-    // Save draft for the agent we're leaving
-    const currentText = inputAreaRef.current?.getValue() || '';
-    if (currentText || attachments.length > 0) {
-      const draft = { text: currentText, attachments };
-      draftsRef.current.set(prevAgentId, draft);
-      // Persist to localStorage (text only — skip image base64 to avoid quota issues)
-      const textOnly = { text: currentText, attachments: attachments.filter(a => a.type !== 'image') };
-      try { localStorage.setItem(`draft:${prevAgentId}`, JSON.stringify(textOnly)); } catch {}
-    } else {
-      draftsRef.current.delete(prevAgentId);
-      try { localStorage.removeItem(`draft:${prevAgentId}`); } catch {}
-    }
-
-    // Restore draft for the agent we're switching to
-    const saved = draftsRef.current.get(agentId);
+    const saved = draftsRef?.current.get(agentId);
     if (saved) {
       inputAreaRef.current?.setValue(saved.text);
       setAttachments(saved.attachments);
+      draftsRef?.current.delete(agentId); // consumed
     } else {
-      // Try localStorage fallback (survives app restart)
+      // localStorage fallback (survives app restart)
       try {
         const stored = localStorage.getItem(`draft:${agentId}`);
         if (stored) {
           const parsed = JSON.parse(stored);
           inputAreaRef.current?.setValue(parsed.text || '');
           setAttachments(parsed.attachments || []);
-        } else {
-          inputAreaRef.current?.setValue('');
-          setAttachments([]);
+          localStorage.removeItem(`draft:${agentId}`); // consumed
         }
-      } catch {
-        inputAreaRef.current?.setValue('');
-        setAttachments([]);
-      }
+      } catch {}
     }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-    prevAgentIdRef.current = agentId;
+  // Save draft on unmount (to parent's draftsRef + localStorage)
+  useEffect(() => {
+    return () => {
+      const text = currentDraftRef.current.text;
+      const atts = currentDraftRef.current.attachments;
+      if (text || atts.length > 0) {
+        draftsRef?.current.set(agentId, { text, attachments: atts });
+        // Persist text + file attachments to localStorage (skip image base64 to avoid quota issues)
+        const textOnly = { text, attachments: atts.filter(a => a.type !== 'image') };
+        try { localStorage.setItem(`draft:${agentId}`, JSON.stringify(textOnly)); } catch {}
+      } else {
+        draftsRef?.current.delete(agentId);
+        try { localStorage.removeItem(`draft:${agentId}`); } catch {}
+      }
+    };
   }, [agentId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keep currentDraftRef in sync with attachments state
+  useEffect(() => {
+    currentDraftRef.current.attachments = attachments;
+  }, [attachments]);
 
   // Listen for inbox inject events (Sidebar dispatches when user clicks "Inject into Prompt")
   useEffect(() => {
@@ -591,7 +589,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
         setNewSessionMode(false);
         setIsCreatingSession(false);
         setAttachments([]);  // Clear attachments on new session
-        draftsRef.current.delete(agentId);
+        draftsRef?.current.delete(agentId);
         try { localStorage.removeItem(`draft:${agentId}`); } catch {}
         if (onSessionCreated) {
           onSessionCreated(newSessionId, message);
@@ -630,7 +628,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
       // Clear attachments, planning mode, and persisted draft on successful send
       setAttachments([]);
       setPlanningMode(false);
-      draftsRef.current.delete(agentId);
+      draftsRef?.current.delete(agentId);
       try { localStorage.removeItem(`draft:${agentId}`); } catch {}
       // Note: isWaitingForResponse stays true - it gets cleared when assistant message arrives
     } catch (err) {
@@ -813,6 +811,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
           onQueue={handleQueue}
           onRemoveFromQueue={handleRemoveFromQueue}
           onEditQueueMessage={handleEditQueueMessage}
+          onInputChange={(value) => { currentDraftRef.current.text = value; }}
         />
       </div>
 

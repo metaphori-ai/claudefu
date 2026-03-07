@@ -80,6 +80,12 @@ export interface Message {
   slug?: string;  // Session slug (e.g., "polymorphic-roaming-hummingbird") - plan file at ~/.claude/plans/{slug}.md
 }
 
+// Draft state for prompt persistence across agent switches
+export interface DraftState {
+  text: string;
+  attachments: Attachment[];
+}
+
 // Props for ChatView component
 export interface ChatViewProps {
   agentId: string;
@@ -89,4 +95,5 @@ export interface ChatViewProps {
   onSessionCreated?: (newSessionId: string, initialMessage: string) => void;
   initialMessage?: string;
   isExternallyCreatingSession?: boolean;  // True when SessionsDialog is creating a new session
+  draftsRef?: React.MutableRefObject<Map<string, DraftState>>;  // Persists across ChatView remounts
 }
