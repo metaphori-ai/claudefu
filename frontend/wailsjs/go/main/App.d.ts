@@ -11,7 +11,7 @@ import {types} from '../models';
 import {menu} from '../models';
 import {settings} from '../models';
 
-export function AcceptPlanReview(arg1:string):Promise<void>;
+export function AcceptPlanReview(arg1:string,arg2:string):Promise<void>;
 
 export function AddAgent(arg1:string,arg2:string):Promise<workspace.Agent>;
 

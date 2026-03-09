@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -318,4 +319,180 @@ func AppendCancellationMarker(folder, sessionID string) error {
 
 	fmt.Printf("[DEBUG] AppendCancellationMarker: wrote marker to %s\n", sessionPath)
 	return nil
+}
+
+// WritePlanReviewResult appends a synthetic JSONL entry that matches Claude Code's
+// built-in ExitPlanMode toolUseResult format. This tricks the plan mode tracker
+// into recognizing the state transition (accept/reject).
+//
+// For ACCEPT: writes toolUseResult: {plan, isAgent, filePath}
+// For REJECT: writes toolUseResult: "Error: ..." (string, not object)
+func WritePlanReviewResult(folder, sessionID, toolUseID string, accepted bool, plan, planFilePath, feedback string) error {
+	encodedName := encodeProjectPath(folder)
+	sessionPath := filepath.Join(os.Getenv("HOME"), ".claude", "projects", encodedName, sessionID+".jsonl")
+
+	var event map[string]any
+
+	if accepted {
+		// Build content string matching built-in ExitPlanMode accept format
+		content := "User has approved your plan. You can now start coding. Start with updating your todo list if applicable\n\nYour plan has been saved to: " + planFilePath + "\nYou can refer back to it if needed during implementation."
+
+		// Add alignment feedback if provided
+		if feedback != "" {
+			content += "\n\nADDITIONAL ALIGNMENT FEEDBACK: " + feedback
+		}
+
+		content += "\n\n## Approved Plan:\n" + plan
+
+		event = map[string]any{
+			"type":      "user",
+			"uuid":      uuid.New().String(),
+			"timestamp": time.Now().UTC().Format(time.RFC3339Nano),
+			"message": map[string]any{
+				"role": "user",
+				"content": []any{
+					map[string]any{
+						"type":        "tool_result",
+						"content":     content,
+						"tool_use_id": toolUseID,
+					},
+				},
+			},
+			"toolUseResult": map[string]any{
+				"plan":     plan,
+				"isAgent":  false,
+				"filePath": planFilePath,
+			},
+		}
+	} else {
+		// Reject format
+		rejectContent := "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). To tell you how to proceed, the user said:"
+		if feedback != "" {
+			rejectContent += "\nUSER REJECTION FEEDBACK: " + feedback
+		} else {
+			rejectContent += "\nUser rejected the plan without specific feedback."
+		}
+
+		rejectToolResult := "Error: " + rejectContent
+
+		event = map[string]any{
+			"type":      "user",
+			"uuid":      uuid.New().String(),
+			"timestamp": time.Now().UTC().Format(time.RFC3339Nano),
+			"message": map[string]any{
+				"role": "user",
+				"content": []any{
+					map[string]any{
+						"type":        "tool_result",
+						"content":     rejectContent,
+						"is_error":    true,
+						"tool_use_id": toolUseID,
+					},
+				},
+			},
+			"toolUseResult": rejectToolResult,
+		}
+	}
+
+	jsonBytes, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("failed to marshal plan review result: %w", err)
+	}
+
+	f, err := os.OpenFile(sessionPath, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open session file for plan review result: %w", err)
+	}
+	defer f.Close()
+
+	if _, err := f.WriteString(string(jsonBytes) + "\n"); err != nil {
+		return fmt.Errorf("failed to append plan review result: %w", err)
+	}
+
+	action := "ACCEPTED"
+	if !accepted {
+		action = "REJECTED"
+	}
+	fmt.Printf("[PATCH] WritePlanReviewResult: %s plan, wrote synthetic entry to %s\n", action, sessionPath)
+	return nil
+}
+
+// FindLatestToolUseID scans a session JSONL backwards to find the most recent
+// tool_use block with the given tool name, returning its id.
+// This is needed because the MCP CallToolRequest doesn't expose the tool_use_id
+// that Claude assigned when calling our MCP tool.
+func FindLatestToolUseID(folder, sessionID, toolName string) (string, error) {
+	encodedName := encodeProjectPath(folder)
+	sessionPath := filepath.Join(os.Getenv("HOME"), ".claude", "projects", encodedName, sessionID+".jsonl")
+
+	f, err := os.Open(sessionPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to open session file: %w", err)
+	}
+	defer f.Close()
+
+	// Read all lines (we need to scan backwards)
+	var lines []string
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 1024*1024), 10*1024*1024) // 10MB max line
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+	if err := scanner.Err(); err != nil {
+		return "", fmt.Errorf("failed to read session file: %w", err)
+	}
+
+	// Scan backwards for the latest assistant message with tool_use matching toolName
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := lines[i]
+		if line == "" {
+			continue
+		}
+
+		// Quick check - must contain the tool name
+		if !strings.Contains(line, toolName) {
+			continue
+		}
+
+		var event map[string]any
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			continue
+		}
+
+		if event["type"] != "assistant" {
+			continue
+		}
+
+		message, ok := event["message"].(map[string]any)
+		if !ok {
+			continue
+		}
+
+		content, ok := message["content"].([]any)
+		if !ok {
+			continue
+		}
+
+		// Look for tool_use block with matching name
+		for _, block := range content {
+			blockMap, ok := block.(map[string]any)
+			if !ok {
+				continue
+			}
+			if blockMap["type"] != "tool_use" {
+				continue
+			}
+			if blockMap["name"] != toolName {
+				continue
+			}
+			toolID, ok := blockMap["id"].(string)
+			if !ok {
+				continue
+			}
+			fmt.Printf("[PATCH] FindLatestToolUseID: found %s → %s\n", toolName, toolID)
+			return toolID, nil
+		}
+	}
+
+	return "", fmt.Errorf("no tool_use block found for %s in session %s", toolName, sessionID)
 }

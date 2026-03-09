@@ -5,6 +5,14 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.19] - 2026-03-09
+
+### Fixed
+- **ExitPlanMode JSONL structure alignment** — Claude Code's plan mode tracker expects `toolUseResult: {plan, isAgent, filePath}` but our MCP ExitPlanMode returned a generic text result written as `toolUseResult: [{type:"text",...}]`, causing Claude to loop calling ExitPlanMode thinking plan mode was still active. Fixed by writing a synthetic JSONL entry matching the built-in format before returning the MCP result. Added `WritePlanReviewResult()` and `FindLatestToolUseID()` to `jsonl_patch.go`, wired `activeSessionGetter` through MCPService for session context resolution.
+
+### Added
+- **Alignment feedback on plan accept** — Users can now provide optional alignment notes when accepting a plan (not just when rejecting). Feedback appears as `ADDITIONAL ALIGNMENT FEEDBACK:` in the JSONL content, guiding Claude's implementation. Textarea placeholder and accept button label update dynamically.
+
 ## [0.4.18] - 2026-03-07
 
 ### Fixed

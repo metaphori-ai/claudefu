@@ -27,6 +27,7 @@ type MCPService struct {
 	pendingQuestions   *PendingQuestionManager
 	pendingPermissions *PendingPermissionRequestManager
 	pendingPlanReviews *PendingPlanReviewManager
+	activeSessionGetter func(agentSlug string) (agentID, sessionID, folder, slug string)
 	port               int
 	ctx                context.Context
 	cancel             context.CancelFunc
@@ -69,6 +70,12 @@ func (s *MCPService) SetEmitFunc(emitFunc func(types.EventEnvelope)) {
 // SetRegistry sets the global agent registry for cross-workspace slug/UUID resolution
 func (s *MCPService) SetRegistry(registry *workspace.AgentRegistry) {
 	s.registry = registry
+}
+
+// SetActiveSessionGetter sets the function to resolve an agent slug to its active session context.
+// Returns agentID, sessionID, folder, and session slug for JSONL writing.
+func (s *MCPService) SetActiveSessionGetter(getter func(agentSlug string) (agentID, sessionID, folder, slug string)) {
+	s.activeSessionGetter = getter
 }
 
 // GetInbox returns the inbox manager for accessing messages

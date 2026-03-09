@@ -146,10 +146,11 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
     if (!mcpPendingPlanReview || planReviewSubmitting) return;
     setPlanReviewSubmitting(true);
     try {
-      await AcceptPlanReview(mcpPendingPlanReview.id);
+      await AcceptPlanReview(mcpPendingPlanReview.id, planReviewFeedback);
       setMCPPendingPlanReview(null);
       setPlanPaneOpen(false);
       setPlanContent(null);
+      setPlanReviewFeedback('');
     } catch (err) {
       console.error('Failed to accept plan review:', err);
     } finally {
@@ -922,7 +923,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
               <textarea
                 value={planReviewFeedback}
                 onChange={(e) => setPlanReviewFeedback(e.target.value)}
-                placeholder="Optional feedback (used when rejecting)..."
+                placeholder="Optional: alignment notes (accept) or revision feedback (reject)..."
                 style={{
                   width: '100%',
                   minHeight: '48px',
@@ -968,7 +969,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
                     opacity: planReviewSubmitting ? 0.5 : 1
                   }}
                 >
-                  Accept Plan
+                  {planReviewFeedback ? 'Accept with Feedback' : 'Accept Plan'}
                 </button>
               </div>
             </div>

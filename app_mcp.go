@@ -227,8 +227,8 @@ type MCPPendingPlanReview struct {
 	CreatedAt string `json:"createdAt"`
 }
 
-// AcceptPlanReview accepts a pending MCP plan review
-func (a *App) AcceptPlanReview(reviewID string) error {
+// AcceptPlanReview accepts a pending MCP plan review with optional alignment feedback
+func (a *App) AcceptPlanReview(reviewID string, feedback string) error {
 	if a.mcpServer == nil {
 		return fmt.Errorf("MCP server not initialized")
 	}
@@ -236,7 +236,7 @@ func (a *App) AcceptPlanReview(reviewID string) error {
 	if prm == nil {
 		return fmt.Errorf("pending plan reviews manager not initialized")
 	}
-	return prm.Accept(reviewID)
+	return prm.Accept(reviewID, feedback)
 }
 
 // RejectPlanReview rejects a pending MCP plan review with optional feedback

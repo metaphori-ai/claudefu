@@ -75,8 +75,8 @@ func (m *PendingPlanReviewManager) GetAll() []*PendingPlanReview {
 	return result
 }
 
-// Accept sends an acceptance to a pending plan review
-func (m *PendingPlanReviewManager) Accept(id string) error {
+// Accept sends an acceptance with optional alignment feedback to a pending plan review
+func (m *PendingPlanReviewManager) Accept(id string, feedback string) error {
 	m.mu.Lock()
 	pr, exists := m.pending[id]
 	if !exists {
@@ -87,7 +87,7 @@ func (m *PendingPlanReviewManager) Accept(id string) error {
 	m.mu.Unlock()
 
 	select {
-	case pr.ResponseCh <- &PlanReviewAnswer{Accepted: true}:
+	case pr.ResponseCh <- &PlanReviewAnswer{Accepted: true, Feedback: feedback}:
 		fmt.Printf("[MCP:ExitPlanMode] Accepted plan review %s\n", id[:8])
 	default:
 		fmt.Printf("[MCP:ExitPlanMode] Warning: plan review %s response channel full\n", id[:8])

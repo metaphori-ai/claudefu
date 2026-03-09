@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -835,9 +837,17 @@ func (s *MCPService) handleExitPlanMode(ctx context.Context, req mcp.CallToolReq
 			fmt.Printf("[MCP:ExitPlanMode] Review %s skipped by user\n", pr.ID[:8])
 			return mcp.NewToolResultError("User skipped the plan review"), nil
 		}
+
+		// Write synthetic JSONL entry before returning MCP result
+		s.writePlanReviewJSONL(fromAgent, answer)
+
 		if answer.Accepted {
 			fmt.Printf("[MCP:ExitPlanMode] Plan accepted for review %s\n", pr.ID[:8])
-			return mcp.NewToolResultText("Plan approved by user. You can now proceed with implementation."), nil
+			msg := "Plan approved by user. You can now proceed with implementation."
+			if answer.Feedback != "" {
+				msg += "\n\nADDITIONAL ALIGNMENT FEEDBACK: " + answer.Feedback
+			}
+			return mcp.NewToolResultText(msg), nil
 		}
 		// Rejected with feedback
 		feedback := answer.Feedback
@@ -845,7 +855,7 @@ func (s *MCPService) handleExitPlanMode(ctx context.Context, req mcp.CallToolReq
 			feedback = "User rejected the plan without specific feedback."
 		}
 		fmt.Printf("[MCP:ExitPlanMode] Plan rejected for review %s: %s\n", pr.ID[:8], feedback)
-		return mcp.NewToolResultText(fmt.Sprintf("Plan rejected by user. Feedback: %s\n\nPlease revise your plan based on this feedback and try ExitPlanMode again when ready.", feedback)), nil
+		return mcp.NewToolResultText(fmt.Sprintf("Plan rejected by user.\nUSER REJECTION FEEDBACK: %s\n\nPlease revise your plan based on this feedback and try ExitPlanMode again when ready.", feedback)), nil
 
 	case <-ctx.Done():
 		// Context cancelled (e.g., Claude disconnected)
@@ -867,6 +877,50 @@ func (s *MCPService) handleExitPlanMode(ctx context.Context, req mcp.CallToolReq
 		s.pendingPlanReviews.Cancel(pr.ID)
 		s.emitPlanReviewDismissed(pr.ID)
 		return mcp.NewToolResultError(fmt.Sprintf("Plan review timed out after %v", timeout)), nil
+	}
+}
+
+// writePlanReviewJSONL writes a synthetic JSONL entry matching the built-in ExitPlanMode
+// format so Claude Code's plan mode tracker recognizes the state transition.
+func (s *MCPService) writePlanReviewJSONL(fromAgent string, answer *PlanReviewAnswer) {
+	if s.activeSessionGetter == nil {
+		fmt.Printf("[MCP:ExitPlanMode] No activeSessionGetter configured, skipping JSONL write\n")
+		return
+	}
+
+	// Resolve agent slug to session context
+	agentID, sessionID, folder, slug := s.activeSessionGetter(fromAgent)
+	if sessionID == "" || folder == "" {
+		fmt.Printf("[MCP:ExitPlanMode] Could not resolve active session for agent %s (agentID=%s, sessionID=%s, folder=%s)\n",
+			fromAgent, agentID, sessionID, folder)
+		return
+	}
+
+	// Find the tool_use_id from the JSONL
+	toolUseID, err := workspace.FindLatestToolUseID(folder, sessionID, "mcp__claudefu__ExitPlanMode")
+	if err != nil {
+		fmt.Printf("[MCP:ExitPlanMode] Could not find tool_use_id: %v\n", err)
+		return
+	}
+
+	// Get the plan file path and content
+	planFilePath := ""
+	planContent := ""
+	if slug != "" {
+		homeDir, _ := os.UserHomeDir()
+		planFilePath = filepath.Join(homeDir, ".claude", "plans", slug+".md")
+		data, err := os.ReadFile(planFilePath)
+		if err != nil {
+			fmt.Printf("[MCP:ExitPlanMode] Could not read plan file %s: %v\n", planFilePath, err)
+			// Not fatal - continue with empty plan content
+		} else {
+			planContent = string(data)
+		}
+	}
+
+	// Write the synthetic JSONL entry
+	if err := workspace.WritePlanReviewResult(folder, sessionID, toolUseID, answer.Accepted, planContent, planFilePath, answer.Feedback); err != nil {
+		fmt.Printf("[MCP:ExitPlanMode] Failed to write synthetic JSONL: %v\n", err)
 	}
 }
 

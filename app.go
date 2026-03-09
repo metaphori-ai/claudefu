@@ -432,6 +432,33 @@ func (a *App) initializeMCPServer() {
 		a.mcpServer.SetRegistry(a.workspace.Registry)
 	}
 
+	// Set up active session getter for synthetic JSONL writes (ExitPlanMode)
+	a.mcpServer.SetActiveSessionGetter(func(agentSlug string) (agentID, sessionID, folder, slug string) {
+		if a.currentWorkspace == nil || a.rt == nil {
+			return "", "", "", ""
+		}
+		// Find agent by slug in current workspace
+		for _, agent := range a.currentWorkspace.Agents {
+			if agent.GetSlug() == agentSlug || agent.Name == agentSlug {
+				agentState := a.rt.GetAgentState(agent.ID)
+				if agentState == nil {
+					return agent.ID, "", agent.Folder, ""
+				}
+				// Find the active session for this agent
+				activeAgentID, activeSessionID := a.rt.GetActiveSession()
+				if activeAgentID == agent.ID && activeSessionID != "" {
+					session := a.rt.GetSessionState(agent.ID, activeSessionID)
+					if session != nil {
+						return agent.ID, activeSessionID, agent.Folder, session.Slug
+					}
+					return agent.ID, activeSessionID, agent.Folder, ""
+				}
+				return agent.ID, "", agent.Folder, ""
+			}
+		}
+		return "", "", "", ""
+	})
+
 	// Set up emit function to forward events to Wails
 	a.mcpServer.SetEmitFunc(func(envelope types.EventEnvelope) {
 		// Add workspace ID to envelope if available
