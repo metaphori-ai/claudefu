@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -962,7 +963,7 @@ func (fw *FileWatcher) parseSessionPath(path string) (folder, sessionID string) 
 	defer fw.mu.RUnlock()
 
 	for f := range fw.folderToAgentIDs {
-		encodedName := strings.NewReplacer("/", "-", "_", "-").Replace(f)
+		encodedName := encodeProjectPath(f)
 		expectedDir := filepath.Join(os.Getenv("HOME"), ".claude", "projects", encodedName)
 		if dir == expectedDir {
 			return f, sessionID
@@ -1014,14 +1015,22 @@ func parseTimestampToTime(ts string) time.Time {
 // PATH HELPERS (exported for use by other packages)
 // =============================================================================
 
+// encodeProjectPath encodes a folder path like Claude Code does.
+// Claude CLI replaces every non-alphanumeric character with "-".
+var nonAlphanumeric = regexp.MustCompile(`[^a-zA-Z0-9]`)
+
+func encodeProjectPath(path string) string {
+	return nonAlphanumeric.ReplaceAllString(path, "-")
+}
+
 // BuildSessionPath constructs the path to a session JSONL file.
 func BuildSessionPath(folder, sessionID string) string {
-	encodedName := strings.NewReplacer("/", "-", "_", "-").Replace(folder)
+	encodedName := encodeProjectPath(folder)
 	return filepath.Join(os.Getenv("HOME"), ".claude", "projects", encodedName, sessionID+".jsonl")
 }
 
 // GetSessionsDir returns the directory containing session files for a folder.
 func GetSessionsDir(folder string) string {
-	encodedName := strings.NewReplacer("/", "-", "_", "-").Replace(folder)
+	encodedName := encodeProjectPath(folder)
 	return filepath.Join(os.Getenv("HOME"), ".claude", "projects", encodedName)
 }

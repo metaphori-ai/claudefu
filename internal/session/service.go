@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -250,10 +251,11 @@ type UsageInfo struct {
 }
 
 // encodeFolder converts folder path to Claude's encoded format.
-// Replaces "/" and "_" with "-" to create a flat directory structure.
+// Claude CLI replaces every non-alphanumeric character with "-".
+var nonAlphanumeric = regexp.MustCompile(`[^a-zA-Z0-9]`)
+
 func encodeFolder(folder string) string {
-	s := strings.ReplaceAll(folder, "/", "-")
-	return strings.ReplaceAll(s, "_", "-")
+	return nonAlphanumeric.ReplaceAllString(folder, "-")
 }
 
 // addToIndex adds a session entry to sessions-index.json.

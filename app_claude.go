@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"claudefu/internal/providers"
@@ -14,6 +15,29 @@ import (
 // =============================================================================
 // CLAUDE CODE METHODS (Bound to frontend)
 // =============================================================================
+
+// emitResponseComplete emits the response_complete event and checks for auth errors.
+func (a *App) emitResponseComplete(agentID, sessionID string, err error) {
+	if a.rt == nil {
+		return
+	}
+	wasCancelled := a.claude.WasCancelled(sessionID)
+	payload := map[string]any{
+		"success":   err == nil,
+		"cancelled": wasCancelled,
+	}
+	if err != nil && !wasCancelled {
+		errStr := err.Error()
+		payload["error"] = errStr
+		// Detect OAuth token expiry and emit auth:expired for frontend modal
+		if strings.Contains(errStr, "authentication_failed") || strings.Contains(errStr, "OAuth token has expired") {
+			a.rt.Emit("auth:expired", agentID, sessionID, map[string]any{
+				"error": errStr,
+			})
+		}
+	}
+	a.rt.Emit("response_complete", agentID, sessionID, payload)
+}
 
 // SendMessage sends a message to Claude Code, optionally with image attachments.
 // If attachments are provided, uses stdin with stream-json format.
@@ -43,17 +67,7 @@ func (a *App) SendMessage(agentID, sessionID, message string, attachments []type
 
 	// Emit response_complete event AFTER Claude finishes
 	// This is the authoritative signal that the response is complete
-	if a.rt != nil {
-		wasCancelled := a.claude.WasCancelled(sessionID)
-		payload := map[string]any{
-			"success":   err == nil,
-			"cancelled": wasCancelled,
-		}
-		if err != nil && !wasCancelled {
-			payload["error"] = err.Error()
-		}
-		a.rt.Emit("response_complete", agentID, sessionID, payload)
-	}
+	a.emitResponseComplete(agentID, sessionID, err)
 
 	return err
 }
@@ -173,17 +187,7 @@ func (a *App) AnswerQuestion(agentID, sessionID, toolUseID string, questions []m
 	err := a.claude.SendMessage(agent.Folder, sessionID, "question answered", nil, false)
 
 	// Emit response_complete event AFTER Claude finishes
-	if a.rt != nil {
-		wasCancelled := a.claude.WasCancelled(sessionID)
-		payload := map[string]any{
-			"success":   err == nil,
-			"cancelled": wasCancelled,
-		}
-		if err != nil && !wasCancelled {
-			payload["error"] = err.Error()
-		}
-		a.rt.Emit("response_complete", agentID, sessionID, payload)
-	}
+	a.emitResponseComplete(agentID, sessionID, err)
 
 	return err
 }

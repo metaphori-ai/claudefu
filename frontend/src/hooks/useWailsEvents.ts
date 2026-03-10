@@ -284,6 +284,25 @@ export function useWailsEvents() {
     };
   }, [workspaceId, setAgentResponding]);
 
+  // Subscribe to auth:expired events (OAuth token expired)
+  useEffect(() => {
+    const handleAuthExpired = (envelope: {
+      agentId?: string;
+      sessionId?: string;
+      payload?: { error?: string };
+    }) => {
+      logDebug('WailsEvents', 'AUTH_EXPIRED', { agentId: envelope?.agentId?.substring(0, 8) });
+      window.dispatchEvent(new CustomEvent('claudefu:auth-expired', {
+        detail: { error: envelope?.payload?.error }
+      }));
+    };
+
+    EventsOn('auth:expired', handleAuthExpired);
+    return () => {
+      EventsOff('auth:expired');
+    };
+  }, []);
+
   // Subscribe to debug:cli-command events (emitted by Claude CLI service)
   useEffect(() => {
     const handleDebugCliCommand = (data: { command?: string; sessionId?: string }) => {

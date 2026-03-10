@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -594,11 +595,16 @@ func (m *Manager) GetSessions(folder string) ([]Session, error) {
 	return sessions, nil
 }
 
-// encodeProjectPath encodes a folder path like Claude Code does
+// encodeProjectPath encodes a folder path like Claude Code does.
+// Claude CLI replaces every non-alphanumeric character with "-".
 func encodeProjectPath(path string) string {
-	// Replace / and _ with - (matches Claude CLI encoding)
-	s := strings.ReplaceAll(path, "/", "-")
-	return strings.ReplaceAll(s, "_", "-")
+	return encodeProjectPathRegex(path)
+}
+
+var nonAlphanumeric = regexp.MustCompile(`[^a-zA-Z0-9]`)
+
+func encodeProjectPathRegex(path string) string {
+	return nonAlphanumeric.ReplaceAllString(path, "-")
 }
 
 // getSessionPreview reads first user message from session file using the classifier.

@@ -7,8 +7,17 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
+
+// encodeProjectPath encodes a folder path like Claude Code does.
+// Claude CLI replaces every non-alphanumeric character with "-".
+var nonAlphanumeric = regexp.MustCompile(`[^a-zA-Z0-9]`)
+
+func encodeProjectPath(path string) string {
+	return nonAlphanumeric.ReplaceAllString(path, "-")
+}
 
 // ScaffoldCheck reports which agent setup items exist.
 type ScaffoldCheck struct {
@@ -44,7 +53,7 @@ func CheckAgentSetup(folder string) (*ScaffoldCheck, error) {
 	}
 
 	// Projects dir + sessions-index.json
-	encoded := strings.NewReplacer("/", "-", "_", "-").Replace(folder)
+	encoded := encodeProjectPath(folder)
 	projectDir := filepath.Join(home, ".claude", "projects", encoded)
 	indexPath := filepath.Join(projectDir, "sessions-index.json")
 	if _, err := os.Stat(indexPath); err == nil {
@@ -114,7 +123,7 @@ func ensureClaudeProjectsDir(folder string) error {
 		return err
 	}
 
-	encoded := strings.NewReplacer("/", "-", "_", "-").Replace(folder)
+	encoded := encodeProjectPath(folder)
 	projectDir := filepath.Join(home, ".claude", "projects", encoded)
 
 	if err := os.MkdirAll(projectDir, 0755); err != nil {

@@ -96,6 +96,7 @@ function AppContent() {
   const [openSessionsForAgentId, setOpenSessionsForAgentId] = useState<string | null>(null);
   const [isCreatingNewSessionExternally, setIsCreatingNewSessionExternally] = useState<boolean>(false);
   const [terminalOpen, setTerminalOpen] = useState<boolean>(false);
+  const [showAuthExpired, setShowAuthExpired] = useState<boolean>(false);
   const [scaffoldDialog, setScaffoldDialog] = useState<{
     folder: string;
     name: string;
@@ -498,6 +499,15 @@ function AppContent() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [agents, selectedAgentId, selectAgent, selectSession, clearSelection, settings]);
+
+  // Listen for auth:expired events from backend
+  useEffect(() => {
+    const handleAuthExpired = () => {
+      setShowAuthExpired(true);
+    };
+    window.addEventListener('claudefu:auth-expired', handleAuthExpired);
+    return () => window.removeEventListener('claudefu:auth-expired', handleAuthExpired);
+  }, []);
 
   // Auto-save workspace when state changes
   useEffect(() => {
@@ -1535,6 +1545,16 @@ function AppContent() {
         message={`Remove "${agents.find(a => a.id === confirmRemoveAgentId)?.name || 'this agent'}" from the workspace?`}
         confirmText="Remove"
         danger
+      />
+
+      {/* Auth Expired Dialog */}
+      <ConfirmDialog
+        isOpen={showAuthExpired}
+        onClose={() => setShowAuthExpired(false)}
+        onConfirm={() => setShowAuthExpired(false)}
+        title="Authentication Expired"
+        message="Your Claude OAuth token has expired. Please open Claude Code in a terminal and run /login to re-authenticate."
+        confirmText="OK"
       />
 
       {/* MCP Settings Pane */}
