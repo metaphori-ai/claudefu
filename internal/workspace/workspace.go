@@ -103,18 +103,35 @@ func (c *MCPConfig) IsEnabled() bool {
 
 // Workspace represents a saved workspace configuration
 type Workspace struct {
-	Version         int              `json:"version"`                   // Schema version (3 = with MCP config)
+	Version         int              `json:"version"`                   // Schema version (4 = slim agents, no name/folder duplication)
 	ID              string           `json:"id"`
 	Name            string           `json:"name"`
 	Agents          []Agent          `json:"agents"`
 	MCPConfig       *MCPConfig       `json:"mcpConfig,omitempty"`       // MCP server configuration
-	SelectedSession *SelectedSession `json:"selectedSession,omitempty"`
-	Created         time.Time        `json:"created"`
-	LastOpened      time.Time        `json:"lastOpened"`
+	SelectedSession *SelectedSession `json:"selectedSession,omitempty"` // In-memory only (set by populateWorkspaceFromState)
+	LastOpened      time.Time        `json:"lastOpened"`                // In-memory only (set by populateWorkspaceFromState); kept for backward compat read
 }
 
 // CurrentWorkspaceVersion is the latest workspace schema version
-const CurrentWorkspaceVersion = 3
+const CurrentWorkspaceVersion = 4
+
+// agentDiskEntry is the slim on-disk representation of an agent.
+// Agent identity (name, folder, slug) lives exclusively in agents.json.
+type agentDiskEntry struct {
+	ID             string `json:"id"`
+	WatchMode      string `json:"watchMode,omitempty"`
+	MCPEnabled     *bool  `json:"mcpEnabled,omitempty"`
+	MCPDescription string `json:"mcpDescription,omitempty"`
+}
+
+// workspaceDisk is the on-disk representation of a workspace (v4 slim format).
+type workspaceDisk struct {
+	Version   int              `json:"version"`
+	ID        string           `json:"id"`
+	Name      string           `json:"name"`
+	Agents    []agentDiskEntry `json:"agents"`
+	MCPConfig *MCPConfig       `json:"mcpConfig,omitempty"`
+}
 
 // WorkspaceSummary is a minimal reference for listing workspaces
 type WorkspaceSummary struct {
@@ -361,9 +378,18 @@ func (m *Manager) SaveWorkspaceState(workspaceID string, state *WorkspaceState) 
 
 	// Snapshot the map to avoid concurrent map iteration panic
 	// (SetActiveSession writes to AgentSessions while SaveWorkspaceState serializes it)
+	// Strip folder from SelectedSession — folder is derived from AgentID via the registry.
+	var selectedSession *SelectedSession
+	if state.SelectedSession != nil {
+		selectedSession = &SelectedSession{
+			AgentID:   state.SelectedSession.AgentID,
+			SessionID: state.SelectedSession.SessionID,
+			// Folder omitted — derived from registry via AgentID
+		}
+	}
 	snapshot := &WorkspaceState{
-		SelectedSession: state.SelectedSession,
-		LastOpened:       state.LastOpened,
+		SelectedSession: selectedSession,
+		LastOpened:      state.LastOpened,
 	}
 	if state.AgentSessions != nil {
 		snapshot.AgentSessions = make(map[string]string, len(state.AgentSessions))
@@ -451,40 +477,37 @@ func (m *Manager) cleanWorkspaceRuntimeFields(ws *Workspace) {
 // Runtime state (selectedSession, lastOpened, agentSessions) is saved separately
 // via SaveWorkspaceState to avoid sync conflicts on multi-machine setups.
 //
-// NOTE: The in-memory workspace may have runtime fields populated (for frontend
-// emission and menu). This method strips them before writing to disk so the
-// workspace JSON stays clean and sync-friendly.
+// v4 slim format: only id/watchMode/mcpEnabled/mcpDescription per agent.
+// Agent identity (name, folder, slug) lives exclusively in agents.json.
 func (m *Manager) SaveWorkspace(ws *Workspace) error {
-	if ws.Created.IsZero() {
-		ws.Created = time.Now()
-	}
-
 	// Generate ID if not set
 	if ws.ID == "" {
 		ws.ID = GenerateWorkspaceID()
 	}
 
-	// Use workspace ID as filename (stable across renames)
-	filename := ws.ID + ".json"
-	wsPath := filepath.Join(m.configPath, "workspaces", filename)
-
-	// Create a copy with runtime fields stripped for serialization.
-	// Runtime state lives in local/workspace-state/ to avoid sync conflicts.
-	toSave := *ws
-	toSave.SelectedSession = nil
-	toSave.LastOpened = time.Time{}
-	// Copy agents slice to avoid mutating the caller's in-memory workspace
-	toSave.Agents = make([]Agent, len(ws.Agents))
-	copy(toSave.Agents, ws.Agents)
-	for i := range toSave.Agents {
-		toSave.Agents[i].SelectedSessionID = ""
+	// Build slim disk struct — no name/folder/slug duplication
+	disk := workspaceDisk{
+		Version:   CurrentWorkspaceVersion,
+		ID:        ws.ID,
+		Name:      ws.Name,
+		MCPConfig: ws.MCPConfig,
+	}
+	disk.Agents = make([]agentDiskEntry, len(ws.Agents))
+	for i, a := range ws.Agents {
+		disk.Agents[i] = agentDiskEntry{
+			ID:             a.ID,
+			WatchMode:      a.WatchMode,
+			MCPEnabled:     a.MCPEnabled,
+			MCPDescription: a.MCPDescription,
+		}
 	}
 
-	data, err := json.MarshalIndent(&toSave, "", "  ")
+	data, err := json.MarshalIndent(&disk, "", "  ")
 	if err != nil {
 		return err
 	}
 
+	wsPath := filepath.Join(m.configPath, "workspaces", ws.ID+".json")
 	return os.WriteFile(wsPath, data, 0644)
 }
 
@@ -511,16 +534,22 @@ func (m *Manager) LoadWorkspace(id string) (*Workspace, error) {
 		return nil, err
 	}
 
+	// Enrich agents with name/folder/slug from the registry (v4 slim format).
+	// Safe to call on old-format workspaces: EnrichWorkspaceAgents skips agents
+	// that already have Folder populated.
+	if m.Registry != nil {
+		m.Registry.EnrichWorkspaceAgents(&ws)
+	}
+
 	return &ws, nil
 }
 
 // CreateWorkspace creates a new workspace with a generated ID
 func (m *Manager) CreateWorkspace(name string) (*Workspace, error) {
 	ws := &Workspace{
-		ID:      GenerateWorkspaceID(),
-		Name:    name,
-		Agents:  []Agent{},
-		Created: time.Now(),
+		ID:     GenerateWorkspaceID(),
+		Name:   name,
+		Agents: []Agent{},
 	}
 
 	if err := m.SaveWorkspace(ws); err != nil {

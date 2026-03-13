@@ -31,6 +31,7 @@ type ToolInstructions struct {
 	BacklogAdd              string `json:"backlogAdd"`              // BacklogAdd tool description
 	BacklogUpdate           string `json:"backlogUpdate"`           // BacklogUpdate tool description
 	BacklogList             string `json:"backlogList"`             // BacklogList tool description
+	MetalogsQuery           string `json:"metalogsQuery"`           // MetalogsQuery tool description
 }
 
 // ToolInstructionsManager handles loading and saving tool instructions
@@ -177,6 +178,10 @@ func (m *ToolInstructionsManager) load() error {
 	}
 	if ti.BacklogList == "" {
 		ti.BacklogList = defaults.BacklogList
+		needsSave = true
+	}
+	if ti.MetalogsQuery == "" {
+		ti.MetalogsQuery = defaults.MetalogsQuery
 		needsSave = true
 	}
 

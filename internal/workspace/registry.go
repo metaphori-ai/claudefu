@@ -1,10 +1,12 @@
 package workspace
 
 import (
+	"bytes"
 	"encoding/json"
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 
@@ -124,12 +126,61 @@ func (r *AgentRegistry) Save() error {
 }
 
 // save writes the current registry to disk (internal, caller must hold lock).
+// Agents are sorted case-insensitively by folder path for human readability.
 func (r *AgentRegistry) save() error {
-	raw, err := json.MarshalIndent(r.data, "", "  ")
+	raw, err := r.marshalSorted()
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(r.filePath, raw, 0644)
+}
+
+// marshalSorted produces indented JSON with agents sorted case-insensitively
+// by folder path. Go's encoding/json sorts map keys by byte value (ASCII),
+// which puts uppercase before lowercase. This produces natural alphabetical order.
+func (r *AgentRegistry) marshalSorted() ([]byte, error) {
+	keys := make([]string, 0, len(r.data.Agents))
+	for k := range r.data.Agents {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		return strings.ToLower(keys[i]) < strings.ToLower(keys[j])
+	})
+
+	var buf bytes.Buffer
+	vb, err := json.Marshal(r.data.Version)
+	if err != nil {
+		return nil, err
+	}
+	buf.WriteString("{\n  \"version\": ")
+	buf.Write(vb)
+	buf.WriteString(",\n  \"agents\": {")
+
+	for i, k := range keys {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		kb, err := json.Marshal(k)
+		if err != nil {
+			return nil, err
+		}
+		// Prefix "    " applied to continuation lines of the value block:
+		// fields get "    " + "  " = 6 spaces, closing "}" gets "    " = 4 spaces.
+		vb, err := json.MarshalIndent(r.data.Agents[k], "    ", "  ")
+		if err != nil {
+			return nil, err
+		}
+		buf.WriteString("\n    ")
+		buf.Write(kb)
+		buf.WriteString(": ")
+		buf.Write(vb)
+	}
+
+	if len(keys) > 0 {
+		buf.WriteString("\n  ")
+	}
+	buf.WriteString("}\n}")
+	return buf.Bytes(), nil
 }
 
 // GetOrCreateID returns the stable UUID for a folder. If the folder has
@@ -340,6 +391,33 @@ func (r *AgentRegistry) ReconcileWorkspace(ws *Workspace) map[string]string {
 	}
 
 	return changed
+}
+
+// EnrichWorkspaceAgents fills Folder/Name/MCPSlug for agents that have an empty Folder
+// (v4 slim workspace format). Agents that already have Folder populated (old format)
+// are skipped so that old workspaces continue to load identically.
+func (r *AgentRegistry) EnrichWorkspaceAgents(ws *Workspace) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	for i := range ws.Agents {
+		agent := &ws.Agents[i]
+		if agent.Folder != "" {
+			continue // Already populated (old format) — skip
+		}
+		for folder, info := range r.data.Agents {
+			if info.ID == agent.ID {
+				agent.Folder = folder
+				if agent.Name == "" {
+					agent.Name = info.Name
+				}
+				if agent.MCPSlug == "" {
+					agent.MCPSlug = info.Slug
+				}
+				break
+			}
+		}
+	}
 }
 
 // AllEntries returns a copy of the registry map (for debugging/inspection).

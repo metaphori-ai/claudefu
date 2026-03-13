@@ -263,6 +263,37 @@ func CreateBacklogUpdateTool(instruction string) mcp.Tool {
 	)
 }
 
+// CreateMetalogsQueryTool creates the MetalogsQuery tool definition
+func CreateMetalogsQueryTool(instruction string) mcp.Tool {
+	return mcp.NewTool("MetalogsQuery",
+		mcp.WithDescription(instruction),
+		mcp.WithString("site",
+			mcp.Description("Filter by site name (e.g., 'prod', 'staging')"),
+		),
+		mcp.WithString("layer",
+			mcp.Description("Filter by layer (e.g., 'api', 'worker', 'frontend')"),
+		),
+		mcp.WithString("level",
+			mcp.Description("Filter by log level (e.g., 'error', 'warn', 'info', 'debug')"),
+		),
+		mcp.WithString("collection",
+			mcp.Description("Filter by collection name"),
+		),
+		mcp.WithString("contains",
+			mcp.Description("Filter log lines containing this text"),
+		),
+		mcp.WithString("since",
+			mcp.Description("Time window to query (e.g., '1h', '30m', '24h'). Default: '1h'"),
+		),
+		mcp.WithNumber("limit",
+			mcp.Description("Maximum number of log lines to return. Default: 50"),
+		),
+		mcp.WithString("from_agent",
+			mcp.Description("Your agent name/slug for identification (optional)"),
+		),
+	)
+}
+
 // CreateBacklogListTool creates the BacklogList tool definition
 func CreateBacklogListTool(instruction string) mcp.Tool {
 	return mcp.NewTool("BacklogList",

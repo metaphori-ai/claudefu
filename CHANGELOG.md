@@ -5,6 +5,16 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.21] - 2026-03-12
+
+### Added
+- **MetalogsQuery MCP tool** — Agents can now query the Metalogs log aggregation system via `mcp__claudefu__MetalogsQuery`. Filters by `site`, `layer`, `level`, `collection`, `contains`, `since` (default `1h`), and `limit` (default `50`). Disabled by default; enable in MCP Settings → Tool Availability. Requires `~/go/bin/metalogs` CLI.
+
+### Improved
+- **Workspace file cleanup (v4 slim format)** — Workspace JSON files no longer duplicate agent `name` and `folder` (already canonical in `agents.json`). Agents array now stores only `id`, `watchMode`, `mcpEnabled`, `mcpDescription`. On load, agents are enriched from the registry via `EnrichWorkspaceAgents`. Old-format workspaces (v0–v3) load identically; first save rewrites to v4. Removes `Created` timestamp from workspace files.
+- **`agents.json` sorted case-insensitively by folder path** — Previously sorted by raw ASCII byte value, placing uppercase paths (`TrueMemory`) before lowercase (`anyscale`). Now uses case-insensitive sort so all paths interleave naturally. Applied to all write paths (`GetOrCreateID`, `UpdateAgentMeta`, `ReconcileWorkspace`, etc.).
+- **Agent rename persists to `agents.json`** — Renaming an agent from the sidebar (inline edit, rename dialog, or macOS menu) now calls the backend `UpdateAgent`, keeping `agents.json` name/slug in sync. Previously only `ManageAgentsDialog` persisted renames.
+
 ## [0.4.20] - 2026-03-10
 
 ### Fixed

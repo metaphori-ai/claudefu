@@ -25,6 +25,7 @@ type ToolAvailability struct {
 	BacklogAdd            bool `json:"backlogAdd"`            // Enabled by default
 	BacklogUpdate         bool `json:"backlogUpdate"`         // Enabled by default
 	BacklogList           bool `json:"backlogList"`           // Enabled by default
+	MetalogsQuery         bool `json:"metalogsQuery"`         // Disabled by default - requires metalogs CLI
 }
 
 // ToolAvailabilityManager handles loading and saving tool availability settings
@@ -60,6 +61,7 @@ func DefaultToolAvailability() *ToolAvailability {
 		BacklogAdd:            true,  // Enabled by default
 		BacklogUpdate:         true,  // Enabled by default
 		BacklogList:           true,  // Enabled by default
+		MetalogsQuery:         false, // Disabled by default - requires metalogs CLI at ~/go/bin/metalogs
 	}
 }
 
@@ -100,6 +102,8 @@ func (m *ToolAvailabilityManager) IsEnabled(toolName string) bool {
 		return m.availability.BacklogUpdate
 	case "BacklogList":
 		return m.availability.BacklogList
+	case "MetalogsQuery":
+		return m.availability.MetalogsQuery
 	default:
 		return false
 	}

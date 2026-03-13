@@ -373,6 +373,7 @@ export namespace mcpserver {
 	    backlogAdd: boolean;
 	    backlogUpdate: boolean;
 	    backlogList: boolean;
+	    metalogsQuery: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new ToolAvailability(source);
@@ -392,6 +393,7 @@ export namespace mcpserver {
 	        this.backlogAdd = source["backlogAdd"];
 	        this.backlogUpdate = source["backlogUpdate"];
 	        this.backlogList = source["backlogList"];
+	        this.metalogsQuery = source["metalogsQuery"];
 	    }
 	}
 	export class ToolInstructions {
@@ -411,6 +413,7 @@ export namespace mcpserver {
 	    backlogAdd: string;
 	    backlogUpdate: string;
 	    backlogList: string;
+	    metalogsQuery: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ToolInstructions(source);
@@ -434,6 +437,7 @@ export namespace mcpserver {
 	        this.backlogAdd = source["backlogAdd"];
 	        this.backlogUpdate = source["backlogUpdate"];
 	        this.backlogList = source["backlogList"];
+	        this.metalogsQuery = source["metalogsQuery"];
 	    }
 	}
 
@@ -1116,8 +1120,6 @@ export namespace workspace {
 	    mcpConfig?: MCPConfig;
 	    selectedSession?: SelectedSession;
 	    // Go type: time
-	    created: any;
-	    // Go type: time
 	    lastOpened: any;
 	
 	    static createFrom(source: any = {}) {
@@ -1132,7 +1134,6 @@ export namespace workspace {
 	        this.agents = this.convertValues(source["agents"], Agent);
 	        this.mcpConfig = this.convertValues(source["mcpConfig"], MCPConfig);
 	        this.selectedSession = this.convertValues(source["selectedSession"], SelectedSession);
-	        this.created = this.convertValues(source["created"], null);
 	        this.lastOpened = this.convertValues(source["lastOpened"], null);
 	    }
 	

@@ -1,6 +1,7 @@
 import { useContext, useCallback } from 'react';
 import { WorkspaceContext, WorkspaceAction } from '../context/WorkspaceContext';
 import { workspace, types } from '../../wailsjs/go/models';
+import { UpdateAgent } from '../../wailsjs/go/main/App';
 
 type Agent = workspace.Agent;
 type Session = types.Session;
@@ -48,7 +49,14 @@ export function useWorkspace() {
 
   const renameAgent = useCallback((agentId: string, name: string) => {
     dispatch({ type: 'RENAME_AGENT', payload: { agentId, name } });
-  }, [dispatch]);
+    // Persist to backend so agents.json and workspace file stay current
+    const agent = state.agents.find(a => a.id === agentId);
+    if (agent) {
+      UpdateAgent({ ...agent, name }).catch(err =>
+        console.error('Failed to persist agent rename:', err)
+      );
+    }
+  }, [dispatch, state.agents]);
 
   const updateAgent = useCallback((agent: Agent) => {
     dispatch({ type: 'UPDATE_AGENT', payload: agent });

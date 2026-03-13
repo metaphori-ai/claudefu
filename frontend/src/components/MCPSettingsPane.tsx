@@ -682,6 +682,35 @@ export function MCPSettingsPane({
                     </div>
                   </section>
 
+                  {/* Development Utilities */}
+                  <section>
+                    <h3 style={{ color: '#888', fontSize: '0.75rem', textTransform: 'uppercase', marginBottom: '0.75rem' }}>
+                      Development Utilities
+                    </h3>
+                    <div style={{
+                      background: '#1a1a1a',
+                      borderRadius: '8px',
+                      padding: '1rem',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.75rem',
+                    }}>
+                      {/* MetalogsQuery */}
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={toolAvailability.metalogsQuery}
+                          onChange={(e) => updateAvailability('metalogsQuery', e.target.checked)}
+                          style={{ width: '18px', height: '18px', accentColor: '#d97757' }}
+                        />
+                        <div>
+                          <span style={{ color: '#fff' }}>MetalogsQuery</span>
+                          <span style={{ color: '#666', marginLeft: '0.75rem', fontSize: '0.85rem' }}>Query Metalogs log aggregation (requires ~/go/bin/metalogs)</span>
+                        </div>
+                      </label>
+                    </div>
+                  </section>
+
                   {/* Experimental Tools */}
                   <section>
                     <h3 style={{ color: '#888', fontSize: '0.75rem', textTransform: 'uppercase', marginBottom: '0.75rem' }}>
@@ -1169,6 +1198,39 @@ export function MCPSettingsPane({
                       value={toolInstructions.backlogList || ''}
                       onChange={(e) => updateInstruction('backlogList', e.target.value)}
                       rows={7}
+                      style={{
+                        width: '100%',
+                        padding: '0.6rem',
+                        borderRadius: '4px',
+                        border: '1px solid #333',
+                        background: '#0a0a0a',
+                        color: '#fff',
+                        fontSize: '0.8rem',
+                        fontFamily: 'monospace',
+                        resize: 'vertical',
+                        lineHeight: '1.4',
+                      }}
+                    />
+                  </div>
+
+                  {/* MetalogsQuery */}
+                  <div>
+                    <label style={{
+                      display: 'block',
+                      color: '#d97757',
+                      fontSize: '0.8rem',
+                      fontWeight: 500,
+                      marginBottom: '0.5rem',
+                    }}>
+                      MetalogsQuery
+                      <span style={{ color: '#666', fontWeight: 400, marginLeft: '0.5rem' }}>
+                        (query Metalogs log aggregation system)
+                      </span>
+                    </label>
+                    <textarea
+                      value={toolInstructions.metalogsQuery || ''}
+                      onChange={(e) => updateInstruction('metalogsQuery', e.target.value)}
+                      rows={5}
                       style={{
                         width: '100%',
                         padding: '0.6rem',

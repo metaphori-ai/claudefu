@@ -1121,6 +1121,96 @@ func (s *MCPService) handleBacklogList(ctx context.Context, req mcp.CallToolRequ
 	return mcp.NewToolResultText(sb.String()), nil
 }
 
+// =============================================================================
+// METALOGS QUERY HANDLER
+// =============================================================================
+
+// handleMetalogsQuery handles the MetalogsQuery tool call
+func (s *MCPService) handleMetalogsQuery(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if !s.toolAvailability.IsEnabled("MetalogsQuery") {
+		return mcp.NewToolResultText("MetalogsQuery is disabled. Enable in MCP Settings > Tool Availability."), nil
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to get home directory: %v", err)), nil
+	}
+	binary := filepath.Join(homeDir, "go", "bin", "metalogs")
+
+	args := []string{"query", "--json"}
+
+	// Append optional filter flags
+	if v := getOptionalString(req, "site"); v != "" {
+		args = append(args, "--site="+v)
+	}
+	if v := getOptionalString(req, "layer"); v != "" {
+		args = append(args, "--layer="+v)
+	}
+	if v := getOptionalString(req, "level"); v != "" {
+		args = append(args, "--level="+v)
+	}
+	if v := getOptionalString(req, "collection"); v != "" {
+		args = append(args, "--collection="+v)
+	}
+	if v := getOptionalString(req, "contains"); v != "" {
+		args = append(args, "--contains="+v)
+	}
+
+	// since defaults to "1h" if not provided
+	since := getOptionalString(req, "since")
+	if since == "" {
+		since = "1h"
+	}
+	args = append(args, "--since="+since)
+
+	// limit defaults to 50 if not provided
+	limit := 50
+	if reqArgs, ok := req.Params.Arguments.(map[string]any); ok {
+		if f, ok := reqArgs["limit"].(float64); ok && f > 0 {
+			limit = int(f)
+		}
+	}
+	args = append(args, fmt.Sprintf("--limit=%d", limit))
+
+	timeoutCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(timeoutCtx, binary, args...)
+	out, err := cmd.Output()
+	if err != nil {
+		if timeoutCtx.Err() == context.DeadlineExceeded {
+			return mcp.NewToolResultError("MetalogsQuery timed out after 30 seconds"), nil
+		}
+		exitErr, ok := err.(*exec.ExitError)
+		if ok {
+			return mcp.NewToolResultError(fmt.Sprintf("metalogs exited with error: %s", string(exitErr.Stderr))), nil
+		}
+		return mcp.NewToolResultError(fmt.Sprintf("failed to run metalogs: %v", err)), nil
+	}
+
+	// Parse JSON output — metalogs --json returns an array of log entry objects
+	var entries []map[string]interface{}
+	if err := json.Unmarshal(out, &entries); err != nil {
+		// If JSON parse fails, return raw output (may be useful for debugging)
+		return mcp.NewToolResultText(string(out)), nil
+	}
+
+	if len(entries) == 0 {
+		return mcp.NewToolResultText("No log entries found matching the query."), nil
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Found %d log entries:\n\n", len(entries)))
+	for _, entry := range entries {
+		// Format each entry as a single readable line
+		line, _ := json.Marshal(entry)
+		sb.WriteString(string(line))
+		sb.WriteString("\n")
+	}
+
+	return mcp.NewToolResultText(sb.String()), nil
+}
+
 // resolveAgentID resolves an agent identifier (UUID, slug, or name) to an agent UUID.
 // Resolution chain:
 //  1. Empty → error

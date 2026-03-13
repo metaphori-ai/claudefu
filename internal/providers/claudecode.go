@@ -283,6 +283,7 @@ func (s *ClaudeCodeService) buildPermissionArgs(folder string) []string {
 			"mcp__claudefu__BacklogAdd",
 			"mcp__claudefu__BacklogUpdate",
 			"mcp__claudefu__BacklogList",
+			"mcp__claudefu__MetalogsQuery",
 		}
 		allowedPatterns = append(allowedPatterns, mcpTools...)
 	}
