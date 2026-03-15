@@ -192,6 +192,44 @@ func (a *App) AnswerQuestion(agentID, sessionID, toolUseID string, questions []m
 	return err
 }
 
+// RunSlashCommand executes a Claude CLI slash command (e.g., /context, /compact, /memory)
+// and returns the output. These are local CLI commands, not conversation messages.
+// For /compact, it also triggers a session reload since compaction rewrites the JSONL.
+func (a *App) RunSlashCommand(agentID, sessionID, command string) (string, error) {
+	if a.claude == nil {
+		return "", fmt.Errorf("claude service not initialized")
+	}
+	if !providers.IsClaudeInstalled() {
+		return "", fmt.Errorf("claude CLI not installed")
+	}
+
+	agent := a.getAgentByID(agentID)
+	if agent == nil {
+		return "", fmt.Errorf("agent not found: %s", agentID)
+	}
+
+	// Validate: only allow known slash commands
+	allowed := map[string]bool{"/context": true, "/compact": true}
+	if !allowed[command] {
+		return "", fmt.Errorf("unsupported slash command: %s", command)
+	}
+
+	// Run the slash command via Claude CLI
+	output, err := a.claude.RunSlashCommand(agent.Folder, sessionID, command)
+	if err != nil {
+		return "", fmt.Errorf("slash command failed: %w", err)
+	}
+
+	// For /compact, reload the session since it rewrites the JSONL file
+	if command == "/compact" && a.watcher != nil {
+		if reloadErr := a.watcher.ReloadSession(agentID, agent.Folder, sessionID); reloadErr != nil {
+			fmt.Printf("[WARN] Failed to reload session after /compact: %v\n", reloadErr)
+		}
+	}
+
+	return output, nil
+}
+
 // CancelSession cancels a running Claude process for a session.
 // This sends SIGINT to the process, allowing it to clean up gracefully.
 // Returns nil if no process is running for that session.

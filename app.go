@@ -548,9 +548,10 @@ func (a *App) shutdown(ctx context.Context) {
 		a.terminalManager.Shutdown()
 	}
 
-	// Stop MCP server
+	// Stop MCP server and close databases
 	if a.mcpServer != nil {
 		a.mcpServer.Stop()
+		a.mcpServer.CloseStores()
 	}
 
 	// Stop file watchers

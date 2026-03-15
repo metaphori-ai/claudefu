@@ -622,6 +622,99 @@ func (s *ClaudeCodeService) NewSession(folder string) (string, error) {
 	return sessionId, nil
 }
 
+// RunSlashCommand executes a Claude CLI slash command and returns the output.
+// Uses `claude -p --resume {sessionId} {command}` to pass through slash commands.
+// Output is returned with ANSI escape codes stripped.
+func (s *ClaudeCodeService) RunSlashCommand(folder, sessionId, command string) (string, error) {
+	if folder == "" {
+		return "", fmt.Errorf("folder is required")
+	}
+	if sessionId == "" {
+		return "", fmt.Errorf("sessionId is required")
+	}
+
+	path := GetClaudePath()
+	if path == "" {
+		return "", fmt.Errorf("claude CLI not found")
+	}
+
+	args := []string{
+		"-p",
+		"--resume", sessionId,
+		command,
+	}
+
+	fmt.Printf("[DEBUG] RunSlashCommand: %s %v in %s\n", path, args, folder)
+
+	cmd := exec.CommandContext(s.ctx, path, args...)
+	cmd.Dir = folder
+	cmd.Env = s.buildEnvironment()
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		errOutput := stderr.String()
+		if errOutput == "" {
+			errOutput = stdout.String()
+		}
+		return "", fmt.Errorf("command failed: %w, output: %s", err, errOutput)
+	}
+
+	// Strip ANSI escape codes for clean display
+	output := stripANSI(stdout.String())
+	return output, nil
+}
+
+// stripANSI removes ANSI escape sequences from a string.
+// Handles CSI sequences (colors, cursor movement), OSC sequences (links, titles),
+// and other common terminal escapes.
+func stripANSI(s string) string {
+	var result strings.Builder
+	result.Grow(len(s))
+
+	i := 0
+	for i < len(s) {
+		if s[i] == '\x1b' {
+			i++
+			if i >= len(s) {
+				break
+			}
+			switch s[i] {
+			case '[': // CSI sequence: ESC [ ... letter
+				i++
+				for i < len(s) && !((s[i] >= 'A' && s[i] <= 'Z') || (s[i] >= 'a' && s[i] <= 'z')) {
+					i++
+				}
+				if i < len(s) {
+					i++ // skip the terminating letter
+				}
+			case ']': // OSC sequence: ESC ] ... ST (ST = ESC \ or BEL)
+				i++
+				for i < len(s) {
+					if s[i] == '\x07' { // BEL
+						i++
+						break
+					}
+					if s[i] == '\x1b' && i+1 < len(s) && s[i+1] == '\\' { // ST
+						i += 2
+						break
+					}
+					i++
+				}
+			default:
+				i++ // skip single-char escape
+			}
+		} else {
+			result.WriteByte(s[i])
+			i++
+		}
+	}
+
+	return result.String()
+}
+
 // GetSessionIdFromFolder attempts to find the most recent session in a folder
 // This is useful when we need to resume but don't know the session ID
 func (s *ClaudeCodeService) GetLatestSessionId(folder string) (string, error) {

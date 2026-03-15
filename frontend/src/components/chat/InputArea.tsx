@@ -841,20 +841,21 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
           )}
           {/* Context size with percentage and "left until compact" */}
           {tokenMetrics.contextSize > 0 && (() => {
-            const contextPercent = (tokenMetrics.contextSize / 200000) * 100;
-            // Autocompact triggers at ~77.5% (100% - 22.5% buffer)
-            const compactThreshold = 77.5;
-            const leftUntilCompact = Math.max(0, compactThreshold - contextPercent);
+            const contextWindow = 1000000; // 1M context window
+            const compactBuffer = 33000;   // ~33K autocompact buffer (fixed size)
+            const compactThreshold = contextWindow - compactBuffer;
+            const contextPercent = (tokenMetrics.contextSize / contextWindow) * 100;
+            const tokensUntilCompact = Math.max(0, compactThreshold - tokenMetrics.contextSize);
             return (
               <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }} title="Total context window (in + cr + cw)">
                 <span style={{ color: '#555' }}>ctx</span>
                 <span style={{ color: '#888' }}>
                   {formatTokenCount(tokenMetrics.contextSize)}
                   <span style={{ color: '#555', marginLeft: '2px' }}>
-                    ({contextPercent.toFixed(1)}%)
+                    ({Math.round(contextPercent)}%)
                   </span>
-                  <span style={{ color: '#d97757', marginLeft: '4px' }} title="Context left until auto-compact">
-                    ({leftUntilCompact.toFixed(0)}% left)
+                  <span style={{ color: '#d97757', marginLeft: '4px' }} title="Tokens remaining until auto-compact">
+                    ({Math.round((tokensUntilCompact / contextWindow) * 100)}% / {formatTokenCount(tokensUntilCompact)} left)
                   </span>
                 </span>
               </span>

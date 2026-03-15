@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type { Message, ContentBlock, PendingQuestion } from './types';
 import { formatTime, getImageUrl, getMessageText } from '../../utils/messageUtils';
 import { CompactionCard } from '../CompactionCard';
@@ -180,6 +182,46 @@ export function MessageRow({
           <span>Response interrupted</span>
           <span style={{ color: '#444' }}>•</span>
           <span style={{ color: '#444' }}>{formatTime(message.timestamp)}</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Slash Command Output (/context, /compact)
+  if (message.isSlashCommand) {
+    return (
+      <div style={{ marginBottom: '1.5rem' }}>
+        <div style={{
+          fontSize: '0.75rem',
+          fontWeight: 600,
+          marginBottom: '0.5rem',
+          textTransform: 'uppercase',
+          letterSpacing: '0.05em',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem'
+        }}>
+          <span style={{ color: '#d97757' }}>{message.slashCommand}</span>
+          <span style={{
+            fontWeight: 400,
+            color: '#444',
+            textTransform: 'none',
+            letterSpacing: 'normal'
+          }}>
+            {formatTime(message.timestamp)}
+          </span>
+        </div>
+        <div className="slash-command-output" style={{
+          padding: '0.75rem 1rem',
+          background: '#111',
+          borderRadius: '8px',
+          borderLeft: '3px solid #d97757',
+          fontSize: '0.8rem',
+          lineHeight: '1.5',
+          color: '#bbb',
+          overflowX: 'auto'
+        }}>
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
         </div>
       </div>
     );

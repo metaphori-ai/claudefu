@@ -78,6 +78,8 @@ export interface Message {
   stopReason?: string;  // "stop_sequence" (JSONL) or "end_turn" (streaming) when complete, null/undefined when tools pending
   usage?: TokenUsage;  // Token usage for assistant messages (v0.3.21 - from JSONL event.message.usage)
   slug?: string;  // Session slug (e.g., "polymorphic-roaming-hummingbird") - plan file at ~/.claude/plans/{slug}.md
+  isSlashCommand?: boolean;  // True for local slash command output (/context, /compact, /memory)
+  slashCommand?: string;  // The command that produced this output (e.g., "/context")
 }
 
 // Draft state for prompt persistence across agent switches

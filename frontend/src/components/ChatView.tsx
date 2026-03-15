@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { GetConversationPaged, SetActiveSession, ClearActiveSession, SendMessage, MarkSessionViewed, NewSession, ReadPlanFile, TouchPlanFile, AnswerQuestion, CancelSession, AcceptPlanReview, RejectPlanReview } from '../../wailsjs/go/main/App';
+import { GetConversationPaged, SetActiveSession, ClearActiveSession, SendMessage, MarkSessionViewed, NewSession, ReadPlanFile, TouchPlanFile, AnswerQuestion, CancelSession, AcceptPlanReview, RejectPlanReview, RunSlashCommand } from '../../wailsjs/go/main/App';
 import { types } from '../../wailsjs/go/models';
 
 // Extracted components
@@ -542,6 +542,9 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
     }
   };
 
+  // Known slash commands that get passed through to Claude CLI
+  const SLASH_COMMANDS = ['/context', '/compact'];
+
   // Handle sending a message (receives message from InputArea)
   const handleSend = async (message: string, attachments: Attachment[] = []) => {
     console.log('=== USER PROMPT START ===', {
@@ -551,6 +554,49 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
       sessionId: sessionId.substring(0, 8),
     });
     if ((!message && attachments.length === 0) || isSending) return;
+
+    // Detect slash commands — intercept before normal send flow
+    const trimmedMsg = message.trim();
+    if (SLASH_COMMANDS.includes(trimmedMsg)) {
+      setAgentResponding(agentId, true);
+      try {
+        const output = await RunSlashCommand(agentId, sessionId, trimmedMsg);
+
+        // For /compact, reload messages from context since JSONL was rewritten
+        if (trimmedMsg === '/compact') {
+          clearContextSession(agentId, sessionId);
+          await loadConversation(true);
+        }
+
+        // Add the command output as a local system message
+        if (output.trim()) {
+          const systemMessage: Message = {
+            type: 'assistant',
+            content: output,
+            timestamp: new Date().toISOString(),
+            uuid: `slash-${Date.now()}`,
+            isSlashCommand: true,
+            slashCommand: trimmedMsg,
+          };
+          addPendingMessage(agentId, sessionId, '', systemMessage);
+          scroll.scrollToBottomRAF();
+        }
+      } catch (err) {
+        console.error(`Slash command ${trimmedMsg} failed:`, err);
+        const errorMessage: Message = {
+          type: 'assistant',
+          content: `Error running ${trimmedMsg}: ${err}`,
+          timestamp: new Date().toISOString(),
+          uuid: `slash-err-${Date.now()}`,
+          isSlashCommand: true,
+          slashCommand: trimmedMsg,
+        };
+        addPendingMessage(agentId, sessionId, '', errorMessage);
+      } finally {
+        setAgentResponding(agentId, false);
+      }
+      return;
+    }
 
     // Track this session as the last used for this agent (for global queue auto-submit)
     setLastSessionId(agentId, sessionId);

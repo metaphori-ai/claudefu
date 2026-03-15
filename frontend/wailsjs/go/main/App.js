@@ -394,6 +394,10 @@ export function RevertAgentToGlobal(arg1) {
   return window['go']['main']['App']['RevertAgentToGlobal'](arg1);
 }
 
+export function RunSlashCommand(arg1, arg2, arg3) {
+  return window['go']['main']['App']['RunSlashCommand'](arg1, arg2, arg3);
+}
+
 export function SaveAgentPermissions(arg1, arg2) {
   return window['go']['main']['App']['SaveAgentPermissions'](arg1, arg2);
 }

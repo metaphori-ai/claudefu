@@ -222,15 +222,11 @@ func (s *MCPService) Stop() {
 		s.pendingPlanReviews.CancelAll()
 	}
 
-	// Close inbox database
-	if s.inbox != nil {
-		s.inbox.Close()
-	}
-
-	// Close backlog database
-	if s.backlog != nil {
-		s.backlog.Close()
-	}
+	// NOTE: Inbox and backlog databases are NOT closed here.
+	// They remain open across Restart() to avoid a race where MCP tool calls
+	// arrive between Stop()+Start() and LoadInbox()/LoadBacklog().
+	// The databases are properly closed by LoadWorkspace() when switching
+	// to a new workspace, or by the app's shutdown handler.
 
 	s.running = false
 	fmt.Println("[MCP] MCP server stopped")
@@ -240,6 +236,16 @@ func (s *MCPService) Stop() {
 func (s *MCPService) Restart() error {
 	s.Stop()
 	return s.Start()
+}
+
+// CloseStores closes the inbox and backlog databases. Called on app shutdown.
+func (s *MCPService) CloseStores() {
+	if s.inbox != nil {
+		s.inbox.Close()
+	}
+	if s.backlog != nil {
+		s.backlog.Close()
+	}
 }
 
 // LoadInbox opens the inbox database for a workspace

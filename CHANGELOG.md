@@ -5,6 +5,19 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.22] - 2026-03-14
+
+### Added
+- **Slash command passthrough** — `/context` and `/compact` commands pass through to Claude CLI. Output displayed as transient markdown-rendered inline messages (not persisted to JSONL). Backend `RunSlashCommand` method with ANSI code stripping.
+
+### Fixed
+- **1M context window** — Updated token metrics from 200K to 1M context window. "Left until compact" now shows both percentage and token count based on 33K autocompact buffer.
+- **ExitPlanMode race condition** — Added 500ms delay after JSONL write before returning MCP result, ensuring Claude CLI reads the synced plan state transition.
+- **Inbox store race condition** — `Stop()` no longer closes inbox/backlog SQLite databases. DBs remain open across `Restart()` to prevent message loss when tool calls arrive between stop and start. New `CloseStores()` for clean app shutdown.
+
+### Removed
+- **MCP slug row in sidebar** — Removed the link icon + agent slug row that appeared under session names.
+
 ## [0.4.21] - 2026-03-12
 
 ### Added
