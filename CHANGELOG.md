@@ -5,6 +5,11 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.23] - 2026-03-17
+
+### Fixed
+- **ExitPlanMode JSONL structure — complete context reset** — Synthetic JSONL entries were missing `parentUuid`, `isSidechain`, `sessionId`, `sourceToolAssistantUUID`, `cwd`, `slug`, and `userType` fields. Claude Code requires these to link the tool_result back to the assistant's tool_use call; without them it discards the conversation chain and starts fresh (full context reset, not compaction). `FindLatestToolUseID` now also returns the assistant message UUID for use as `parentUuid`.
+
 ## [0.4.22] - 2026-03-14
 
 ### Added

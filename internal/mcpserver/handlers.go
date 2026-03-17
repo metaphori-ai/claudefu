@@ -901,8 +901,8 @@ func (s *MCPService) writePlanReviewJSONL(fromAgent string, answer *PlanReviewAn
 		return
 	}
 
-	// Find the tool_use_id from the JSONL
-	toolUseID, err := workspace.FindLatestToolUseID(folder, sessionID, "mcp__claudefu__ExitPlanMode")
+	// Find the tool_use_id and assistant UUID from the JSONL
+	toolUseID, assistantUUID, err := workspace.FindLatestToolUseID(folder, sessionID, "mcp__claudefu__ExitPlanMode")
 	if err != nil {
 		fmt.Printf("[MCP:ExitPlanMode] Could not find tool_use_id: %v\n", err)
 		return
@@ -923,8 +923,8 @@ func (s *MCPService) writePlanReviewJSONL(fromAgent string, answer *PlanReviewAn
 		}
 	}
 
-	// Write the synthetic JSONL entry
-	if err := workspace.WritePlanReviewResult(folder, sessionID, toolUseID, answer.Accepted, planContent, planFilePath, answer.Feedback); err != nil {
+	// Write the synthetic JSONL entry (includes parentUuid, sessionId, etc.)
+	if err := workspace.WritePlanReviewResult(folder, sessionID, toolUseID, assistantUUID, slug, answer.Accepted, planContent, planFilePath, answer.Feedback); err != nil {
 		fmt.Printf("[MCP:ExitPlanMode] Failed to write synthetic JSONL: %v\n", err)
 	}
 }

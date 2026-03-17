@@ -327,9 +327,27 @@ func AppendCancellationMarker(folder, sessionID string) error {
 //
 // For ACCEPT: writes toolUseResult: {plan, isAgent, filePath}
 // For REJECT: writes toolUseResult: "Error: ..." (string, not object)
-func WritePlanReviewResult(folder, sessionID, toolUseID string, accepted bool, plan, planFilePath, feedback string) error {
+func WritePlanReviewResult(folder, sessionID, toolUseID, assistantUUID, slug string, accepted bool, plan, planFilePath, feedback string) error {
 	encodedName := encodeProjectPath(folder)
 	sessionPath := filepath.Join(os.Getenv("HOME"), ".claude", "projects", encodedName, sessionID+".jsonl")
+
+	// Common metadata fields matching Claude Code's native format.
+	// Missing parentUuid/isSidechain/sessionId causes Claude Code to reject
+	// the conversation chain and reset context.
+	commonFields := map[string]any{
+		"type":                    "user",
+		"uuid":                    uuid.New().String(),
+		"timestamp":               time.Now().UTC().Format(time.RFC3339Nano),
+		"parentUuid":              assistantUUID,
+		"isSidechain":             false,
+		"sessionId":               sessionID,
+		"sourceToolAssistantUUID": assistantUUID,
+		"userType":                "external",
+		"cwd":                     folder,
+	}
+	if slug != "" {
+		commonFields["slug"] = slug
+	}
 
 	var event map[string]any
 
@@ -344,25 +362,21 @@ func WritePlanReviewResult(folder, sessionID, toolUseID string, accepted bool, p
 
 		content += "\n\n## Approved Plan:\n" + plan
 
-		event = map[string]any{
-			"type":      "user",
-			"uuid":      uuid.New().String(),
-			"timestamp": time.Now().UTC().Format(time.RFC3339Nano),
-			"message": map[string]any{
-				"role": "user",
-				"content": []any{
-					map[string]any{
-						"type":        "tool_result",
-						"content":     content,
-						"tool_use_id": toolUseID,
-					},
+		event = commonFields
+		event["message"] = map[string]any{
+			"role": "user",
+			"content": []any{
+				map[string]any{
+					"type":        "tool_result",
+					"content":     content,
+					"tool_use_id": toolUseID,
 				},
 			},
-			"toolUseResult": map[string]any{
-				"plan":     plan,
-				"isAgent":  false,
-				"filePath": planFilePath,
-			},
+		}
+		event["toolUseResult"] = map[string]any{
+			"plan":     plan,
+			"isAgent":  false,
+			"filePath": planFilePath,
 		}
 	} else {
 		// Reject format
@@ -375,23 +389,19 @@ func WritePlanReviewResult(folder, sessionID, toolUseID string, accepted bool, p
 
 		rejectToolResult := "Error: " + rejectContent
 
-		event = map[string]any{
-			"type":      "user",
-			"uuid":      uuid.New().String(),
-			"timestamp": time.Now().UTC().Format(time.RFC3339Nano),
-			"message": map[string]any{
-				"role": "user",
-				"content": []any{
-					map[string]any{
-						"type":        "tool_result",
-						"content":     rejectContent,
-						"is_error":    true,
-						"tool_use_id": toolUseID,
-					},
+		event = commonFields
+		event["message"] = map[string]any{
+			"role": "user",
+			"content": []any{
+				map[string]any{
+					"type":        "tool_result",
+					"content":     rejectContent,
+					"is_error":    true,
+					"tool_use_id": toolUseID,
 				},
 			},
-			"toolUseResult": rejectToolResult,
 		}
+		event["toolUseResult"] = rejectToolResult
 	}
 
 	jsonBytes, err := json.Marshal(event)
@@ -418,16 +428,17 @@ func WritePlanReviewResult(folder, sessionID, toolUseID string, accepted bool, p
 }
 
 // FindLatestToolUseID scans a session JSONL backwards to find the most recent
-// tool_use block with the given tool name, returning its id.
+// tool_use block with the given tool name, returning its id and the assistant message UUID.
+// The assistant UUID is needed as the parentUuid for synthetic JSONL entries.
 // This is needed because the MCP CallToolRequest doesn't expose the tool_use_id
 // that Claude assigned when calling our MCP tool.
-func FindLatestToolUseID(folder, sessionID, toolName string) (string, error) {
+func FindLatestToolUseID(folder, sessionID, toolName string) (toolID string, assistantUUID string, err error) {
 	encodedName := encodeProjectPath(folder)
 	sessionPath := filepath.Join(os.Getenv("HOME"), ".claude", "projects", encodedName, sessionID+".jsonl")
 
 	f, err := os.Open(sessionPath)
 	if err != nil {
-		return "", fmt.Errorf("failed to open session file: %w", err)
+		return "", "", fmt.Errorf("failed to open session file: %w", err)
 	}
 	defer f.Close()
 
@@ -439,7 +450,7 @@ func FindLatestToolUseID(folder, sessionID, toolName string) (string, error) {
 		lines = append(lines, scanner.Text())
 	}
 	if err := scanner.Err(); err != nil {
-		return "", fmt.Errorf("failed to read session file: %w", err)
+		return "", "", fmt.Errorf("failed to read session file: %w", err)
 	}
 
 	// Scan backwards for the latest assistant message with tool_use matching toolName
@@ -463,6 +474,9 @@ func FindLatestToolUseID(folder, sessionID, toolName string) (string, error) {
 			continue
 		}
 
+		// Extract the assistant message UUID (becomes parentUuid for our synthetic entry)
+		msgUUID, _ := event["uuid"].(string)
+
 		message, ok := event["message"].(map[string]any)
 		if !ok {
 			continue
@@ -485,14 +499,14 @@ func FindLatestToolUseID(folder, sessionID, toolName string) (string, error) {
 			if blockMap["name"] != toolName {
 				continue
 			}
-			toolID, ok := blockMap["id"].(string)
+			tid, ok := blockMap["id"].(string)
 			if !ok {
 				continue
 			}
-			fmt.Printf("[PATCH] FindLatestToolUseID: found %s → %s\n", toolName, toolID)
-			return toolID, nil
+			fmt.Printf("[PATCH] FindLatestToolUseID: found %s → %s (assistant uuid=%s)\n", toolName, tid, msgUUID)
+			return tid, msgUUID, nil
 		}
 	}
 
-	return "", fmt.Errorf("no tool_use block found for %s in session %s", toolName, sessionID)
+	return "", "", fmt.Errorf("no tool_use block found for %s in session %s", toolName, sessionID)
 }
