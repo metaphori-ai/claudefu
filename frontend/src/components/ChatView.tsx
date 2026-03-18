@@ -10,6 +10,7 @@ import { DebugStatsOverlay } from './chat/DebugStatsOverlay';
 import { InputArea, InputAreaHandle } from './chat/InputArea';
 import { ControlButtonsRow } from './chat/ControlButtonsRow';
 import type { Message, ContentBlock, PendingQuestion, ChatViewProps, Attachment } from './chat/types';
+import { DEFAULT_MODEL_ID } from './chat/ModelSelector';
 
 // Existing components
 import { CompactionPane } from './CompactionPane';
@@ -42,6 +43,8 @@ const spinnerStyles = `
 `;
 
 export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreated, initialMessage, isExternallyCreatingSession, draftsRef }: ChatViewProps) {
+  // Model selection — per-prompt, local to this ChatView instance
+  const [selectedModel, setSelectedModel] = useState(DEFAULT_MODEL_ID);
   // Inject spinner animation styles
   useEffect(() => {
     const styleId = 'chatview-spinner-styles';
@@ -461,7 +464,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
         scroll.scrollToBottomRAF();
 
         try {
-          await SendMessage(agentId, sessionId, initialMessage, [], planningMode);
+          await SendMessage(agentId, sessionId, initialMessage, [], planningMode, selectedModel);
         } catch (err) {
           // On failure, the message stays in pending state
           // Context will handle cleanup when confirmed message arrives
@@ -502,7 +505,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
   // Handle skipping a pending question
   const handleQuestionSkip = async (toolUseId: string) => {
     try {
-      await SendMessage(agentId, sessionId, "I'm skipping this question. Please continue.", [], planningMode);
+      await SendMessage(agentId, sessionId, "I'm skipping this question. Please continue.", [], planningMode, selectedModel);
       // Clear and reload from context
       clearContextSession(agentId, sessionId);
       await loadConversation(true); // Force reload
@@ -670,7 +673,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
     setIsWaitingForResponse(true);
 
     try {
-      await SendMessage(agentId, sessionId, message, backendAttachments, planningMode);
+      await SendMessage(agentId, sessionId, message, backendAttachments, planningMode, selectedModel);
       logDebug('ChatView', 'SEND_COMPLETE', { success: true });
       // Clear attachments, planning mode, and persisted draft on successful send
       setAttachments([]);
@@ -835,6 +838,8 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
           onViewPlan={handleViewPlan}
           onOpenPermissions={() => setPermissionsDialogOpen(true)}
           onOpenClaudeSettings={() => setClaudeSettingsOpen(true)}
+          selectedModel={selectedModel}
+          onModelChange={setSelectedModel}
           attachments={attachments}
           onAttachmentRemove={(id) => setAttachments(prev => prev.filter(att => att.id !== id))}
           isSending={isSending}

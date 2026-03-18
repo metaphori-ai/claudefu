@@ -243,7 +243,7 @@ export function SelectFile(arg1:string):Promise<string>;
 
 export function SelectWorkspaceFolder():Promise<string>;
 
-export function SendMessage(arg1:string,arg2:string,arg3:string,arg4:Array<types.Attachment>,arg5:boolean):Promise<void>;
+export function SendMessage(arg1:string,arg2:string,arg3:string,arg4:Array<types.Attachment>,arg5:boolean,arg6:string):Promise<void>;
 
 export function SetAPIKey(arg1:string):Promise<void>;
 

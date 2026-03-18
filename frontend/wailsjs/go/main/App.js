@@ -466,8 +466,8 @@ export function SelectWorkspaceFolder() {
   return window['go']['main']['App']['SelectWorkspaceFolder']();
 }
 
-export function SendMessage(arg1, arg2, arg3, arg4, arg5) {
-  return window['go']['main']['App']['SendMessage'](arg1, arg2, arg3, arg4, arg5);
+export function SendMessage(arg1, arg2, arg3, arg4, arg5, arg6) {
+  return window['go']['main']['App']['SendMessage'](arg1, arg2, arg3, arg4, arg5, arg6);
 }
 
 export function SetAPIKey(arg1) {

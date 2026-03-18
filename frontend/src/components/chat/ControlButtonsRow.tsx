@@ -1,6 +1,7 @@
 import React from 'react';
 import { Tooltip } from '../Tooltip';
 import { AttachmentPreviewRow } from './AttachmentPreviewRow';
+import { ModelSelector } from './ModelSelector';
 import type { Attachment } from './types';
 
 // CSS for button hover effects - avoids issues with Tooltip's FloatingUI handlers
@@ -57,6 +58,9 @@ interface ControlButtonsRowProps {
   onViewPlan: () => void;
   onOpenPermissions: () => void;
   onOpenClaudeSettings: () => void;
+  // Model selection
+  selectedModel: string;
+  onModelChange: (modelId: string) => void;
   // Attachments to show in the spacer area
   attachments?: Attachment[];
   onAttachmentRemove?: (id: string) => void;
@@ -73,6 +77,8 @@ export function ControlButtonsRow({
   onViewPlan,
   onOpenPermissions,
   onOpenClaudeSettings,
+  selectedModel,
+  onModelChange,
   attachments = [],
   onAttachmentRemove,
   isSending = false
@@ -117,6 +123,9 @@ export function ControlButtonsRow({
           </svg>
         </button>
       </Tooltip>
+
+      {/* Model Selector */}
+      <ModelSelector selectedModel={selectedModel} onModelChange={onModelChange} />
 
       {/* Spacer area - also shows attachments if any */}
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', marginLeft: '8px' }}>

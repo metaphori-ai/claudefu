@@ -105,7 +105,7 @@ export function QueueWatcher() {
 
         // Send the message - this will trigger another response_complete when done
         // which will process the next queue item (if any)
-        await SendMessage(agentId, sessionId, queuedMessage.content, backendAttachments, false);
+        await SendMessage(agentId, sessionId, queuedMessage.content, backendAttachments, false, "");
 
         // Note: Don't clear responding state here - wait for response_complete event
         logDebug('QueueWatcher', 'SEND_SUCCESS', { agentId: agentId.substring(0, 8) });

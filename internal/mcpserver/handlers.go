@@ -844,7 +844,7 @@ func (s *MCPService) handleExitPlanMode(ctx context.Context, req mcp.CallToolReq
 		// Small delay to ensure the JSONL write is flushed to disk before Claude
 		// reads it. Without this, Claude can process the MCP response before the
 		// file write completes, causing it to miss the plan state transition.
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(1500 * time.Millisecond)
 
 		if answer.Accepted {
 			fmt.Printf("[MCP:ExitPlanMode] Plan accepted for review %s\n", pr.ID[:8])

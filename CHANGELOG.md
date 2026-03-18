@@ -5,6 +5,15 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.24] - 2026-03-17
+
+### Added
+- **Model selector** — Per-prompt model selector in ControlButtonsRow with 7 options: Opus 4.6 [1M], Opus Plan [1M], Sonnet 4.6 [1M] (1M context), and Opus 4.6, Opus Plan, Sonnet 4.6, Haiku 4.5 (200K context). Default Opus [1M] omits `--model` flag entirely.
+
+### Changed
+- **ExitPlanMode JSONL flush delay** — Increased from 500ms to 1500ms to ensure write is fully persisted before Claude resumes.
+- **SendMessage bound method** — Now accepts `model` as 6th parameter, passed directly from frontend per-prompt selection to Claude CLI `--model` flag.
+
 ## [0.4.23] - 2026-03-17
 
 ### Fixed
