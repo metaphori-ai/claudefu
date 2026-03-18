@@ -99,19 +99,35 @@ func (a *App) AddAgent(name, folder string) (*workspace.Agent, error) {
 		return nil, fmt.Errorf("folder already exists in this workspace: %s", folder)
 	}
 
+	agentID := a.workspace.GetOrCreateAgentID(folder)
+
+	// If the agent already exists in the global registry with a name, use it.
+	// This ensures adding the same folder to a second workspace picks up the
+	// canonical name (e.g., "ClaudeFu App") instead of the folder basename ("app").
+	agentName := name
+	agentSlug := ""
+	if a.workspace.Registry != nil {
+		if info := a.workspace.Registry.GetInfo(folder); info != nil {
+			if info.Name != "" {
+				agentName = info.Name
+			}
+			agentSlug = info.Slug
+		}
+	}
+
 	agent := workspace.Agent{
-		ID:        a.workspace.GetOrCreateAgentID(folder),
-		Name:      name,
+		ID:        agentID,
+		Name:      agentName,
 		Folder:    folder,
+		MCPSlug:   agentSlug,
 		WatchMode: types.WatchModeFile,
 	}
 
-	// Sync slug/name to global registry only if not already set (first-write-wins).
-	// This preserves the canonical slug when the same folder is added to multiple workspaces.
+	// Sync slug/name to global registry if not already set (new agents).
 	// Explicit user changes go through UpdateAgent → UpdateAgentMeta.
 	if a.workspace.Registry != nil {
-		if info := a.workspace.Registry.GetInfo(folder); info == nil || info.Slug == "" {
-			a.workspace.Registry.UpdateAgentMeta(folder, agent.GetSlug(), name)
+		if agentSlug == "" {
+			a.workspace.Registry.UpdateAgentMeta(folder, agent.GetSlug(), agentName)
 		}
 	}
 

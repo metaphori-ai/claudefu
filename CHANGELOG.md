@@ -5,6 +5,11 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.26] - 2026-03-18
+
+### Fixed
+- **Agent name from registry** — Adding an existing agent (from agents.json) to a new workspace now uses the canonical name and slug from the global registry instead of deriving from the folder basename.
+
 ## [0.4.25] - 2026-03-18
 
 ### Fixed
