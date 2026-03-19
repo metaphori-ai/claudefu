@@ -303,6 +303,25 @@ export function useWailsEvents() {
     };
   }, []);
 
+  // Subscribe to rate:limited events (usage limit hit)
+  useEffect(() => {
+    const handleRateLimited = (envelope: {
+      agentId?: string;
+      sessionId?: string;
+      payload?: { error?: string; resetTime?: string };
+    }) => {
+      logDebug('WailsEvents', 'RATE_LIMITED', { resetTime: envelope?.payload?.resetTime });
+      window.dispatchEvent(new CustomEvent('claudefu:rate-limited', {
+        detail: { error: envelope?.payload?.error, resetTime: envelope?.payload?.resetTime }
+      }));
+    };
+
+    EventsOn('rate:limited', handleRateLimited);
+    return () => {
+      EventsOff('rate:limited');
+    };
+  }, []);
+
   // Subscribe to debug:cli-command events (emitted by Claude CLI service)
   useEffect(() => {
     const handleDebugCliCommand = (data: { command?: string; sessionId?: string }) => {

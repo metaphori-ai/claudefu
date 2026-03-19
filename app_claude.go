@@ -35,6 +35,20 @@ func (a *App) emitResponseComplete(agentID, sessionID string, err error) {
 				"error": errStr,
 			})
 		}
+		// Detect rate limit and emit rate:limited for frontend modal
+		if strings.Contains(errStr, "hit your limit") || strings.Contains(errStr, "rate_limit") {
+			// Extract reset time from message like "resets 10am (America/Los_Angeles)"
+			resetTime := ""
+			if idx := strings.Index(errStr, "resets "); idx >= 0 {
+				resetTime = errStr[idx+7:] // everything after "resets "
+				// Trim trailing quotes/whitespace
+				resetTime = strings.TrimRight(resetTime, "\" \n\r")
+			}
+			a.rt.Emit("rate:limited", agentID, sessionID, map[string]any{
+				"error":     errStr,
+				"resetTime": resetTime,
+			})
+		}
 	}
 	a.rt.Emit("response_complete", agentID, sessionID, payload)
 }

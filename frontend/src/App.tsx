@@ -83,6 +83,7 @@ function AppContent() {
   const [isCreatingNewSessionExternally, setIsCreatingNewSessionExternally] = useState<boolean>(false);
   const [terminalOpen, setTerminalOpen] = useState<boolean>(false);
   const [showAuthExpired, setShowAuthExpired] = useState<boolean>(false);
+  const [rateLimitResetTime, setRateLimitResetTime] = useState<string | null>(null);
   const [scaffoldDialog, setScaffoldDialog] = useState<{
     folder: string;
     name: string;
@@ -593,6 +594,7 @@ function AppContent() {
     onSelectAgent: handleAgentSelect,
     onToggleTerminal: () => setTerminalOpen(prev => !prev),
     onAuthExpired: () => setShowAuthExpired(true),
+    onRateLimited: (resetTime: string) => setRateLimitResetTime(resetTime),
     agents,
     settings,
     onSettingsChange: setSettings,
@@ -1069,6 +1071,16 @@ function AppContent() {
         onConfirm={() => setShowAuthExpired(false)}
         title="Authentication Expired"
         message="Your Claude OAuth token has expired. Please open Claude Code in a terminal and run /login to re-authenticate."
+        confirmText="OK"
+      />
+
+      {/* Rate Limited Dialog */}
+      <ConfirmDialog
+        isOpen={rateLimitResetTime !== null}
+        onClose={() => setRateLimitResetTime(null)}
+        onConfirm={() => setRateLimitResetTime(null)}
+        title="Rate Limit Reached"
+        message={`You've hit your Claude usage limit.${rateLimitResetTime ? ` Resets ${rateLimitResetTime}.` : ''}`}
         confirmText="OK"
       />
 
