@@ -13,6 +13,7 @@ import type { Message, ContentBlock, PendingQuestion, ChatViewProps, Attachment 
 import { DEFAULT_MODEL_ID } from './chat/ModelSelector';
 
 // Existing components
+import { ReferencesPane } from './ReferencesPane';
 import { CompactionPane } from './CompactionPane';
 import { ToolDetailPane } from './ToolDetailPane';
 import { SlideInPane } from './SlideInPane';
@@ -110,6 +111,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
   const [planFilePath, setPlanFilePath] = useState<string | null>(null);
   const [planError, setPlanError] = useState<string | null>(null);
   const [claudeSettingsOpen, setClaudeSettingsOpen] = useState(false);
+  const [referencesPaneOpen, setReferencesPaneOpen] = useState(false);
   const [permissionsDialogOpen, setPermissionsDialogOpen] = useState(false);
   const [planReviewFeedback, setPlanReviewFeedback] = useState('');
   const [planReviewSubmitting, setPlanReviewSubmitting] = useState(false);
@@ -836,6 +838,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
           onPlanningModeToggle={() => setPlanningMode(!planningMode)}
           latestPlanFile={sessionSlug}
           onViewPlan={handleViewPlan}
+          onOpenReferences={() => setReferencesPaneOpen(true)}
           onOpenPermissions={() => setPermissionsDialogOpen(true)}
           onOpenClaudeSettings={() => setClaudeSettingsOpen(true)}
           selectedModel={selectedModel}
@@ -866,6 +869,13 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
           onInputChange={(value) => { currentDraftRef.current.text = value; }}
         />
       </div>
+
+      {/* @ References Pane */}
+      <ReferencesPane
+        isOpen={referencesPaneOpen}
+        onClose={() => setReferencesPaneOpen(false)}
+        folder={folder}
+      />
 
       {/* Compaction Pane */}
       <CompactionPane
