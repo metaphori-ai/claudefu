@@ -61,7 +61,10 @@ func (m *Manager) Create(folder string) (*TerminalInfo, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(ctx, shell, "-l")
 	cmd.Dir = folder
-	cmd.Env = os.Environ()
+	// Set TERM so the shell knows escape sequence capabilities (backspace, arrows, etc.)
+	env := os.Environ()
+	env = append(env, "TERM=xterm-256color")
+	cmd.Env = env
 
 	// Start PTY
 	ptmx, err := pty.Start(cmd)

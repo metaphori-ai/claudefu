@@ -5,6 +5,12 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.27] - 2026-03-19
+
+### Fixed
+- **Terminal keyboard handling** — Backspace, Alt+Left/Right word navigation now work correctly. Set `TERM=xterm-256color` for PTY, enabled `macOptionIsMeta` for Alt key, and added custom Alt+Arrow handlers for word-jump escape sequences.
+- **Terminal left padding** — Added 10px left padding so text isn't flush against the window border.
+
 ## [0.4.26] - 2026-03-18
 
 ### Fixed

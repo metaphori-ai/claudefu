@@ -30,6 +30,8 @@ export function TerminalTab({ id, isActive }: TerminalTabProps) {
       fontSize: 11,
       cursorBlink: true,
       scrollback: 5000,
+      macOptionIsMeta: true,      // Alt/Option sends escape sequences (word navigation)
+      macOptionClickForcesSelection: true,
     });
 
     const fitAddon = new FitAddon();
@@ -44,6 +46,23 @@ export function TerminalTab({ id, isActive }: TerminalTabProps) {
       fitAddon.fit();
       ResizeTerminal(id, term.cols, term.rows).catch(() => {});
     }, 50);
+
+    // Handle Alt+Arrow keys for word navigation.
+    // macOptionIsMeta works for character keys (Alt+B/F/Backspace) but not arrows.
+    // Intercept and send the correct escape sequences: ESC b (word-back), ESC f (word-forward).
+    term.attachCustomKeyEventHandler((ev: KeyboardEvent) => {
+      if (ev.altKey && ev.type === 'keydown') {
+        if (ev.key === 'ArrowLeft') {
+          WriteTerminal(id, btoa('\x1bb')).catch(() => {});
+          return false; // Prevent default xterm handling
+        }
+        if (ev.key === 'ArrowRight') {
+          WriteTerminal(id, btoa('\x1bf')).catch(() => {});
+          return false;
+        }
+      }
+      return true; // Let xterm handle everything else
+    });
 
     // Keystrokes → Go backend
     const dataDisposable = term.onData((data) => {
@@ -107,6 +126,7 @@ export function TerminalTab({ id, isActive }: TerminalTabProps) {
         width: '100%',
         height: '100%',
         display: isActive ? 'block' : 'none',
+        paddingLeft: '10px',
       }}
     />
   );
