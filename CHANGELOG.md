@@ -5,6 +5,17 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.28] - 2026-03-19
+
+### Changed
+- **App.tsx refactoring (Phase 1)** — Extracted 5 concerns from AppContent (1,832 → 1,153 lines, -37%):
+  - `useNotifications` hook — notification toast + history + MCP subscription + update checks
+  - `useMenuEvents` hook — 15 native macOS menu event subscriptions
+  - `useKeyboardShortcuts` hook — CMD-N/R/1-9, Ctrl-`, Ctrl-Shift-D shortcuts
+  - `StartupView` + `AuthView` components — self-contained view extractions
+  - `NotificationToast` + `NotificationsDialog` components — presentational extractions
+- Menu event handlers no longer duplicate workspace switch/create logic inline — they delegate to shared handlers, eliminating code duplication.
+
 ## [0.4.27] - 2026-03-19
 
 ### Fixed

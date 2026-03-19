@@ -7,3 +7,7 @@ export { useAgentUnread } from './useAgentUnread';
 export { useWailsEvents, WailsEventHub } from './useWailsEvents';
 export { useScrollManagement } from './useScrollManagement';
 export { useSaveShortcut } from './useSaveShortcut';
+export { useKeyboardShortcuts } from './useKeyboardShortcuts';
+export { useMenuEvents } from './useMenuEvents';
+export { useNotifications } from './useNotifications';
+export type { NotificationData, NotificationItem } from './useNotifications';
