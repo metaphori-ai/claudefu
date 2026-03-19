@@ -18,7 +18,7 @@ import { AuthView } from './components/AuthView';
 import { NotificationToast } from './components/NotificationToast';
 import { NotificationsDialog } from './components/NotificationsDialog';
 import { WorkspaceProvider, SessionProvider, MessagesProvider } from './context';
-import { useWorkspace, useSession, useSelectedAgent, useSessionName, useKeyboardShortcuts, useMenuEvents, useNotifications, WailsEventHub } from './hooks';
+import { useWorkspace, useSession, useSelectedAgent, useSessionName, useKeyboardShortcuts, useErrorListeners, useMenuEvents, useNotifications, WailsEventHub } from './hooks';
 import { QueueWatcher } from './components/QueueWatcher';
 import { Tooltip } from './components/Tooltip';
 import {
@@ -587,17 +587,21 @@ function AppContent() {
     console.log('MCP settings saved:', config, updatedAgents.map(a => ({ name: a.name, slug: a.mcpSlug, enabled: a.mcpEnabled })));
   };
 
-  // Keyboard shortcuts + auth:expired listener
+  // Keyboard shortcuts
   useKeyboardShortcuts({
     onNewWorkspace: handleNewWorkspace,
     onReloadWorkspace: handleReloadWorkspace,
     onSelectAgent: handleAgentSelect,
     onToggleTerminal: () => setTerminalOpen(prev => !prev),
-    onAuthExpired: () => setShowAuthExpired(true),
-    onRateLimited: (resetTime: string) => setRateLimitResetTime(resetTime),
     agents,
     settings,
     onSettingsChange: setSettings,
+  });
+
+  // Backend error event listeners (auth expired, rate limited)
+  useErrorListeners({
+    onAuthExpired: () => setShowAuthExpired(true),
+    onRateLimited: (resetTime: string) => setRateLimitResetTime(resetTime),
   });
 
   // Menu event subscriptions

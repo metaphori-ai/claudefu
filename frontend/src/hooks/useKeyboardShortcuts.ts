@@ -9,8 +9,6 @@ interface KeyboardShortcutConfig {
   onReloadWorkspace: () => void;
   onSelectAgent: (agentId: string) => void;
   onToggleTerminal: () => void;
-  onAuthExpired: () => void;
-  onRateLimited: (resetTime: string) => void;
   agents: workspace.Agent[];
   settings: any;
   onSettingsChange: (s: any) => void;
@@ -18,9 +16,8 @@ interface KeyboardShortcutConfig {
 
 export function useKeyboardShortcuts(config: KeyboardShortcutConfig) {
   const { onNewWorkspace, onReloadWorkspace, onSelectAgent, onToggleTerminal,
-          onAuthExpired, onRateLimited, agents, settings, onSettingsChange } = config;
+          agents, settings, onSettingsChange } = config;
 
-  // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Note: CMD-S is handled by individual dialogs/panes when open
@@ -73,23 +70,4 @@ export function useKeyboardShortcuts(config: KeyboardShortcutConfig) {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [agents, settings, onNewWorkspace, onReloadWorkspace, onSelectAgent, onToggleTerminal, onSettingsChange]);
-
-  // Listen for auth:expired events from backend
-  useEffect(() => {
-    const handleAuthExpired = () => {
-      onAuthExpired();
-    };
-    window.addEventListener('claudefu:auth-expired', handleAuthExpired);
-    return () => window.removeEventListener('claudefu:auth-expired', handleAuthExpired);
-  }, [onAuthExpired]);
-
-  // Listen for rate:limited events from backend
-  useEffect(() => {
-    const handleRateLimited = (e: Event) => {
-      const detail = (e as CustomEvent).detail;
-      onRateLimited(detail?.resetTime || '');
-    };
-    window.addEventListener('claudefu:rate-limited', handleRateLimited);
-    return () => window.removeEventListener('claudefu:rate-limited', handleRateLimited);
-  }, [onRateLimited]);
 }
