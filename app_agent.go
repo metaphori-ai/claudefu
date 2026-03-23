@@ -51,8 +51,8 @@ func (a *App) ScaffoldAgent(folder, name string, opts scaffold.ScaffoldOptions) 
 	agentID := a.workspace.GetOrCreateAgentID(folder)
 	slug := workspace.Slugify(name)
 	if a.workspace.Registry != nil {
-		if info := a.workspace.Registry.GetInfo(folder); info != nil && info.Slug != "" {
-			slug = info.Slug
+		if info := a.workspace.Registry.GetInfo(folder); info != nil && info.GetSlug() != "" {
+			slug = info.GetSlug()
 		}
 	}
 	identity := scaffold.AgentIdentity{
@@ -108,10 +108,10 @@ func (a *App) AddAgent(name, folder string) (*workspace.Agent, error) {
 	agentSlug := ""
 	if a.workspace.Registry != nil {
 		if info := a.workspace.Registry.GetInfo(folder); info != nil {
-			if info.Name != "" {
-				agentName = info.Name
+			if info.GetName() != "" {
+				agentName = info.GetName()
 			}
-			agentSlug = info.Slug
+			agentSlug = info.GetSlug()
 		}
 	}
 

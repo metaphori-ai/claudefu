@@ -1088,8 +1088,6 @@ export namespace workspace {
 	}
 	export class AgentInfo {
 	    id: string;
-	    slug?: string;
-	    name?: string;
 	    meta?: Record<string, string>;
 	
 	    static createFrom(source: any = {}) {
@@ -1099,8 +1097,6 @@ export namespace workspace {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
-	        this.slug = source["slug"];
-	        this.name = source["name"];
 	        this.meta = source["meta"];
 	    }
 	}

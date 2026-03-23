@@ -1233,7 +1233,7 @@ func (s *MCPService) resolveAgentID(identifier string) (string, error) {
 		// Valid UUID format — verify it exists in the global registry
 		if s.registry != nil {
 			if info, _ := s.registry.FindByID(identifier); info != nil {
-				fmt.Printf("[MCP:resolveAgent] UUID '%s' found in registry (slug: %s, name: %s)\n", identifier[:8], info.Slug, info.Name)
+				fmt.Printf("[MCP:resolveAgent] UUID '%s' found in registry (slug: %s, name: %s)\n", identifier[:8], info.GetSlug(), info.GetName())
 				return identifier, nil
 			}
 		}

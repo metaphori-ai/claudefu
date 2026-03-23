@@ -235,8 +235,6 @@ export function WorkspaceMetaDialog({ isOpen, onClose }: WorkspaceMetaDialogProp
     const info = agentInfos[selectedAgentFolder];
     if (!info) return '';
     switch (attrName) {
-      case 'AGENT_NAME': return info.name || '';
-      case 'AGENT_SLUG': return info.slug || '';
       case 'AGENT_ID': return info.id || '';
       case 'AGENT_FOLDER': return selectedAgentFolder;
       case 'AGENT_CLAUDE_PROJECT_FOLDER': {
@@ -601,7 +599,7 @@ export function WorkspaceMetaDialog({ isOpen, onClose }: WorkspaceMetaDialogProp
             {filteredAgentFolders.map(folder => {
               const info = agentInfos[folder];
               const needsAttention = info ? hasBlankAgentMeta(info, schema) : true;
-              const name = info?.name || folder.split('/').pop() || folder;
+              const name = info?.meta?.AGENT_NAME || folder.split('/').pop() || folder;
               return (
                 <option key={folder} value={folder}>
                   {name}{needsAttention ? ' *' : ''}

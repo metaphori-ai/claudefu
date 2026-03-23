@@ -27,12 +27,23 @@ type AgentRegistry struct {
 	data     registryData
 }
 
-// AgentInfo holds the full identity for a registered agent.
+// AgentInfo holds the full identity and metadata for a registered agent.
+// All values (system + custom) are stored in the Meta map with ALL_CAPS keys.
+// This ensures NAMES consistency — JSON keys match attribute definitions exactly.
 type AgentInfo struct {
 	ID   string            `json:"id"`
-	Slug string            `json:"slug,omitempty"` // MCP slug (e.g., "claudefu-main")
-	Name string            `json:"name,omitempty"` // Display name (e.g., "ClaudeFu Main")
-	Meta map[string]string `json:"meta,omitempty"` // Custom attribute values (ALL_CAPS keys, e.g., AGENT_TDA_ROOT)
+	Meta map[string]string `json:"meta,omitempty"` // ALL_CAPS keys (AGENT_NAME, AGENT_SLUG, etc.)
+}
+
+// Helper accessors for common fields
+func (a *AgentInfo) GetName() string { return a.Meta["AGENT_NAME"] }
+func (a *AgentInfo) GetSlug() string { return a.Meta["AGENT_SLUG"] }
+
+// EnsureMeta initializes the Meta map if nil
+func (a *AgentInfo) EnsureMeta() {
+	if a.Meta == nil {
+		a.Meta = make(map[string]string)
+	}
 }
 
 type registryData struct {
@@ -105,17 +116,71 @@ func (r *AgentRegistry) Load() error {
 		return nil
 	}
 
-	// v2 format
-	var d registryData
-	if err := json.Unmarshal(raw, &d); err != nil {
+	// v2 format — parse with raw map to handle migration of slug/name → meta
+	var rawData struct {
+		Version int                                `json:"version"`
+		Agents  map[string]map[string]interface{} `json:"agents"`
+	}
+	if err := json.Unmarshal(raw, &rawData); err != nil {
 		log.Printf("Warning: corrupt agent registry at %s, starting fresh: %v", r.filePath, err)
 		return nil
 	}
 
-	if d.Agents == nil {
-		d.Agents = make(map[string]AgentInfo)
+	r.data = registryData{
+		Version: rawData.Version,
+		Agents:  make(map[string]AgentInfo, len(rawData.Agents)),
 	}
-	r.data = d
+
+	needsMigration := false
+	for folder, rawInfo := range rawData.Agents {
+		info := AgentInfo{}
+
+		// Get ID
+		if idVal, ok := rawInfo["id"]; ok {
+			if s, ok := idVal.(string); ok {
+				info.ID = s
+			}
+		}
+
+		// Get existing meta map
+		if metaRaw, ok := rawInfo["meta"]; ok && metaRaw != nil {
+			if metaMap, ok := metaRaw.(map[string]interface{}); ok {
+				info.Meta = make(map[string]string, len(metaMap))
+				for k, v := range metaMap {
+					if s, ok := v.(string); ok {
+						info.Meta[k] = s
+					}
+				}
+			}
+		}
+		info.EnsureMeta()
+
+		// Migrate old camelCase fields into meta
+		migrations := map[string]string{
+			"slug": "AGENT_SLUG",
+			"name": "AGENT_NAME",
+		}
+		for oldKey, newKey := range migrations {
+			if val, ok := rawInfo[oldKey]; ok && val != nil {
+				if s, ok := val.(string); ok && s != "" {
+					if info.Meta[newKey] == "" {
+						info.Meta[newKey] = s
+						needsMigration = true
+					}
+				}
+			}
+		}
+
+		r.data.Agents[folder] = info
+	}
+
+	if needsMigration {
+		log.Printf("Agent registry: migrating camelCase fields to ALL_CAPS meta")
+		if err := r.save(); err != nil {
+			log.Printf("Warning: failed to persist agent registry migration: %v", err)
+		}
+	}
+
 	log.Printf("Agent registry loaded: %d entries", len(r.data.Agents))
 	return nil
 }
@@ -253,13 +318,14 @@ func (r *AgentRegistry) UpdateAgentMeta(folder, slug, name string) {
 		return // Only update existing entries; GetOrCreateID creates new ones
 	}
 
+	info.EnsureMeta()
 	changed := false
-	if slug != "" && info.Slug != slug {
-		info.Slug = slug
+	if slug != "" && info.Meta["AGENT_SLUG"] != slug {
+		info.Meta["AGENT_SLUG"] = slug
 		changed = true
 	}
-	if name != "" && info.Name != name {
-		info.Name = name
+	if name != "" && info.Meta["AGENT_NAME"] != name {
+		info.Meta["AGENT_NAME"] = name
 		changed = true
 	}
 
@@ -315,12 +381,12 @@ func (r *AgentRegistry) FindBySlug(slug string) (*AgentInfo, string) {
 	slug = strings.ToLower(slug)
 	for folder, info := range r.data.Agents {
 		// Match stored slug
-		if info.Slug != "" && strings.ToLower(info.Slug) == slug {
+		if info.GetSlug() != "" && strings.ToLower(info.GetSlug()) == slug {
 			cp := info
 			return &cp, folder
 		}
 		// Derive slug from name and match
-		if info.Name != "" && Slugify(info.Name) == slug {
+		if info.GetName() != "" && Slugify(info.GetName()) == slug {
 			cp := info
 			return &cp, folder
 		}
@@ -337,9 +403,9 @@ func (r *AgentRegistry) AllSlugs() []string {
 	var slugs []string
 	seen := make(map[string]bool)
 	for _, info := range r.data.Agents {
-		s := info.Slug
-		if s == "" && info.Name != "" {
-			s = Slugify(info.Name)
+		s := info.GetSlug()
+		if s == "" && info.GetName() != "" {
+			s = Slugify(info.GetName())
 		}
 		if s != "" && !seen[s] {
 			seen[s] = true
@@ -370,9 +436,11 @@ func (r *AgentRegistry) ReconcileWorkspace(ws *Workspace) map[string]string {
 		if !exists {
 			// First time seeing this folder — register current ID with metadata
 			r.data.Agents[folder] = AgentInfo{
-				ID:   agent.ID,
-				Slug: agent.GetSlug(),
-				Name: agent.Name,
+				ID: agent.ID,
+				Meta: map[string]string{
+					"AGENT_SLUG": agent.GetSlug(),
+					"AGENT_NAME": agent.Name,
+				},
 			}
 			metaUpdated = true
 			continue
@@ -386,17 +454,15 @@ func (r *AgentRegistry) ReconcileWorkspace(ws *Workspace) map[string]string {
 		}
 
 		// Only populate slug/name if registry doesn't have them yet (first-write-wins).
-		// This ensures a canonical slug persists across workspaces even if the same
-		// folder has different agent names in different workspaces.
-		// Explicit user changes go through UpdateAgentMeta (called by UpdateAgent).
+		info.EnsureMeta()
 		agentSlug := agent.GetSlug()
 		needsUpdate := false
-		if info.Slug == "" && agentSlug != "" {
-			info.Slug = agentSlug
+		if info.GetSlug() == "" && agentSlug != "" {
+			info.Meta["AGENT_SLUG"] = agentSlug
 			needsUpdate = true
 		}
-		if info.Name == "" && agent.Name != "" {
-			info.Name = agent.Name
+		if info.GetName() == "" && agent.Name != "" {
+			info.Meta["AGENT_NAME"] = agent.Name
 			needsUpdate = true
 		}
 		if needsUpdate {
@@ -430,10 +496,10 @@ func (r *AgentRegistry) EnrichWorkspaceAgents(ws *Workspace) {
 			if info.ID == agent.ID {
 				agent.Folder = folder
 				if agent.Name == "" {
-					agent.Name = info.Name
+					agent.Name = info.GetName()
 				}
 				if agent.MCPSlug == "" {
-					agent.MCPSlug = info.Slug
+					agent.MCPSlug = info.GetSlug()
 				}
 				break
 			}
