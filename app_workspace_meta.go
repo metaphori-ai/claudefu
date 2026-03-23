@@ -29,8 +29,8 @@ func (a *App) SaveMetaSchema(schema workspace.MetaSchema) error {
 	return a.workspace.SaveMetaSchema(schema)
 }
 
-// GetWorkspaceRegistryInfo returns workspace meta for a single workspace.
-func (a *App) GetWorkspaceRegistryInfo(workspaceID string) (*workspace.WorkspaceInfo, error) {
+// GetWorkspaceMeta returns workspace meta for a single workspace.
+func (a *App) GetWorkspaceMeta(workspaceID string) (*workspace.WorkspaceInfo, error) {
 	if a.workspace == nil {
 		return nil, fmt.Errorf("workspace manager not initialized")
 	}
@@ -41,8 +41,8 @@ func (a *App) GetWorkspaceRegistryInfo(workspaceID string) (*workspace.Workspace
 	return info, nil
 }
 
-// GetAllWorkspaceRegistryInfo returns all workspace entries from the registry.
-func (a *App) GetAllWorkspaceRegistryInfo() (map[string]workspace.WorkspaceInfo, error) {
+// GetAllWorkspaceMeta returns all workspace entries from the registry.
+func (a *App) GetAllWorkspaceMeta() (map[string]workspace.WorkspaceInfo, error) {
 	if a.workspace == nil {
 		return make(map[string]workspace.WorkspaceInfo), nil
 	}
@@ -75,8 +75,8 @@ func (a *App) UpdateWorkspaceMeta(workspaceID string, meta map[string]string) er
 	return nil
 }
 
-// GetAgentRegistryInfo returns agent meta for a single agent by folder.
-func (a *App) GetAgentRegistryInfo(folder string) (*workspace.AgentInfo, error) {
+// GetAgentMeta returns agent meta for a single agent by folder.
+func (a *App) GetAgentMeta(folder string) (*workspace.AgentInfo, error) {
 	if a.workspace == nil {
 		return nil, fmt.Errorf("workspace manager not initialized")
 	}
@@ -87,16 +87,16 @@ func (a *App) GetAgentRegistryInfo(folder string) (*workspace.AgentInfo, error) 
 	return info, nil
 }
 
-// GetAllAgentRegistryInfo returns all agent entries from the registry.
-func (a *App) GetAllAgentRegistryInfo() (map[string]workspace.AgentInfo, error) {
+// GetAllAgentMeta returns all agent entries from the registry.
+func (a *App) GetAllAgentMeta() (map[string]workspace.AgentInfo, error) {
 	if a.workspace == nil {
 		return make(map[string]workspace.AgentInfo), nil
 	}
-	return a.workspace.GetAllAgentEntries(), nil
+	return a.workspace.GetAllAgentInfo(), nil
 }
 
-// UpdateAgentRegistryMeta updates the custom meta map for an agent.
-func (a *App) UpdateAgentRegistryMeta(folder string, meta map[string]string) error {
+// UpdateAgentMeta updates the custom meta map for an agent.
+func (a *App) UpdateAgentMeta(folder string, meta map[string]string) error {
 	if a.workspace == nil {
 		return fmt.Errorf("workspace manager not initialized")
 	}

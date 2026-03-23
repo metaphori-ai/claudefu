@@ -187,9 +187,6 @@ func (a *App) loadPersistedState() {
 		wailsrt.LogWarning(a.ctx, fmt.Sprintf("Failed to create local dirs: %v", err))
 	}
 
-	// Run one-time migrations to move runtime state to local/
-	a.workspace.MigrateCurrentJSON()
-
 	// Initialize session service (instant session creation)
 	a.sessionService = session.NewService()
 
@@ -237,17 +234,17 @@ func (a *App) loadCurrentWorkspace() {
 	}
 
 	// Migrate workspace to latest version (adds UUIDs to agents)
-	ws = a.workspace.MigrateWorkspace(ws)
+	ws = a.workspace.UpgradeWorkspaceSchema(ws)
 
 	// Reconcile agent IDs against global registry (ensures same folder = same UUID)
-	a.reconciledIDs = a.workspace.ReconcileWorkspace(ws)
+	a.reconciledIDs = a.workspace.SyncAgentIDsFromRegistry(ws)
 	if len(a.reconciledIDs) > 0 {
 		fmt.Printf("[INFO] Reconciled %d agent IDs against global registry\n", len(a.reconciledIDs))
 	}
 
 	// Migrate runtime fields from workspace JSON to local/workspace-state/ (one-time).
 	// This must happen AFTER reconciliation so extracted agent IDs are correct.
-	a.workspace.MigrateWorkspaceRuntimeFields(ws)
+	a.workspace.ExtractRuntimeToStateFile(ws)
 
 	// Save cleaned workspace JSON (runtime fields stripped by SaveWorkspace)
 	if err := a.workspace.SaveWorkspace(ws); err != nil {

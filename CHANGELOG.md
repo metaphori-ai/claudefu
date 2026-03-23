@@ -5,6 +5,21 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.5] - 2026-03-23
+
+### Changed
+- **NAMES audit — 17 renames + 2 deletions** — Renamed ambiguous methods across codebase and TDAs:
+  - `ReconcileWorkspace` → `SyncAgentIDsFromRegistry` (clarity on what's reconciled)
+  - `MigrateWorkspace` → `UpgradeWorkspaceSchema` (not a data migration)
+  - `MigrateWorkspaceRuntimeFields` → `ExtractRuntimeToStateFile` (clear action)
+  - `GetAllAgentEntries/AllEntries` → `GetAllAgentInfo/GetAllInfo` (consistent Get prefix)
+  - `AllAgentSlugs/AllSlugs` → `GetAllAgentSlugs/GetAllSlugs` (consistent Get prefix)
+  - `SyncWorkspaceName` → `UpdateWorkspaceRegistryName` (directional clarity)
+  - `EnsureMeta` → `InitMetaIfNil` (specific action)
+  - Bound methods: `Get*RegistryInfo` → `Get*Meta`, `UpdateAgentRegistryMeta` → `UpdateAgentMeta` (no implementation detail leakage)
+  - Deleted: `MigrateCurrentJSON` (dead code), `SaveWorkspaceWithRename` (legacy no-op)
+- **MCPDescription → registry** — Agent description stored in registry `AGENT_DESCRIPTION` meta, not workspace JSON. MCP Settings pane saves to registry via `UpdateAgentMeta`. `PopulateAgentsFromRegistry` fills `MCPDescription` on workspace load.
+
 ## [0.5.4] - 2026-03-23
 
 ### Changed

@@ -42,7 +42,10 @@ import {
   SelectWorkspaceFolder,
   CheckAgentScaffold,
   ScaffoldAgent,
-  RefreshSessions
+  RefreshSessions,
+  UpdateAgent,
+  GetAgentMeta,
+  UpdateAgentMeta
 } from "../wailsjs/go/main/App";
 import { EventsOn, BrowserOpenURL } from "../wailsjs/runtime/runtime";
 import { workspace, scaffold } from "../wailsjs/go/models";
@@ -582,9 +585,34 @@ function AppContent() {
   };
 
   const handleSaveMCPSettings = async (config: workspace.MCPConfig, updatedAgents: workspace.Agent[]) => {
+    // Sync slug and description changes to the agent registry (single source of truth)
+    for (const updated of updatedAgents) {
+      const original = agents.find(a => a.id === updated.id);
+      if (!original) continue;
+
+      // Slug changed → update via UpdateAgent (syncs to registry)
+      if (updated.mcpSlug !== original.mcpSlug) {
+        try {
+          await UpdateAgent({ ...updated });
+        } catch (err) {
+          console.error('Failed to update agent slug:', err);
+        }
+      }
+
+      // Description changed → update AGENT_DESCRIPTION in registry meta
+      if (updated.mcpDescription !== original.mcpDescription) {
+        try {
+          const info = await GetAgentMeta(original.folder);
+          const meta = { ...(info?.meta || {}), AGENT_DESCRIPTION: updated.mcpDescription || '' };
+          await UpdateAgentMeta(original.folder, meta);
+        } catch (err) {
+          console.error('Failed to update agent description:', err);
+        }
+      }
+    }
+
     setMcpConfig(config);
     setAgents(updatedAgents);
-    console.log('MCP settings saved:', config, updatedAgents.map(a => ({ name: a.name, slug: a.mcpSlug, enabled: a.mcpEnabled })));
   };
 
   // Keyboard shortcuts

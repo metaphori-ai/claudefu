@@ -4,8 +4,8 @@ import { useSaveShortcut } from '../hooks/useSaveShortcut';
 import { useWorkspace } from '../hooks/useWorkspace';
 import {
   GetMetaSchema, SaveMetaSchema,
-  GetAllWorkspaceRegistryInfo, UpdateWorkspaceMeta,
-  GetAllAgentRegistryInfo, UpdateAgentRegistryMeta,
+  GetAllWorkspaceMeta, UpdateWorkspaceMeta,
+  GetAllAgentMeta, UpdateAgentMeta,
   GetWorkspaceSifuFolder, SelectDirectory, SelectFile,
   GetWorkspaceAgentFolders, NormalizeDirPath,
 } from '../../wailsjs/go/main/App';
@@ -105,8 +105,8 @@ export function WorkspaceMetaDialog({ isOpen, onClose }: WorkspaceMetaDialogProp
 
     Promise.all([
       GetMetaSchema(),
-      GetAllWorkspaceRegistryInfo(),
-      GetAllAgentRegistryInfo(),
+      GetAllWorkspaceMeta(),
+      GetAllAgentMeta(),
     ]).then(async ([schemaResult, wsResult, agResult]) => {
       setSchema(schemaResult);
       setWorkspaceInfos(wsResult);
@@ -174,7 +174,7 @@ export function WorkspaceMetaDialog({ isOpen, onClose }: WorkspaceMetaDialogProp
           for (const [k, v] of Object.entries(agentDraft)) {
             if (!SYSTEM_AGENT_ATTRS.has(k)) meta[k] = v;
           }
-          await UpdateAgentRegistryMeta(selectedAgentFolder, meta);
+          await UpdateAgentMeta(selectedAgentFolder, meta);
         }
       }
 
@@ -182,8 +182,8 @@ export function WorkspaceMetaDialog({ isOpen, onClose }: WorkspaceMetaDialogProp
 
       // Reload data to reflect saved state
       const [wsResult, agResult] = await Promise.all([
-        GetAllWorkspaceRegistryInfo(),
-        GetAllAgentRegistryInfo(),
+        GetAllWorkspaceMeta(),
+        GetAllAgentMeta(),
       ]);
       setWorkspaceInfos(wsResult);
       setAgentInfos(agResult);

@@ -71,14 +71,14 @@ func (a *App) SwitchWorkspace(workspaceID string) (*workspace.Workspace, error) 
 	}
 
 	// Step 5: Migrate and reconcile agent IDs against global registry
-	ws = a.workspace.MigrateWorkspace(ws)
-	a.reconciledIDs = a.workspace.ReconcileWorkspace(ws)
+	ws = a.workspace.UpgradeWorkspaceSchema(ws)
+	a.reconciledIDs = a.workspace.SyncAgentIDsFromRegistry(ws)
 	if len(a.reconciledIDs) > 0 {
 		fmt.Printf("[INFO] SwitchWorkspace: Reconciled %d agent IDs\n", len(a.reconciledIDs))
 	}
 
 	// Step 5b: Migrate runtime fields from workspace JSON to local/ (one-time)
-	a.workspace.MigrateWorkspaceRuntimeFields(ws)
+	a.workspace.ExtractRuntimeToStateFile(ws)
 
 	// Save cleaned workspace JSON (runtime fields stripped by SaveWorkspace)
 	if err := a.workspace.SaveWorkspace(ws); err != nil {
@@ -165,14 +165,6 @@ func (a *App) SaveWorkspace(ws workspace.Workspace) error {
 		return fmt.Errorf("workspace manager not initialized")
 	}
 	return a.workspace.SaveWorkspace(&ws)
-}
-
-// SaveWorkspaceWithRename saves workspace and deletes old file if name changed
-func (a *App) SaveWorkspaceWithRename(ws workspace.Workspace, oldName string) error {
-	if a.workspace == nil {
-		return fmt.Errorf("workspace manager not initialized")
-	}
-	return a.workspace.SaveWorkspaceWithRename(&ws, oldName)
 }
 
 // RenameWorkspace renames a workspace by ID

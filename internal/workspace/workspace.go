@@ -117,11 +117,13 @@ const CurrentWorkspaceVersion = 4
 
 // agentDiskEntry is the slim on-disk representation of an agent.
 // Agent identity (name, folder, slug) lives exclusively in agents.json.
+// agentDiskEntry is the slim on-disk representation of an agent.
+// Agent identity (name, folder, slug, description) lives exclusively in agents.json registry.
+// Only per-workspace config (watchMode, mcpEnabled) is stored here.
 type agentDiskEntry struct {
-	ID             string `json:"id"`
-	WatchMode      string `json:"watchMode,omitempty"`
-	MCPEnabled     *bool  `json:"mcpEnabled,omitempty"`
-	MCPDescription string `json:"mcpDescription,omitempty"`
+	ID         string `json:"id"`
+	WatchMode  string `json:"watchMode,omitempty"`
+	MCPEnabled *bool  `json:"mcpEnabled,omitempty"`
 }
 
 // workspaceDisk is the on-disk representation of a workspace (v4 slim format).
@@ -169,9 +171,9 @@ func isValidUUID(s string) bool {
 	return err == nil
 }
 
-// MigrateWorkspace upgrades a workspace to the current schema version.
+// UpgradeWorkspaceSchema upgrades a workspace to the current schema version.
 // This handles backwards compatibility for workspaces created before UUID support.
-func (m *Manager) MigrateWorkspace(ws *Workspace) *Workspace {
+func (m *Manager) UpgradeWorkspaceSchema(ws *Workspace) *Workspace {
 	if ws.Version < CurrentWorkspaceVersion {
 		// Migrate agents to have proper UUIDs (using registry for stability)
 		for i := range ws.Agents {
@@ -292,34 +294,34 @@ func (m *Manager) FindAgentByID(id string) (*AgentInfo, string) {
 	return m.agentRegistry.FindByID(id)
 }
 
-// GetAllAgentEntries returns a copy of all agent registry entries.
-func (m *Manager) GetAllAgentEntries() map[string]AgentInfo {
+// GetAllAgentInfo returns a copy of all agent registry entries.
+func (m *Manager) GetAllAgentInfo() map[string]AgentInfo {
 	if m.agentRegistry == nil {
 		return make(map[string]AgentInfo)
 	}
-	return m.agentRegistry.AllEntries()
+	return m.agentRegistry.GetAllInfo()
 }
 
-// AllAgentSlugs returns all known agent slugs.
-func (m *Manager) AllAgentSlugs() []string {
+// GetAllAgentSlugs returns all known agent slugs.
+func (m *Manager) GetAllAgentSlugs() []string {
 	if m.agentRegistry == nil {
 		return nil
 	}
-	return m.agentRegistry.AllSlugs()
+	return m.agentRegistry.GetAllSlugs()
 }
 
-// ReconcileWorkspace validates agent IDs against the registry.
-func (m *Manager) ReconcileWorkspace(ws *Workspace) map[string]string {
+// SyncAgentIDsFromRegistry validates agent IDs against the registry.
+func (m *Manager) SyncAgentIDsFromRegistry(ws *Workspace) map[string]string {
 	if m.agentRegistry == nil {
 		return nil
 	}
-	return m.agentRegistry.ReconcileWorkspace(ws)
+	return m.agentRegistry.SyncAgentIDsFromRegistry(ws)
 }
 
-// EnrichWorkspaceAgents fills Folder/Name/MCPSlug for slim-format agents.
-func (m *Manager) EnrichWorkspaceAgents(ws *Workspace) {
+// PopulateAgentsFromRegistry fills Folder/Name/MCPSlug for slim-format agents.
+func (m *Manager) PopulateAgentsFromRegistry(ws *Workspace) {
 	if m.agentRegistry != nil {
-		m.agentRegistry.EnrichWorkspaceAgents(ws)
+		m.agentRegistry.PopulateAgentsFromRegistry(ws)
 	}
 }
 
@@ -358,8 +360,8 @@ func (m *Manager) UpdateWorkspaceMeta(wsID string, meta map[string]string) error
 	return m.workspaceRegistry.UpdateMeta(wsID, meta)
 }
 
-// SyncWorkspaceName updates the workspace name in the registry.
-func (m *Manager) SyncWorkspaceName(wsID, name string) {
+// UpdateWorkspaceRegistryName updates the workspace name in the registry.
+func (m *Manager) UpdateWorkspaceRegistryName(wsID, name string) {
 	if m.workspaceRegistry != nil {
 		m.workspaceRegistry.SyncName(wsID, name)
 	}
@@ -480,26 +482,6 @@ func (m *Manager) EnsureLocalDirs() error {
 	return nil
 }
 
-// MigrateCurrentJSON moves current.json from root to local/ (one-time).
-func (m *Manager) MigrateCurrentJSON() {
-	oldPath := filepath.Join(m.configPath, "current.json")
-	newPath := filepath.Join(m.configPath, "local", "current.json")
-
-	// Only migrate if old exists and new doesn't
-	if _, err := os.Stat(oldPath); err != nil {
-		return // Old doesn't exist, nothing to migrate
-	}
-	if _, err := os.Stat(newPath); err == nil {
-		return // New already exists, already migrated
-	}
-
-	if err := os.Rename(oldPath, newPath); err != nil {
-		fmt.Printf("[WARN] Failed to migrate current.json to local/: %v\n", err)
-	} else {
-		fmt.Printf("[INFO] Migrated current.json to local/current.json\n")
-	}
-}
-
 // GetCurrentWorkspaceID returns the ID of the currently active workspace.
 // Reads from local/current.json (per-machine state).
 func (m *Manager) GetCurrentWorkspaceID() (string, error) {
@@ -588,9 +570,9 @@ func (m *Manager) DeleteWorkspaceState(workspaceID string) {
 	os.Remove(statePath) // Ignore error if file doesn't exist
 }
 
-// MigrateWorkspaceRuntimeFields extracts runtime fields from a workspace JSON
+// ExtractRuntimeToStateFile extracts runtime fields from a workspace JSON
 // into a WorkspaceState file, then cleans the workspace JSON. One-time migration.
-func (m *Manager) MigrateWorkspaceRuntimeFields(ws *Workspace) {
+func (m *Manager) ExtractRuntimeToStateFile(ws *Workspace) {
 	// Check if workspace still has runtime fields
 	hasRuntime := ws.SelectedSession != nil || !ws.LastOpened.IsZero()
 	hasAgentSessions := false
@@ -609,7 +591,7 @@ func (m *Manager) MigrateWorkspaceRuntimeFields(ws *Workspace) {
 	statePath := filepath.Join(m.configPath, "local", "workspace-state", ws.ID+".json")
 	if _, err := os.Stat(statePath); err == nil {
 		// State file already exists — just clean the workspace JSON without overwriting state
-		m.cleanWorkspaceRuntimeFields(ws)
+		m.clearRuntimeFields(ws)
 		return
 	}
 
@@ -633,14 +615,14 @@ func (m *Manager) MigrateWorkspaceRuntimeFields(ws *Workspace) {
 	}
 
 	// Clean runtime fields from workspace JSON
-	m.cleanWorkspaceRuntimeFields(ws)
+	m.clearRuntimeFields(ws)
 
 	fmt.Printf("[INFO] Migrated runtime fields from workspace %s to local/workspace-state/\n", ws.ID)
 }
 
-// cleanWorkspaceRuntimeFields removes runtime fields from workspace in-memory
+// clearRuntimeFields removes runtime fields from workspace in-memory
 // and re-saves the workspace JSON without them.
-func (m *Manager) cleanWorkspaceRuntimeFields(ws *Workspace) {
+func (m *Manager) clearRuntimeFields(ws *Workspace) {
 	ws.SelectedSession = nil
 	ws.LastOpened = time.Time{} // Zero value — omitempty won't help since time marshals even zero
 
@@ -672,10 +654,9 @@ func (m *Manager) SaveWorkspace(ws *Workspace) error {
 	disk.Agents = make([]agentDiskEntry, len(ws.Agents))
 	for i, a := range ws.Agents {
 		disk.Agents[i] = agentDiskEntry{
-			ID:             a.ID,
-			WatchMode:      a.WatchMode,
-			MCPEnabled:     a.MCPEnabled,
-			MCPDescription: a.MCPDescription,
+			ID:         a.ID,
+			WatchMode:  a.WatchMode,
+			MCPEnabled: a.MCPEnabled,
 		}
 	}
 
@@ -688,11 +669,6 @@ func (m *Manager) SaveWorkspace(ws *Workspace) error {
 	return os.WriteFile(wsPath, data, 0644)
 }
 
-// SaveWorkspaceWithRename is kept for API compatibility but just calls SaveWorkspace
-// (rename logic no longer needed since files are named by ID)
-func (m *Manager) SaveWorkspaceWithRename(ws *Workspace, oldName string) error {
-	return m.SaveWorkspace(ws)
-}
 
 // LoadWorkspace loads a workspace by ID
 func (m *Manager) LoadWorkspace(id string) (*Workspace, error) {
@@ -712,10 +688,10 @@ func (m *Manager) LoadWorkspace(id string) (*Workspace, error) {
 	}
 
 	// Enrich agents with name/folder/slug from the registry (v4 slim format).
-	// Safe to call on old-format workspaces: EnrichWorkspaceAgents skips agents
+	// Safe to call on old-format workspaces: PopulateAgentsFromRegistry skips agents
 	// that already have Folder populated.
 	if m.agentRegistry != nil {
-		m.agentRegistry.EnrichWorkspaceAgents(&ws)
+		m.agentRegistry.PopulateAgentsFromRegistry(&ws)
 	}
 
 	return &ws, nil

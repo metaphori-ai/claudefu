@@ -61,19 +61,19 @@ export function EnableExperimentalFeature(arg1:string,arg2:string,arg3:boolean):
 
 export function GetAgent(arg1:string):Promise<workspace.Agent>;
 
+export function GetAgentMeta(arg1:string):Promise<workspace.AgentInfo>;
+
 export function GetAgentPermissions(arg1:string):Promise<permissions.ClaudeFuPermissions>;
 
 export function GetAgentPermissionsOrGlobal(arg1:string):Promise<permissions.ClaudeFuPermissions>;
 
-export function GetAgentRegistryInfo(arg1:string):Promise<workspace.AgentInfo>;
-
 export function GetAgentTotalUnread(arg1:string):Promise<number>;
 
-export function GetAllAgentRegistryInfo():Promise<Record<string, workspace.AgentInfo>>;
+export function GetAllAgentMeta():Promise<Record<string, workspace.AgentInfo>>;
 
 export function GetAllSessionNames(arg1:string):Promise<Record<string, string>>;
 
-export function GetAllWorkspaceRegistryInfo():Promise<Record<string, workspace.WorkspaceInfo>>;
+export function GetAllWorkspaceMeta():Promise<Record<string, workspace.WorkspaceInfo>>;
 
 export function GetAllWorkspaces():Promise<Array<workspace.WorkspaceSummary>>;
 
@@ -163,7 +163,7 @@ export function GetVersion():Promise<string>;
 
 export function GetWorkspaceAgentFolders(arg1:string):Promise<Array<string>>;
 
-export function GetWorkspaceRegistryInfo(arg1:string):Promise<workspace.WorkspaceInfo>;
+export function GetWorkspaceMeta(arg1:string):Promise<workspace.WorkspaceInfo>;
 
 export function GetWorkspaceSifuFolder(arg1:string):Promise<string>;
 
@@ -249,8 +249,6 @@ export function SaveSettings(arg1:settings.Settings):Promise<void>;
 
 export function SaveWorkspace(arg1:workspace.Workspace):Promise<void>;
 
-export function SaveWorkspaceWithRename(arg1:workspace.Workspace,arg2:string):Promise<void>;
-
 export function ScaffoldAgent(arg1:string,arg2:string,arg3:scaffold.ScaffoldOptions):Promise<main.ScaffoldResult>;
 
 export function SelectDirectory(arg1:string):Promise<string>;
@@ -283,7 +281,7 @@ export function TouchPlanFile(arg1:string,arg2:string):Promise<string>;
 
 export function UpdateAgent(arg1:workspace.Agent):Promise<void>;
 
-export function UpdateAgentRegistryMeta(arg1:string,arg2:Record<string, string>):Promise<void>;
+export function UpdateAgentMeta(arg1:string,arg2:Record<string, string>):Promise<void>;
 
 export function UpdateBacklogItem(arg1:mcpserver.BacklogItem):Promise<boolean>;
 

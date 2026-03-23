@@ -30,7 +30,7 @@ var allMigrations = []Migration{
 	{3, "workspace-populate-registry", migratePopulateWorkspaceRegistry},
 	{4, "agents-camelcase-to-allcaps-meta", migrateAgentsCamelCaseToMeta},
 	{5, "workspaces-camelcase-to-allcaps-meta", migrateWorkspacesCamelCaseToMeta},
-	{6, "meta-schema-ensure-system-attrs", migrateEnsureMetaSchemaSystemAttrs},
+	{6, "meta-schema-ensure-system-attrs", migrateInitMetaIfNilSchemaSystemAttrs},
 }
 
 // RunMigrations runs all pending migrations in order.
@@ -280,7 +280,7 @@ func migrateAgentsCamelCaseToMeta(configPath string, m *Manager) error {
 				}
 			}
 		}
-		info.EnsureMeta()
+		info.InitMetaIfNil()
 
 		// Migrate camelCase → ALL_CAPS
 		for oldKey, newKey := range fieldMap {
@@ -391,7 +391,7 @@ func migrateWorkspacesCamelCaseToMeta(configPath string, m *Manager) error {
 // Migration 6: Ensure meta-schema.json has all system attributes
 // =============================================================================
 
-func migrateEnsureMetaSchemaSystemAttrs(configPath string, m *Manager) error {
+func migrateInitMetaIfNilSchemaSystemAttrs(configPath string, m *Manager) error {
 	schema := m.metaSchema.GetSchema()
 	def := DefaultSchema()
 

@@ -39,8 +39,8 @@ type AgentInfo struct {
 func (a *AgentInfo) GetName() string { return a.Meta["AGENT_NAME"] }
 func (a *AgentInfo) GetSlug() string { return a.Meta["AGENT_SLUG"] }
 
-// EnsureMeta initializes the Meta map if nil
-func (a *AgentInfo) EnsureMeta() {
+// InitMetaIfNil initializes the Meta map if nil
+func (a *AgentInfo) InitMetaIfNil() {
 	if a.Meta == nil {
 		a.Meta = make(map[string]string)
 	}
@@ -238,7 +238,7 @@ func (r *AgentRegistry) UpdateAgentMeta(folder, slug, name string) {
 		return // Only update existing entries; GetOrCreateID creates new ones
 	}
 
-	info.EnsureMeta()
+	info.InitMetaIfNil()
 	changed := false
 	if slug != "" && info.Meta["AGENT_SLUG"] != slug {
 		info.Meta["AGENT_SLUG"] = slug
@@ -314,9 +314,9 @@ func (r *AgentRegistry) FindBySlug(slug string) (*AgentInfo, string) {
 	return nil, ""
 }
 
-// AllSlugs returns all known slugs from the registry (for suggestions).
+// GetAllSlugs returns all known slugs from the registry (for suggestions).
 // Includes both explicit slugs and derived-from-name slugs.
-func (r *AgentRegistry) AllSlugs() []string {
+func (r *AgentRegistry) GetAllSlugs() []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -335,13 +335,13 @@ func (r *AgentRegistry) AllSlugs() []string {
 	return slugs
 }
 
-// ReconcileWorkspace checks each agent in a workspace against the registry.
+// SyncAgentIDsFromRegistry checks each agent in a workspace against the registry.
 // If an agent's folder is already registered with a different ID, the agent's
 // ID is updated to the canonical one. Slug/name are only set if the registry
 // entry doesn't have them yet (first-write-wins), ensuring canonical slugs
 // persist across workspaces even when the same folder has different agent names.
 // Returns a map of oldID→newID for any agents that were changed.
-func (r *AgentRegistry) ReconcileWorkspace(ws *Workspace) map[string]string {
+func (r *AgentRegistry) SyncAgentIDsFromRegistry(ws *Workspace) map[string]string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -374,7 +374,7 @@ func (r *AgentRegistry) ReconcileWorkspace(ws *Workspace) map[string]string {
 		}
 
 		// Only populate slug/name if registry doesn't have them yet (first-write-wins).
-		info.EnsureMeta()
+		info.InitMetaIfNil()
 		agentSlug := agent.GetSlug()
 		needsUpdate := false
 		if info.GetSlug() == "" && agentSlug != "" {
@@ -400,35 +400,54 @@ func (r *AgentRegistry) ReconcileWorkspace(ws *Workspace) map[string]string {
 	return changed
 }
 
-// EnrichWorkspaceAgents fills Folder/Name/MCPSlug for agents that have an empty Folder
-// (v4 slim workspace format). Agents that already have Folder populated (old format)
-// are skipped so that old workspaces continue to load identically.
-func (r *AgentRegistry) EnrichWorkspaceAgents(ws *Workspace) {
+// PopulateAgentsFromRegistry fills Folder/Name/MCPSlug/MCPDescription for agents
+// from the registry. For v4 slim format agents (empty Folder), all fields
+// are populated. For already-populated agents, only Description is refreshed.
+func (r *AgentRegistry) PopulateAgentsFromRegistry(ws *Workspace) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	for i := range ws.Agents {
 		agent := &ws.Agents[i]
+
+		// Find the registry entry for this agent
+		var regInfo *AgentInfo
 		if agent.Folder != "" {
-			continue // Already populated (old format) — skip
-		}
-		for folder, info := range r.data.Agents {
-			if info.ID == agent.ID {
-				agent.Folder = folder
-				if agent.Name == "" {
-					agent.Name = info.GetName()
-				}
-				if agent.MCPSlug == "" {
-					agent.MCPSlug = info.GetSlug()
-				}
-				break
+			// Already has folder — look up directly
+			if info, ok := r.data.Agents[agent.Folder]; ok {
+				regInfo = &info
 			}
+		} else {
+			// Slim format — search by ID
+			for folder, info := range r.data.Agents {
+				if info.ID == agent.ID {
+					agent.Folder = folder
+					regInfo = &info
+					break
+				}
+			}
+		}
+
+		if regInfo == nil {
+			continue
+		}
+
+		// Always populate from registry (single source of truth)
+		if agent.Name == "" {
+			agent.Name = regInfo.GetName()
+		}
+		if agent.MCPSlug == "" {
+			agent.MCPSlug = regInfo.GetSlug()
+		}
+		// Description always comes from registry (not stored in workspace JSON)
+		if desc := regInfo.Meta["AGENT_DESCRIPTION"]; desc != "" {
+			agent.MCPDescription = desc
 		}
 	}
 }
 
-// AllEntries returns a copy of the registry map (for debugging/inspection).
-func (r *AgentRegistry) AllEntries() map[string]AgentInfo {
+// GetAllInfo returns a copy of the registry map (for debugging/inspection).
+func (r *AgentRegistry) GetAllInfo() map[string]AgentInfo {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 

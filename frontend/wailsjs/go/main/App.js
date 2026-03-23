@@ -102,6 +102,10 @@ export function GetAgent(arg1) {
   return window['go']['main']['App']['GetAgent'](arg1);
 }
 
+export function GetAgentMeta(arg1) {
+  return window['go']['main']['App']['GetAgentMeta'](arg1);
+}
+
 export function GetAgentPermissions(arg1) {
   return window['go']['main']['App']['GetAgentPermissions'](arg1);
 }
@@ -110,24 +114,20 @@ export function GetAgentPermissionsOrGlobal(arg1) {
   return window['go']['main']['App']['GetAgentPermissionsOrGlobal'](arg1);
 }
 
-export function GetAgentRegistryInfo(arg1) {
-  return window['go']['main']['App']['GetAgentRegistryInfo'](arg1);
-}
-
 export function GetAgentTotalUnread(arg1) {
   return window['go']['main']['App']['GetAgentTotalUnread'](arg1);
 }
 
-export function GetAllAgentRegistryInfo() {
-  return window['go']['main']['App']['GetAllAgentRegistryInfo']();
+export function GetAllAgentMeta() {
+  return window['go']['main']['App']['GetAllAgentMeta']();
 }
 
 export function GetAllSessionNames(arg1) {
   return window['go']['main']['App']['GetAllSessionNames'](arg1);
 }
 
-export function GetAllWorkspaceRegistryInfo() {
-  return window['go']['main']['App']['GetAllWorkspaceRegistryInfo']();
+export function GetAllWorkspaceMeta() {
+  return window['go']['main']['App']['GetAllWorkspaceMeta']();
 }
 
 export function GetAllWorkspaces() {
@@ -306,8 +306,8 @@ export function GetWorkspaceAgentFolders(arg1) {
   return window['go']['main']['App']['GetWorkspaceAgentFolders'](arg1);
 }
 
-export function GetWorkspaceRegistryInfo(arg1) {
-  return window['go']['main']['App']['GetWorkspaceRegistryInfo'](arg1);
+export function GetWorkspaceMeta(arg1) {
+  return window['go']['main']['App']['GetWorkspaceMeta'](arg1);
 }
 
 export function GetWorkspaceSifuFolder(arg1) {
@@ -478,10 +478,6 @@ export function SaveWorkspace(arg1) {
   return window['go']['main']['App']['SaveWorkspace'](arg1);
 }
 
-export function SaveWorkspaceWithRename(arg1, arg2) {
-  return window['go']['main']['App']['SaveWorkspaceWithRename'](arg1, arg2);
-}
-
 export function ScaffoldAgent(arg1, arg2, arg3) {
   return window['go']['main']['App']['ScaffoldAgent'](arg1, arg2, arg3);
 }
@@ -546,8 +542,8 @@ export function UpdateAgent(arg1) {
   return window['go']['main']['App']['UpdateAgent'](arg1);
 }
 
-export function UpdateAgentRegistryMeta(arg1, arg2) {
-  return window['go']['main']['App']['UpdateAgentRegistryMeta'](arg1, arg2);
+export function UpdateAgentMeta(arg1, arg2) {
+  return window['go']['main']['App']['UpdateAgentMeta'](arg1, arg2);
 }
 
 export function UpdateBacklogItem(arg1) {

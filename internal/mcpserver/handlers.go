@@ -1277,7 +1277,7 @@ func (s *MCPService) buildAgentNotFoundError(identifier string) error {
 
 	// Registry slugs (includes agents from other workspaces)
 	if s.manager != nil {
-		for _, slug := range s.manager.AllAgentSlugs() {
+		for _, slug := range s.manager.GetAllAgentSlugs() {
 			if !seen[slug] {
 				allSlugs = append(allSlugs, slug)
 				seen[slug] = true
