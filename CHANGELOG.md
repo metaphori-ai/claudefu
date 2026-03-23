@@ -5,6 +5,11 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Dialog backdrop drag-close bug** — Dialogs and slide-in panes no longer close when a text selection drag ends outside the dialog. Tracks mousedown origin so only deliberate backdrop clicks close the modal. Fixes DialogBase (all 12+ dialogs) and SlideInPane (tool detail, MCP settings, backlog, @references).
+
 ## [0.4.31] - 2026-03-19
 
 ### Changed

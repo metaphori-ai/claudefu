@@ -1,4 +1,4 @@
-import { useEffect, ReactNode } from 'react';
+import { useEffect, useRef, ReactNode } from 'react';
 
 interface DialogBaseProps {
   isOpen: boolean;
@@ -35,13 +35,27 @@ export function DialogBase({
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
+  // Track whether mousedown started on the backdrop (not inside dialog).
+  // Prevents closing when user drags a text selection outside the dialog.
+  const mouseDownOnBackdrop = useRef(false);
+
   if (!isOpen) return null;
 
   return (
     <>
       {/* Backdrop */}
       <div
-        onClick={onClose}
+        onMouseDown={(e) => {
+          // Only mark if the mousedown target is the backdrop itself
+          mouseDownOnBackdrop.current = e.target === e.currentTarget;
+        }}
+        onClick={(e) => {
+          // Only close if both mousedown AND mouseup (click) were on the backdrop
+          if (mouseDownOnBackdrop.current && e.target === e.currentTarget) {
+            onClose();
+          }
+          mouseDownOnBackdrop.current = false;
+        }}
         style={{
           position: 'fixed',
           inset: 0,

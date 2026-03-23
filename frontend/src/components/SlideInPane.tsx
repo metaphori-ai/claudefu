@@ -103,13 +103,25 @@ export function SlideInPane({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
+  // Track whether mousedown started on the backdrop (not inside pane).
+  // Prevents closing when user drags a text selection outside the pane.
+  const mouseDownOnBackdrop = useRef(false);
+
   if (!isOpen) return null;
 
   return (
     <>
       {/* Backdrop */}
       <div
-        onClick={onClose}
+        onMouseDown={(e) => {
+          mouseDownOnBackdrop.current = e.target === e.currentTarget;
+        }}
+        onClick={(e) => {
+          if (mouseDownOnBackdrop.current && e.target === e.currentTarget) {
+            onClose();
+          }
+          mouseDownOnBackdrop.current = false;
+        }}
         style={{
           position: 'fixed',
           inset: 0,
