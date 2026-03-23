@@ -110,12 +110,24 @@ export function GetAgentPermissionsOrGlobal(arg1) {
   return window['go']['main']['App']['GetAgentPermissionsOrGlobal'](arg1);
 }
 
+export function GetAgentRegistryInfo(arg1) {
+  return window['go']['main']['App']['GetAgentRegistryInfo'](arg1);
+}
+
 export function GetAgentTotalUnread(arg1) {
   return window['go']['main']['App']['GetAgentTotalUnread'](arg1);
 }
 
+export function GetAllAgentRegistryInfo() {
+  return window['go']['main']['App']['GetAllAgentRegistryInfo']();
+}
+
 export function GetAllSessionNames(arg1) {
   return window['go']['main']['App']['GetAllSessionNames'](arg1);
+}
+
+export function GetAllWorkspaceRegistryInfo() {
+  return window['go']['main']['App']['GetAllWorkspaceRegistryInfo']();
 }
 
 export function GetAllWorkspaces() {
@@ -234,6 +246,10 @@ export function GetMenu() {
   return window['go']['main']['App']['GetMenu']();
 }
 
+export function GetMetaSchema() {
+  return window['go']['main']['App']['GetMetaSchema']();
+}
+
 export function GetOrderedPermissionSets() {
   return window['go']['main']['App']['GetOrderedPermissionSets']();
 }
@@ -284,6 +300,18 @@ export function GetUnreadCounts(arg1) {
 
 export function GetVersion() {
   return window['go']['main']['App']['GetVersion']();
+}
+
+export function GetWorkspaceAgentFolders(arg1) {
+  return window['go']['main']['App']['GetWorkspaceAgentFolders'](arg1);
+}
+
+export function GetWorkspaceRegistryInfo(arg1) {
+  return window['go']['main']['App']['GetWorkspaceRegistryInfo'](arg1);
+}
+
+export function GetWorkspaceSifuFolder(arg1) {
+  return window['go']['main']['App']['GetWorkspaceSifuFolder'](arg1);
 }
 
 export function HasAgentPermissions(arg1) {
@@ -438,6 +466,10 @@ export function SaveMCPToolInstructions(arg1) {
   return window['go']['main']['App']['SaveMCPToolInstructions'](arg1);
 }
 
+export function SaveMetaSchema(arg1) {
+  return window['go']['main']['App']['SaveMetaSchema'](arg1);
+}
+
 export function SaveSettings(arg1) {
   return window['go']['main']['App']['SaveSettings'](arg1);
 }
@@ -514,8 +546,16 @@ export function UpdateAgent(arg1) {
   return window['go']['main']['App']['UpdateAgent'](arg1);
 }
 
+export function UpdateAgentRegistryMeta(arg1, arg2) {
+  return window['go']['main']['App']['UpdateAgentRegistryMeta'](arg1, arg2);
+}
+
 export function UpdateBacklogItem(arg1) {
   return window['go']['main']['App']['UpdateBacklogItem'](arg1);
+}
+
+export function UpdateWorkspaceMeta(arg1, arg2) {
+  return window['go']['main']['App']['UpdateWorkspaceMeta'](arg1, arg2);
 }
 
 export function WriteTerminal(arg1, arg2) {

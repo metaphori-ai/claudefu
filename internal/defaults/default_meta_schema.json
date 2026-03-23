@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "workspaceAttributes": [
+    { "name": "WORKSPACE_NAME", "type": "text", "description": "Workspace display name", "system": true },
+    { "name": "WORKSPACE_SLUG", "type": "text", "description": "URL-friendly identifier", "system": true },
+    { "name": "WORKSPACE_ID", "type": "text", "description": "Unique workspace UUID", "system": true },
+    { "name": "WORKSPACE_SIFU_NAME", "type": "text", "description": "Sifu agent display name", "system": true },
+    { "name": "WORKSPACE_SIFU_SLUG", "type": "text", "description": "Sifu agent slug for folder naming", "system": true },
+    { "name": "WORKSPACE_DESCRIPTION", "type": "textarea", "description": "Workspace purpose and context" }
+  ],
+  "agentAttributes": [
+    { "name": "AGENT_NAME", "type": "text", "description": "Agent display name", "system": true },
+    { "name": "AGENT_SLUG", "type": "text", "description": "MCP identifier slug", "system": true },
+    { "name": "AGENT_ID", "type": "text", "description": "Unique agent UUID", "system": true },
+    { "name": "AGENT_FOLDER", "type": "folder", "description": "Project root folder", "system": true },
+    { "name": "AGENT_CLAUDE_PROJECT_FOLDER", "type": "folder", "description": "Claude Code project folder (~/.claude/projects/...)", "system": true },
+    { "name": "AGENT_DESCRIPTION", "type": "text", "description": "What this agent does" }
+  ]
+}

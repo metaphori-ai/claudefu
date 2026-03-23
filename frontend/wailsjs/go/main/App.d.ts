@@ -65,9 +65,15 @@ export function GetAgentPermissions(arg1:string):Promise<permissions.ClaudeFuPer
 
 export function GetAgentPermissionsOrGlobal(arg1:string):Promise<permissions.ClaudeFuPermissions>;
 
+export function GetAgentRegistryInfo(arg1:string):Promise<workspace.AgentInfo>;
+
 export function GetAgentTotalUnread(arg1:string):Promise<number>;
 
+export function GetAllAgentRegistryInfo():Promise<Record<string, workspace.AgentInfo>>;
+
 export function GetAllSessionNames(arg1:string):Promise<Record<string, string>>;
+
+export function GetAllWorkspaceRegistryInfo():Promise<Record<string, workspace.WorkspaceInfo>>;
 
 export function GetAllWorkspaces():Promise<Array<workspace.WorkspaceSummary>>;
 
@@ -127,6 +133,8 @@ export function GetMCPToolInstructions():Promise<mcpserver.ToolInstructions>;
 
 export function GetMenu():Promise<menu.Menu>;
 
+export function GetMetaSchema():Promise<workspace.MetaSchema>;
+
 export function GetOrderedPermissionSets():Promise<Array<permissions.PermissionSet>>;
 
 export function GetPendingMCPQuestions():Promise<Array<main.MCPPendingQuestion>>;
@@ -152,6 +160,12 @@ export function GetTerminals():Promise<Array<terminal.TerminalInfo>>;
 export function GetUnreadCounts(arg1:string):Promise<Record<string, number>>;
 
 export function GetVersion():Promise<string>;
+
+export function GetWorkspaceAgentFolders(arg1:string):Promise<Array<string>>;
+
+export function GetWorkspaceRegistryInfo(arg1:string):Promise<workspace.WorkspaceInfo>;
+
+export function GetWorkspaceSifuFolder(arg1:string):Promise<string>;
 
 export function HasAgentPermissions(arg1:string):Promise<boolean>;
 
@@ -229,6 +243,8 @@ export function SaveMCPToolAvailability(arg1:mcpserver.ToolAvailability):Promise
 
 export function SaveMCPToolInstructions(arg1:mcpserver.ToolInstructions):Promise<void>;
 
+export function SaveMetaSchema(arg1:workspace.MetaSchema):Promise<void>;
+
 export function SaveSettings(arg1:settings.Settings):Promise<void>;
 
 export function SaveWorkspace(arg1:workspace.Workspace):Promise<void>;
@@ -267,6 +283,10 @@ export function TouchPlanFile(arg1:string,arg2:string):Promise<string>;
 
 export function UpdateAgent(arg1:workspace.Agent):Promise<void>;
 
+export function UpdateAgentRegistryMeta(arg1:string,arg2:Record<string, string>):Promise<void>;
+
 export function UpdateBacklogItem(arg1:mcpserver.BacklogItem):Promise<boolean>;
+
+export function UpdateWorkspaceMeta(arg1:string,arg2:workspace.WorkspaceInfo):Promise<void>;
 
 export function WriteTerminal(arg1:string,arg2:string):Promise<void>;

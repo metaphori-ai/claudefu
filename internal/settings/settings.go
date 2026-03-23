@@ -22,6 +22,8 @@ type Settings struct {
 	DebugLogging          bool              `json:"debugLogging"`          // enable aggregated debug logging on frontend
 	ClaudeEnvVars         map[string]string `json:"claudeEnvVars"`         // environment variables passed to Claude CLI (e.g., ANTHROPIC_BASE_URL)
 	DefaultPermissionSets map[string]string `json:"defaultPermissionSets"` // setId -> risk level ("common", "common+permissive", "all")
+	SifuEnabled           bool              `json:"sifuEnabled"`           // enable Sifu workspace agent (global toggle)
+	SifuRootFolder        string            `json:"sifuRootFolder"`        // parent folder for all workspace Sifus (supports ~/)
 }
 
 // AuthConfig holds authentication configuration

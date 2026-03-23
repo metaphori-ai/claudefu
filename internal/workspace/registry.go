@@ -3,6 +3,7 @@ package workspace
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -28,9 +29,10 @@ type AgentRegistry struct {
 
 // AgentInfo holds the full identity for a registered agent.
 type AgentInfo struct {
-	ID   string `json:"id"`
-	Slug string `json:"slug,omitempty"` // MCP slug (e.g., "claudefu-main")
-	Name string `json:"name,omitempty"` // Display name (e.g., "ClaudeFu Main")
+	ID   string            `json:"id"`
+	Slug string            `json:"slug,omitempty"` // MCP slug (e.g., "claudefu-main")
+	Name string            `json:"name,omitempty"` // Display name (e.g., "ClaudeFu Main")
+	Meta map[string]string `json:"meta,omitempty"` // Custom attribute values (ALL_CAPS keys, e.g., AGENT_TDA_ROOT)
 }
 
 type registryData struct {
@@ -267,6 +269,25 @@ func (r *AgentRegistry) UpdateAgentMeta(folder, slug, name string) {
 			log.Printf("Warning: failed to persist agent registry after meta update: %v", err)
 		}
 	}
+}
+
+// UpdateAgentCustomMeta updates the custom meta map for an agent's registry entry.
+// The meta map is replaced entirely (not merged) — frontend sends the full map.
+func (r *AgentRegistry) UpdateAgentCustomMeta(folder string, meta map[string]string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	info, exists := r.data.Agents[folder]
+	if !exists {
+		return fmt.Errorf("agent not found in registry: %s", folder)
+	}
+
+	info.Meta = meta
+	r.data.Agents[folder] = info
+	if err := r.save(); err != nil {
+		return fmt.Errorf("failed to persist agent meta: %w", err)
+	}
+	return nil
 }
 
 // FindByID searches all registry entries for an agent with the given UUID.

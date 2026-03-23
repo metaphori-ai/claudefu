@@ -5,9 +5,13 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.0] - 2026-03-23
 
 ### Added
+- **Meta Schema System** — Global attribute definitions (`~/.claudefu/meta-schema.json`) for workspace and agent metadata. System attributes (`system: true`) are non-removable; custom attributes are user-defined with ALL_CAPS names, text/textarea/folder types, and descriptions. Defaults loaded from embedded `default_meta_schema.json`.
+- **Workspace Registry** — Centralized workspace metadata (`~/.claudefu/workspaces.json`) mirroring the agents.json pattern. Stores per-workspace slug, description, Sifu name/slug, and custom meta values. Auto-populates from existing workspace files on first startup.
+- **Agent Meta Extension** — Added `meta` map to `AgentInfo` in agents.json for custom per-agent attribute values (backwards compatible).
+- **Workspaces & Agents Dialog** — New global dialog accessible from sidebar with four tabs: Workspace Schema, Agent Schema, Workspaces (dropdown selector with field editor), and Agents (dropdown selector with workspace filter). Supports text, textarea, and folder input types with Browse button.
 - **Copy path button in Permissions directories** — Each directory row (global and agent) now has a copy-to-clipboard button next to the remove/lock icon. Shows green checkmark for 2s on success.
 
 ### Fixed

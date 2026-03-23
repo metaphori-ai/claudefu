@@ -198,8 +198,10 @@ type Session struct {
 
 // Manager handles workspace operations
 type Manager struct {
-	configPath string
-	Registry   *AgentRegistry
+	configPath         string
+	Registry           *AgentRegistry
+	WorkspaceRegistry  *WorkspaceRegistry
+	MetaSchema         *MetaSchemaManager
 }
 
 // NewManager creates a new workspace manager
@@ -214,7 +216,28 @@ func NewManager(configPath string) *Manager {
 		fmt.Printf("Warning: failed to load agent registry: %v\n", err)
 	}
 
-	return &Manager{configPath: configPath, Registry: registry}
+	// Initialize and load the workspace registry
+	wsRegistry := NewWorkspaceRegistry(configPath)
+	if err := wsRegistry.Load(); err != nil {
+		fmt.Printf("Warning: failed to load workspace registry: %v\n", err)
+	}
+	// Migrate existing workspace files into registry
+	if err := wsRegistry.PopulateFromWorkspaceFiles(workspacesDir); err != nil {
+		fmt.Printf("Warning: failed to populate workspace registry: %v\n", err)
+	}
+
+	// Initialize and load the meta schema
+	metaSchema := NewMetaSchemaManager(configPath)
+	if err := metaSchema.Load(); err != nil {
+		fmt.Printf("Warning: failed to load meta schema: %v\n", err)
+	}
+
+	return &Manager{
+		configPath:        configPath,
+		Registry:          registry,
+		WorkspaceRegistry: wsRegistry,
+		MetaSchema:        metaSchema,
+	}
 }
 
 // GetOrCreateAgentID returns a stable agent ID for the given folder,
@@ -560,6 +583,11 @@ func (m *Manager) CreateWorkspace(name string) (*Workspace, error) {
 	state := &WorkspaceState{LastOpened: time.Now()}
 	if err := m.SaveWorkspaceState(ws.ID, state); err != nil {
 		fmt.Printf("[WARN] Failed to save initial workspace state: %v\n", err)
+	}
+
+	// Register in workspace registry
+	if m.WorkspaceRegistry != nil {
+		m.WorkspaceRegistry.GetOrCreateInfo(ws.ID, ws.Name)
 	}
 
 	// Set as current workspace
@@ -931,6 +959,11 @@ func (m *Manager) DeleteWorkspace(id string) error {
 		return fmt.Errorf("failed to delete workspace: %w", err)
 	}
 
+	// Remove from workspace registry
+	if m.WorkspaceRegistry != nil {
+		m.WorkspaceRegistry.Delete(id)
+	}
+
 	return nil
 }
 
@@ -948,6 +981,11 @@ func (m *Manager) RenameWorkspace(id string, newName string) error {
 	// Save it back
 	if err := m.SaveWorkspace(ws); err != nil {
 		return fmt.Errorf("failed to save workspace: %w", err)
+	}
+
+	// Sync name to workspace registry
+	if m.WorkspaceRegistry != nil {
+		m.WorkspaceRegistry.SyncName(id, newName)
 	}
 
 	return nil

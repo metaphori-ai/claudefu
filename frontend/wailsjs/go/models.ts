@@ -752,6 +752,8 @@ export namespace settings {
 	    debugLogging: boolean;
 	    claudeEnvVars: Record<string, string>;
 	    defaultPermissionSets: Record<string, string>;
+	    sifuEnabled: boolean;
+	    sifuRootFolder: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -765,6 +767,8 @@ export namespace settings {
 	        this.debugLogging = source["debugLogging"];
 	        this.claudeEnvVars = source["claudeEnvVars"];
 	        this.defaultPermissionSets = source["defaultPermissionSets"];
+	        this.sifuEnabled = source["sifuEnabled"];
+	        this.sifuRootFolder = source["sifuRootFolder"];
 	    }
 	}
 
@@ -1082,6 +1086,24 @@ export namespace workspace {
 	        this.mcpDescription = source["mcpDescription"];
 	    }
 	}
+	export class AgentInfo {
+	    id: string;
+	    slug?: string;
+	    name?: string;
+	    meta?: Record<string, string>;
+	
+	    static createFrom(source: any = {}) {
+	        return new AgentInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.slug = source["slug"];
+	        this.name = source["name"];
+	        this.meta = source["meta"];
+	    }
+	}
 	export class MCPConfig {
 	    enabled: boolean;
 	    port: number;
@@ -1095,6 +1117,58 @@ export namespace workspace {
 	        this.enabled = source["enabled"];
 	        this.port = source["port"];
 	    }
+	}
+	export class MetaAttribute {
+	    name: string;
+	    type: string;
+	    description: string;
+	    system?: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new MetaAttribute(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.type = source["type"];
+	        this.description = source["description"];
+	        this.system = source["system"];
+	    }
+	}
+	export class MetaSchema {
+	    version: number;
+	    workspaceAttributes: MetaAttribute[];
+	    agentAttributes: MetaAttribute[];
+	
+	    static createFrom(source: any = {}) {
+	        return new MetaSchema(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.version = source["version"];
+	        this.workspaceAttributes = this.convertValues(source["workspaceAttributes"], MetaAttribute);
+	        this.agentAttributes = this.convertValues(source["agentAttributes"], MetaAttribute);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class SelectedSession {
 	    agentId?: string;
@@ -1154,6 +1228,28 @@ export namespace workspace {
 		    }
 		    return a;
 		}
+	}
+	export class WorkspaceInfo {
+	    id: string;
+	    name?: string;
+	    slug?: string;
+	    sifuName?: string;
+	    sifuSlug?: string;
+	    meta?: Record<string, string>;
+	
+	    static createFrom(source: any = {}) {
+	        return new WorkspaceInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.slug = source["slug"];
+	        this.sifuName = source["sifuName"];
+	        this.sifuSlug = source["sifuSlug"];
+	        this.meta = source["meta"];
+	    }
 	}
 	export class WorkspaceSummary {
 	    id: string;

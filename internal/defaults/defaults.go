@@ -10,6 +10,9 @@ var toolInstructionsJSON []byte
 //go:embed default_claude_md.txt
 var claudeMDTemplate string
 
+//go:embed default_meta_schema.json
+var metaSchemaJSON []byte
+
 // ToolInstructionsJSON returns the embedded default tool instructions JSON bytes.
 func ToolInstructionsJSON() []byte {
 	return toolInstructionsJSON
@@ -18,4 +21,9 @@ func ToolInstructionsJSON() []byte {
 // ClaudeMDTemplate returns the embedded default CLAUDE.md template content.
 func ClaudeMDTemplate() string {
 	return claudeMDTemplate
+}
+
+// MetaSchemaJSON returns the embedded default meta schema JSON bytes.
+func MetaSchemaJSON() []byte {
+	return metaSchemaJSON
 }

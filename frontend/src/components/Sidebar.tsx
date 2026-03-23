@@ -23,6 +23,7 @@ import { InboxDialog } from './InboxDialog';
 import { BacklogPane } from './BacklogPane';
 import { BacklogEditorDialog } from './BacklogEditorDialog';
 import { GlobalSettingsDialog } from './GlobalSettingsDialog';
+import { WorkspaceMetaDialog } from './WorkspaceMetaDialog';
 import { ConfirmDialog } from './ConfirmDialog';
 import { RefreshMenu } from '../../wailsjs/go/main/App';
 import { workspace, types } from '../../wailsjs/go/models';
@@ -87,6 +88,7 @@ export function Sidebar({
   const [renameSessionDialog, setRenameSessionDialog] = useState<{ agent: Agent; session: Session } | null>(null);
   const [sessionsDialogAgent, setSessionsDialogAgent] = useState<Agent | null>(null);
   const [showGlobalSettings, setShowGlobalSettings] = useState(false);
+  const [showWorkspaceMeta, setShowWorkspaceMeta] = useState(false);
   const [confirmRemoveAgentId, setConfirmRemoveAgentId] = useState<string | null>(null);
 
   // Backlog state
@@ -515,6 +517,44 @@ export function Sidebar({
           </button>
         </div>
 
+        {/* Workspaces & Agents Meta Button */}
+        <div style={{ padding: '0 1rem 0.25rem' }}>
+          <button
+            onClick={() => setShowWorkspaceMeta(true)}
+            style={{
+              width: '100%',
+              padding: '0.5rem 1rem',
+              borderRadius: '8px',
+              border: '1px solid #222',
+              background: 'transparent',
+              color: '#666',
+              cursor: 'pointer',
+              fontSize: '0.8rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '0.5rem',
+              transition: 'all 0.15s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = '#1a1a1a';
+              e.currentTarget.style.borderColor = '#333';
+              e.currentTarget.style.color = '#888';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent';
+              e.currentTarget.style.borderColor = '#222';
+              e.currentTarget.style.color = '#666';
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+              <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+            </svg>
+            Workspaces & Agents
+          </button>
+        </div>
+
         {/* Add Agent Button */}
         <div style={{ padding: '0.25rem 1rem 0.75rem' }}>
           <button
@@ -659,6 +699,12 @@ export function Sidebar({
       <GlobalSettingsDialog
         isOpen={showGlobalSettings}
         onClose={() => setShowGlobalSettings(false)}
+      />
+
+      {/* Workspaces & Agents Meta Dialog */}
+      <WorkspaceMetaDialog
+        isOpen={showWorkspaceMeta}
+        onClose={() => setShowWorkspaceMeta(false)}
       />
 
       {/* Confirm Remove Agent Dialog */}
