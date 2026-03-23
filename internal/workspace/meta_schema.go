@@ -79,8 +79,8 @@ func systemAgentAttrNames() map[string]bool {
 	return names
 }
 
-// Load reads the schema from disk. Creates default if not found.
-// Ensures system attributes are always present (merges if missing).
+// Load reads the schema from disk. Pure deserialization — creates default if not found.
+// System attribute enforcement is handled by migration 6 (migrations.go).
 func (m *MetaSchemaManager) Load() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -99,26 +99,6 @@ func (m *MetaSchemaManager) Load() error {
 		return fmt.Errorf("failed to parse meta schema: %w", err)
 	}
 
-	// Ensure all system attributes are present (handles upgrades)
-	def := DefaultSchema()
-	var sysWsAttrs, sysAgAttrs []MetaAttribute
-	for _, a := range def.WorkspaceAttributes {
-		if a.System {
-			sysWsAttrs = append(sysWsAttrs, a)
-		}
-	}
-	for _, a := range def.AgentAttributes {
-		if a.System {
-			sysAgAttrs = append(sysAgAttrs, a)
-		}
-	}
-	changed := false
-	changed = m.ensureSystemAttrs(&m.schema.WorkspaceAttributes, sysWsAttrs) || changed
-	changed = m.ensureSystemAttrs(&m.schema.AgentAttributes, sysAgAttrs) || changed
-
-	if changed {
-		return m.save()
-	}
 	return nil
 }
 

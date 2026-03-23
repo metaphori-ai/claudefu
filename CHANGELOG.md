@@ -5,6 +5,11 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.4] - 2026-03-23
+
+### Changed
+- **Pure deserialization Load() methods** — Stripped all inline migration logic from `registry.go`, `workspace_registry.go`, and `meta_schema.go` `Load()` methods. All migrations now run exclusively through the sequential migration system (`migrations.go`). Load() is read → unmarshal → done. Removed dead `PopulateFromWorkspaceFiles` method (-233 lines).
+
 ## [0.5.3] - 2026-03-23
 
 ### Added

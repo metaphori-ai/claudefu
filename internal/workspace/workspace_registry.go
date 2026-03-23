@@ -50,6 +50,8 @@ func NewWorkspaceRegistry(configPath string) *WorkspaceRegistry {
 }
 
 // Load reads the registry from disk. If the file doesn't exist, starts empty.
+// Load reads the workspace registry from disk. Pure deserialization — no migrations.
+// All migrations are handled by the sequential migration system (migrations.go).
 func (r *WorkspaceRegistry) Load() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -63,72 +65,19 @@ func (r *WorkspaceRegistry) Load() error {
 		return fmt.Errorf("failed to read workspace registry: %w", err)
 	}
 
-	// Parse into raw structure to handle migration from old camelCase format
-	var rawData struct {
-		Version    int                                `json:"version"`
-		Workspaces map[string]map[string]interface{} `json:"workspaces"`
-	}
-	if err := json.Unmarshal(raw, &rawData); err != nil {
+	if err := json.Unmarshal(raw, &r.data); err != nil {
 		return fmt.Errorf("failed to parse workspace registry: %w", err)
 	}
 
-	r.data.Version = rawData.Version
-	r.data.Workspaces = make(map[string]WorkspaceInfo)
-
-	needsMigration := false
-	for wsID, rawInfo := range rawData.Workspaces {
-		info := WorkspaceInfo{
-			ID: wsID,
-		}
-
-		// Check if meta already exists (new format)
-		if metaRaw, ok := rawInfo["meta"]; ok && metaRaw != nil {
-			if metaMap, ok := metaRaw.(map[string]interface{}); ok {
-				info.Meta = make(map[string]string, len(metaMap))
-				for k, v := range metaMap {
-					if s, ok := v.(string); ok {
-						info.Meta[k] = s
-					}
-				}
-			}
-		}
-		if info.Meta == nil {
-			info.Meta = make(map[string]string)
-		}
-
-		// Migrate old camelCase fields into meta (if not already in meta)
-		migrations := map[string]string{
-			"name":     "WORKSPACE_NAME",
-			"slug":     "WORKSPACE_SLUG",
-			"sifuName": "WORKSPACE_SIFU_NAME",
-			"sifuSlug": "WORKSPACE_SIFU_SLUG",
-		}
-		for oldKey, newKey := range migrations {
-			if val, ok := rawInfo[oldKey]; ok && val != nil {
-				if s, ok := val.(string); ok && s != "" {
-					if info.Meta[newKey] == "" {
-						info.Meta[newKey] = s
-						needsMigration = true
-					}
-				}
-			}
-		}
-
-		// Ensure ID from the "id" field
-		if idVal, ok := rawInfo["id"]; ok {
-			if s, ok := idVal.(string); ok {
-				info.ID = s
-			}
-		}
-
-		r.data.Workspaces[wsID] = info
+	if r.data.Workspaces == nil {
+		r.data.Workspaces = make(map[string]WorkspaceInfo)
 	}
 
-	// Persist migrated format
-	if needsMigration {
-		log.Printf("Workspace registry: migrating camelCase fields to ALL_CAPS meta")
-		if err := r.save(); err != nil {
-			log.Printf("Warning: failed to persist workspace registry migration: %v", err)
+	// Ensure all WorkspaceInfo have initialized Meta maps
+	for wsID, info := range r.data.Workspaces {
+		if info.Meta == nil {
+			info.Meta = make(map[string]string)
+			r.data.Workspaces[wsID] = info
 		}
 	}
 
@@ -235,67 +184,6 @@ func (r *WorkspaceRegistry) GetAll() map[string]WorkspaceInfo {
 		result[k] = v
 	}
 	return result
-}
-
-// PopulateFromWorkspaceFiles scans existing workspace JSON files and registers any
-// that aren't already in the registry. Called on startup for migration.
-func (r *WorkspaceRegistry) PopulateFromWorkspaceFiles(workspacesDir string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	entries, err := os.ReadDir(workspacesDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-
-	changed := false
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
-			continue
-		}
-
-		wsID := strings.TrimSuffix(entry.Name(), ".json")
-		if _, exists := r.data.Workspaces[wsID]; exists {
-			continue // Already registered
-		}
-
-		// Read workspace file to get name
-		data, err := os.ReadFile(filepath.Join(workspacesDir, entry.Name()))
-		if err != nil {
-			continue
-		}
-
-		var ws struct {
-			ID   string `json:"id"`
-			Name string `json:"name"`
-		}
-		if err := json.Unmarshal(data, &ws); err != nil {
-			continue
-		}
-
-		name := ws.Name
-		if name == "" {
-			name = wsID
-		}
-
-		r.data.Workspaces[wsID] = WorkspaceInfo{
-			ID: wsID,
-			Meta: map[string]string{
-				"WORKSPACE_NAME": name,
-				"WORKSPACE_SLUG": Slugify(name),
-			},
-		}
-		changed = true
-		log.Printf("Workspace registry: migrated %s → %s", wsID, name)
-	}
-
-	if changed {
-		return r.save()
-	}
-	return nil
 }
 
 // save persists the registry to disk with sorted keys for deterministic output.

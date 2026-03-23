@@ -69,7 +69,8 @@ func NewAgentRegistry(configPath string) *AgentRegistry {
 }
 
 // Load reads the registry from disk. If the file doesn't exist, starts empty.
-// Automatically migrates v1 format (folder→UUID string) to v2 (folder→AgentInfo).
+// Load reads the agent registry from disk. Pure deserialization — no migrations.
+// All migrations are handled by the sequential migration system (migrations.go).
 func (r *AgentRegistry) Load() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -83,101 +84,20 @@ func (r *AgentRegistry) Load() error {
 		return err
 	}
 
-	// Peek at version to determine format
-	var versionCheck struct {
-		Version int `json:"version"`
-	}
-	if err := json.Unmarshal(raw, &versionCheck); err != nil {
+	if err := json.Unmarshal(raw, &r.data); err != nil {
 		log.Printf("Warning: corrupt agent registry at %s, starting fresh: %v", r.filePath, err)
 		return nil
 	}
 
-	if versionCheck.Version < 2 {
-		// v1 migration: folder → UUID string → folder → AgentInfo{ID: uuid}
-		var v1 registryDataV1
-		if err := json.Unmarshal(raw, &v1); err != nil {
-			log.Printf("Warning: corrupt v1 agent registry at %s, starting fresh: %v", r.filePath, err)
-			return nil
-		}
-
-		r.data = registryData{
-			Version: 2,
-			Agents:  make(map[string]AgentInfo, len(v1.Agents)),
-		}
-		for folder, id := range v1.Agents {
-			r.data.Agents[folder] = AgentInfo{ID: id}
-		}
-
-		// Persist the migrated format
-		if err := r.save(); err != nil {
-			log.Printf("Warning: failed to persist v1→v2 registry migration: %v", err)
-		}
-		log.Printf("Agent registry migrated v1→v2: %d entries", len(r.data.Agents))
-		return nil
+	if r.data.Agents == nil {
+		r.data.Agents = make(map[string]AgentInfo)
 	}
 
-	// v2 format — parse with raw map to handle migration of slug/name → meta
-	var rawData struct {
-		Version int                                `json:"version"`
-		Agents  map[string]map[string]interface{} `json:"agents"`
-	}
-	if err := json.Unmarshal(raw, &rawData); err != nil {
-		log.Printf("Warning: corrupt agent registry at %s, starting fresh: %v", r.filePath, err)
-		return nil
-	}
-
-	r.data = registryData{
-		Version: rawData.Version,
-		Agents:  make(map[string]AgentInfo, len(rawData.Agents)),
-	}
-
-	needsMigration := false
-	for folder, rawInfo := range rawData.Agents {
-		info := AgentInfo{}
-
-		// Get ID
-		if idVal, ok := rawInfo["id"]; ok {
-			if s, ok := idVal.(string); ok {
-				info.ID = s
-			}
-		}
-
-		// Get existing meta map
-		if metaRaw, ok := rawInfo["meta"]; ok && metaRaw != nil {
-			if metaMap, ok := metaRaw.(map[string]interface{}); ok {
-				info.Meta = make(map[string]string, len(metaMap))
-				for k, v := range metaMap {
-					if s, ok := v.(string); ok {
-						info.Meta[k] = s
-					}
-				}
-			}
-		}
-		info.EnsureMeta()
-
-		// Migrate old camelCase fields into meta
-		migrations := map[string]string{
-			"slug": "AGENT_SLUG",
-			"name": "AGENT_NAME",
-		}
-		for oldKey, newKey := range migrations {
-			if val, ok := rawInfo[oldKey]; ok && val != nil {
-				if s, ok := val.(string); ok && s != "" {
-					if info.Meta[newKey] == "" {
-						info.Meta[newKey] = s
-						needsMigration = true
-					}
-				}
-			}
-		}
-
-		r.data.Agents[folder] = info
-	}
-
-	if needsMigration {
-		log.Printf("Agent registry: migrating camelCase fields to ALL_CAPS meta")
-		if err := r.save(); err != nil {
-			log.Printf("Warning: failed to persist agent registry migration: %v", err)
+	// Ensure all AgentInfo have initialized Meta maps
+	for folder, info := range r.data.Agents {
+		if info.Meta == nil {
+			info.Meta = make(map[string]string)
+			r.data.Agents[folder] = info
 		}
 	}
 
