@@ -7,8 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Copy path button in Permissions directories** — Each directory row (global and agent) now has a copy-to-clipboard button next to the remove/lock icon. Shows green checkmark for 2s on success.
+
 ### Fixed
 - **Dialog backdrop drag-close bug** — Dialogs and slide-in panes no longer close when a text selection drag ends outside the dialog. Tracks mousedown origin so only deliberate backdrop clicks close the modal. Fixes DialogBase (all 12+ dialogs) and SlideInPane (tool detail, MCP settings, backlog, @references).
+- **DirectoryRow render loop** — Moved DirectoryRow to module-level component to prevent unmount/remount cycle when copy state changed.
 
 ## [0.4.31] - 2026-03-19
 
