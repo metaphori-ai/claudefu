@@ -50,10 +50,8 @@ func (a *App) ScaffoldAgent(folder, name string, opts scaffold.ScaffoldOptions) 
 	// over workspace-local name derivation.
 	agentID := a.workspace.GetOrCreateAgentID(folder)
 	slug := workspace.Slugify(name)
-	if a.workspace.Registry != nil {
-		if info := a.workspace.Registry.GetInfo(folder); info != nil && info.GetSlug() != "" {
-			slug = info.GetSlug()
-		}
+	if info := a.workspace.GetAgentInfo(folder); info != nil && info.GetSlug() != "" {
+		slug = info.GetSlug()
 	}
 	identity := scaffold.AgentIdentity{
 		ID:   agentID,
@@ -106,13 +104,11 @@ func (a *App) AddAgent(name, folder string) (*workspace.Agent, error) {
 	// canonical name (e.g., "ClaudeFu App") instead of the folder basename ("app").
 	agentName := name
 	agentSlug := ""
-	if a.workspace.Registry != nil {
-		if info := a.workspace.Registry.GetInfo(folder); info != nil {
-			if info.GetName() != "" {
-				agentName = info.GetName()
-			}
-			agentSlug = info.GetSlug()
+	if info := a.workspace.GetAgentInfo(folder); info != nil {
+		if info.GetName() != "" {
+			agentName = info.GetName()
 		}
+		agentSlug = info.GetSlug()
 	}
 
 	agent := workspace.Agent{
@@ -124,11 +120,8 @@ func (a *App) AddAgent(name, folder string) (*workspace.Agent, error) {
 	}
 
 	// Sync slug/name to global registry if not already set (new agents).
-	// Explicit user changes go through UpdateAgent → UpdateAgentMeta.
-	if a.workspace.Registry != nil {
-		if agentSlug == "" {
-			a.workspace.Registry.UpdateAgentMeta(folder, agent.GetSlug(), agentName)
-		}
+	if agentSlug == "" {
+		a.workspace.UpdateAgentIdentity(folder, agent.GetSlug(), agentName)
 	}
 
 	a.currentWorkspace.Agents = append(a.currentWorkspace.Agents, agent)
@@ -295,9 +288,7 @@ func (a *App) UpdateAgent(agent workspace.Agent) error {
 			a.currentWorkspace.Agents[i] = agent
 
 			// Sync slug/name to global registry for cross-workspace resolution
-			if a.workspace.Registry != nil {
-				a.workspace.Registry.UpdateAgentMeta(agent.Folder, agent.GetSlug(), agent.Name)
-			}
+			a.workspace.UpdateAgentIdentity(agent.Folder, agent.GetSlug(), agent.Name)
 
 			return a.workspace.SaveWorkspace(a.currentWorkspace)
 		}

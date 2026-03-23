@@ -1231,8 +1231,8 @@ func (s *MCPService) resolveAgentID(identifier string) (string, error) {
 	// Step 1: Is it a UUID? Fast path — validate against global registry
 	if _, err := uuid.Parse(identifier); err == nil {
 		// Valid UUID format — verify it exists in the global registry
-		if s.registry != nil {
-			if info, _ := s.registry.FindByID(identifier); info != nil {
+		if s.manager != nil {
+			if info, _ := s.manager.FindAgentByID(identifier); info != nil {
 				fmt.Printf("[MCP:resolveAgent] UUID '%s' found in registry (slug: %s, name: %s)\n", identifier[:8], info.GetSlug(), info.GetName())
 				return identifier, nil
 			}
@@ -1249,8 +1249,8 @@ func (s *MCPService) resolveAgentID(identifier string) (string, error) {
 	}
 
 	// Step 3: Try global registry (cross-workspace resolution)
-	if s.registry != nil {
-		if info, folder := s.registry.FindBySlug(identifier); info != nil {
+	if s.manager != nil {
+		if info, folder := s.manager.FindAgentBySlug(identifier); info != nil {
 			fmt.Printf("[MCP:resolveAgent] Cross-workspace match: '%s' → %s (folder: %s)\n", identifier, info.ID[:8], folder)
 			return info.ID, nil
 		}
@@ -1276,8 +1276,8 @@ func (s *MCPService) buildAgentNotFoundError(identifier string) error {
 	}
 
 	// Registry slugs (includes agents from other workspaces)
-	if s.registry != nil {
-		for _, slug := range s.registry.AllSlugs() {
+	if s.manager != nil {
+		for _, slug := range s.manager.AllAgentSlugs() {
 			if !seen[slug] {
 				allSlugs = append(allSlugs, slug)
 				seen[slug] = true

@@ -72,11 +72,9 @@ func (a *App) SwitchWorkspace(workspaceID string) (*workspace.Workspace, error) 
 
 	// Step 5: Migrate and reconcile agent IDs against global registry
 	ws = a.workspace.MigrateWorkspace(ws)
-	if a.workspace.Registry != nil {
-		a.reconciledIDs = a.workspace.Registry.ReconcileWorkspace(ws)
-		if len(a.reconciledIDs) > 0 {
-			fmt.Printf("[INFO] SwitchWorkspace: Reconciled %d agent IDs\n", len(a.reconciledIDs))
-		}
+	a.reconciledIDs = a.workspace.ReconcileWorkspace(ws)
+	if len(a.reconciledIDs) > 0 {
+		fmt.Printf("[INFO] SwitchWorkspace: Reconciled %d agent IDs\n", len(a.reconciledIDs))
 	}
 
 	// Step 5b: Migrate runtime fields from workspace JSON to local/ (one-time)

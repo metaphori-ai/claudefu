@@ -18,7 +18,7 @@ type MCPService struct {
 	server             *server.MCPServer
 	claude             *providers.ClaudeCodeService
 	workspace          func() *workspace.Workspace
-	registry           *workspace.AgentRegistry
+	manager            *workspace.Manager
 	emitFunc           func(types.EventEnvelope)
 	inbox              *InboxManager
 	backlog            *BacklogManager
@@ -67,9 +67,9 @@ func (s *MCPService) SetEmitFunc(emitFunc func(types.EventEnvelope)) {
 	s.emitFunc = emitFunc
 }
 
-// SetRegistry sets the global agent registry for cross-workspace slug/UUID resolution
-func (s *MCPService) SetRegistry(registry *workspace.AgentRegistry) {
-	s.registry = registry
+// SetManager sets the workspace manager for cross-workspace slug/UUID resolution
+func (s *MCPService) SetManager(manager *workspace.Manager) {
+	s.manager = manager
 }
 
 // SetActiveSessionGetter sets the function to resolve an agent slug to its active session context.

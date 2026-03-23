@@ -196,12 +196,12 @@ type Session struct {
 	Preview      string    `json:"preview"` // First user message preview
 }
 
-// Manager handles workspace operations
+// Manager handles workspace operations. Registries are private — all access goes through Manager methods.
 type Manager struct {
-	configPath         string
-	Registry           *AgentRegistry
-	WorkspaceRegistry  *WorkspaceRegistry
-	MetaSchema         *MetaSchemaManager
+	configPath        string
+	agentRegistry     *AgentRegistry
+	workspaceRegistry *WorkspaceRegistry
+	metaSchema        *MetaSchemaManager
 }
 
 // NewManager creates a new workspace manager
@@ -210,45 +210,199 @@ func NewManager(configPath string) *Manager {
 	workspacesDir := filepath.Join(configPath, "workspaces")
 	os.MkdirAll(workspacesDir, 0755)
 
-	// Initialize and load the global agent registry
+	// Initialize and load registries (pure deserialization — no migrations in Load)
 	registry := NewAgentRegistry(configPath)
 	if err := registry.Load(); err != nil {
 		fmt.Printf("Warning: failed to load agent registry: %v\n", err)
 	}
 
-	// Initialize and load the workspace registry
 	wsRegistry := NewWorkspaceRegistry(configPath)
 	if err := wsRegistry.Load(); err != nil {
 		fmt.Printf("Warning: failed to load workspace registry: %v\n", err)
 	}
-	// Migrate existing workspace files into registry
-	if err := wsRegistry.PopulateFromWorkspaceFiles(workspacesDir); err != nil {
-		fmt.Printf("Warning: failed to populate workspace registry: %v\n", err)
-	}
 
-	// Initialize and load the meta schema
 	metaSchema := NewMetaSchemaManager(configPath)
 	if err := metaSchema.Load(); err != nil {
 		fmt.Printf("Warning: failed to load meta schema: %v\n", err)
 	}
 
-	return &Manager{
+	m := &Manager{
 		configPath:        configPath,
-		Registry:          registry,
-		WorkspaceRegistry: wsRegistry,
-		MetaSchema:        metaSchema,
+		agentRegistry:     registry,
+		workspaceRegistry: wsRegistry,
+		metaSchema:        metaSchema,
+	}
+
+	// Run sequential migrations (all migration logic lives in migrations.go)
+	if err := m.RunMigrations(); err != nil {
+		fmt.Printf("Warning: migration failed: %v\n", err)
+	}
+
+	return m
+}
+
+// =============================================================================
+// MANAGER API: Agent Registry Methods
+// =============================================================================
+
+// GetOrCreateAgentID returns a stable agent ID for the given folder.
+func (m *Manager) GetOrCreateAgentID(folder string) string {
+	if m.agentRegistry != nil {
+		return m.agentRegistry.GetOrCreateID(folder)
+	}
+	return GenerateAgentID()
+}
+
+// GetAgentInfo returns the full AgentInfo for a folder. Returns nil if not registered.
+func (m *Manager) GetAgentInfo(folder string) *AgentInfo {
+	if m.agentRegistry == nil {
+		return nil
+	}
+	return m.agentRegistry.GetInfo(folder)
+}
+
+// UpdateAgentIdentity updates the AGENT_SLUG and AGENT_NAME in the agent registry.
+func (m *Manager) UpdateAgentIdentity(folder, slug, name string) {
+	if m.agentRegistry != nil {
+		m.agentRegistry.UpdateAgentMeta(folder, slug, name)
 	}
 }
 
-// GetOrCreateAgentID returns a stable agent ID for the given folder,
-// using the global registry to ensure the same folder always gets the same UUID.
-func (m *Manager) GetOrCreateAgentID(folder string) string {
-	if m.Registry != nil {
-		return m.Registry.GetOrCreateID(folder)
+// UpdateAgentCustomMeta replaces the custom meta map for an agent.
+func (m *Manager) UpdateAgentCustomMeta(folder string, meta map[string]string) error {
+	if m.agentRegistry == nil {
+		return fmt.Errorf("agent registry not initialized")
 	}
-	// Fallback if registry somehow not initialized
-	return GenerateAgentID()
+	return m.agentRegistry.UpdateAgentCustomMeta(folder, meta)
 }
+
+// FindAgentBySlug searches for an agent by slug. Returns info + folder.
+func (m *Manager) FindAgentBySlug(slug string) (*AgentInfo, string) {
+	if m.agentRegistry == nil {
+		return nil, ""
+	}
+	return m.agentRegistry.FindBySlug(slug)
+}
+
+// FindAgentByID searches for an agent by UUID. Returns info + folder.
+func (m *Manager) FindAgentByID(id string) (*AgentInfo, string) {
+	if m.agentRegistry == nil {
+		return nil, ""
+	}
+	return m.agentRegistry.FindByID(id)
+}
+
+// GetAllAgentEntries returns a copy of all agent registry entries.
+func (m *Manager) GetAllAgentEntries() map[string]AgentInfo {
+	if m.agentRegistry == nil {
+		return make(map[string]AgentInfo)
+	}
+	return m.agentRegistry.AllEntries()
+}
+
+// AllAgentSlugs returns all known agent slugs.
+func (m *Manager) AllAgentSlugs() []string {
+	if m.agentRegistry == nil {
+		return nil
+	}
+	return m.agentRegistry.AllSlugs()
+}
+
+// ReconcileWorkspace validates agent IDs against the registry.
+func (m *Manager) ReconcileWorkspace(ws *Workspace) map[string]string {
+	if m.agentRegistry == nil {
+		return nil
+	}
+	return m.agentRegistry.ReconcileWorkspace(ws)
+}
+
+// EnrichWorkspaceAgents fills Folder/Name/MCPSlug for slim-format agents.
+func (m *Manager) EnrichWorkspaceAgents(ws *Workspace) {
+	if m.agentRegistry != nil {
+		m.agentRegistry.EnrichWorkspaceAgents(ws)
+	}
+}
+
+// RegisterAgentID explicitly sets the UUID for a folder.
+func (m *Manager) RegisterAgentID(folder, id string) {
+	if m.agentRegistry != nil {
+		m.agentRegistry.RegisterID(folder, id)
+	}
+}
+
+// =============================================================================
+// MANAGER API: Workspace Registry Methods
+// =============================================================================
+
+// GetWorkspaceMeta returns workspace metadata by ID.
+func (m *Manager) GetWorkspaceMeta(wsID string) *WorkspaceInfo {
+	if m.workspaceRegistry == nil {
+		return nil
+	}
+	return m.workspaceRegistry.GetInfo(wsID)
+}
+
+// GetAllWorkspaceMeta returns all workspace metadata entries.
+func (m *Manager) GetAllWorkspaceMeta() map[string]WorkspaceInfo {
+	if m.workspaceRegistry == nil {
+		return make(map[string]WorkspaceInfo)
+	}
+	return m.workspaceRegistry.GetAll()
+}
+
+// UpdateWorkspaceMeta replaces the workspace's entire meta map.
+func (m *Manager) UpdateWorkspaceMeta(wsID string, meta map[string]string) error {
+	if m.workspaceRegistry == nil {
+		return fmt.Errorf("workspace registry not initialized")
+	}
+	return m.workspaceRegistry.UpdateMeta(wsID, meta)
+}
+
+// SyncWorkspaceName updates the workspace name in the registry.
+func (m *Manager) SyncWorkspaceName(wsID, name string) {
+	if m.workspaceRegistry != nil {
+		m.workspaceRegistry.SyncName(wsID, name)
+	}
+}
+
+// DeleteWorkspaceMeta removes a workspace from the registry.
+func (m *Manager) DeleteWorkspaceMeta(wsID string) {
+	if m.workspaceRegistry != nil {
+		m.workspaceRegistry.Delete(wsID)
+	}
+}
+
+// GetOrCreateWorkspaceMeta returns workspace info, creating if not found.
+func (m *Manager) GetOrCreateWorkspaceMeta(wsID, name string) *WorkspaceInfo {
+	if m.workspaceRegistry == nil {
+		return nil
+	}
+	return m.workspaceRegistry.GetOrCreateInfo(wsID, name)
+}
+
+// =============================================================================
+// MANAGER API: Meta Schema Methods
+// =============================================================================
+
+// GetMetaSchema returns the current meta schema.
+func (m *Manager) GetMetaSchema() MetaSchema {
+	if m.metaSchema == nil {
+		return DefaultSchema()
+	}
+	return m.metaSchema.GetSchema()
+}
+
+// SaveMetaSchema validates and persists the meta schema.
+func (m *Manager) SaveMetaSchema(schema MetaSchema) error {
+	if m.metaSchema == nil {
+		return fmt.Errorf("meta schema not initialized")
+	}
+	return m.metaSchema.SaveSchema(schema)
+}
+
+// =============================================================================
+// WORKSPACE OPERATIONS
+// =============================================================================
 
 // HasAgentWithFolder checks if any agent in the workspace already has the given folder.
 func HasAgentWithFolder(ws *Workspace, folder string) bool {
@@ -560,8 +714,8 @@ func (m *Manager) LoadWorkspace(id string) (*Workspace, error) {
 	// Enrich agents with name/folder/slug from the registry (v4 slim format).
 	// Safe to call on old-format workspaces: EnrichWorkspaceAgents skips agents
 	// that already have Folder populated.
-	if m.Registry != nil {
-		m.Registry.EnrichWorkspaceAgents(&ws)
+	if m.agentRegistry != nil {
+		m.agentRegistry.EnrichWorkspaceAgents(&ws)
 	}
 
 	return &ws, nil
@@ -586,8 +740,8 @@ func (m *Manager) CreateWorkspace(name string) (*Workspace, error) {
 	}
 
 	// Register in workspace registry
-	if m.WorkspaceRegistry != nil {
-		m.WorkspaceRegistry.GetOrCreateInfo(ws.ID, ws.Name)
+	if m.workspaceRegistry != nil {
+		m.workspaceRegistry.GetOrCreateInfo(ws.ID, ws.Name)
 	}
 
 	// Set as current workspace
@@ -960,8 +1114,8 @@ func (m *Manager) DeleteWorkspace(id string) error {
 	}
 
 	// Remove from workspace registry
-	if m.WorkspaceRegistry != nil {
-		m.WorkspaceRegistry.Delete(id)
+	if m.workspaceRegistry != nil {
+		m.workspaceRegistry.Delete(id)
 	}
 
 	return nil
@@ -984,8 +1138,8 @@ func (m *Manager) RenameWorkspace(id string, newName string) error {
 	}
 
 	// Sync name to workspace registry
-	if m.WorkspaceRegistry != nil {
-		m.WorkspaceRegistry.SyncName(id, newName)
+	if m.workspaceRegistry != nil {
+		m.workspaceRegistry.SyncName(id, newName)
 	}
 
 	return nil

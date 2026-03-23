@@ -240,11 +240,9 @@ func (a *App) loadCurrentWorkspace() {
 	ws = a.workspace.MigrateWorkspace(ws)
 
 	// Reconcile agent IDs against global registry (ensures same folder = same UUID)
-	if a.workspace.Registry != nil {
-		a.reconciledIDs = a.workspace.Registry.ReconcileWorkspace(ws)
-		if len(a.reconciledIDs) > 0 {
-			fmt.Printf("[INFO] Reconciled %d agent IDs against global registry\n", len(a.reconciledIDs))
-		}
+	a.reconciledIDs = a.workspace.ReconcileWorkspace(ws)
+	if len(a.reconciledIDs) > 0 {
+		fmt.Printf("[INFO] Reconciled %d agent IDs against global registry\n", len(a.reconciledIDs))
 	}
 
 	// Migrate runtime fields from workspace JSON to local/workspace-state/ (one-time).
@@ -427,10 +425,8 @@ func (a *App) initializeMCPServer() {
 		return a.currentWorkspace
 	})
 
-	// Set up global agent registry for cross-workspace slug/UUID resolution
-	if a.workspace.Registry != nil {
-		a.mcpServer.SetRegistry(a.workspace.Registry)
-	}
+	// Set up workspace manager for cross-workspace slug/UUID resolution
+	a.mcpServer.SetManager(a.workspace)
 
 	// Set up active session getter for synthetic JSONL writes (ExitPlanMode)
 	a.mcpServer.SetActiveSessionGetter(func(agentSlug string) (agentID, sessionID, folder, slug string) {
