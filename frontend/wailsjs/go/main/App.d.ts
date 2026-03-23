@@ -287,6 +287,6 @@ export function UpdateAgentRegistryMeta(arg1:string,arg2:Record<string, string>)
 
 export function UpdateBacklogItem(arg1:mcpserver.BacklogItem):Promise<boolean>;
 
-export function UpdateWorkspaceMeta(arg1:string,arg2:workspace.WorkspaceInfo):Promise<void>;
+export function UpdateWorkspaceMeta(arg1:string,arg2:Record<string, string>):Promise<void>;
 
 export function WriteTerminal(arg1:string,arg2:string):Promise<void>;

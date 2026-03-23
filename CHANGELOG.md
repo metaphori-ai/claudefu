@@ -5,6 +5,17 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-03-23
+
+### Added
+- **File attribute type** — Meta schema now supports `file` type alongside text/textarea/folder. File type renders a text input + Browse button using native file picker (vs directory picker for folder type).
+
+### Changed
+- **WorkspaceInfo NAMES fix** — Flattened `WorkspaceInfo` struct: removed dedicated `name`, `slug`, `sifuName`, `sifuSlug` fields. All values now stored in `meta` map with ALL_CAPS keys matching attribute definitions (e.g., `WORKSPACE_NAME`, `WORKSPACE_SIFU_SLUG`). Eliminates NAMES violation where JSON keys were camelCase but attributes were ALL_CAPS.
+- **Workspace registry migration** — On startup, automatically migrates old camelCase fields (`name`→`WORKSPACE_NAME`, `slug`→`WORKSPACE_SLUG`, etc.) into `meta` map. One-time migration, persisted immediately.
+- **Browse paths normalized** — Folder and file Browse results in Workspaces & Agents dialog now normalize to `~/` prefix via `NormalizeDirPath`.
+- **Removed default AGENT_TDA_ROOT and AGENT_MODULE** — Only `AGENT_DESCRIPTION` ships as a default custom agent attribute. Users add others via Schema tab.
+
 ## [0.5.0] - 2026-03-23
 
 ### Added

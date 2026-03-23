@@ -50,23 +50,25 @@ func (a *App) GetAllWorkspaceRegistryInfo() (map[string]workspace.WorkspaceInfo,
 }
 
 // UpdateWorkspaceMeta updates workspace metadata in the registry.
-// If the name changed, also syncs to the workspace JSON file.
-func (a *App) UpdateWorkspaceMeta(workspaceID string, info workspace.WorkspaceInfo) error {
+// Meta is the complete map of ALL_CAPS keys → values.
+// If WORKSPACE_NAME changed, also syncs to the workspace JSON file.
+func (a *App) UpdateWorkspaceMeta(workspaceID string, meta map[string]string) error {
 	if a.workspace == nil || a.workspace.WorkspaceRegistry == nil {
 		return fmt.Errorf("workspace registry not initialized")
 	}
 
 	// Check if name changed — need to sync to workspace JSON
 	existing := a.workspace.WorkspaceRegistry.GetInfo(workspaceID)
-	nameChanged := existing != nil && info.Name != "" && info.Name != existing.Name
+	newName := meta["WORKSPACE_NAME"]
+	nameChanged := existing != nil && newName != "" && newName != existing.GetName()
 
-	if err := a.workspace.WorkspaceRegistry.UpdateMeta(workspaceID, info); err != nil {
+	if err := a.workspace.WorkspaceRegistry.UpdateMeta(workspaceID, meta); err != nil {
 		return err
 	}
 
 	// Sync name change to workspace JSON
 	if nameChanged {
-		if err := a.workspace.RenameWorkspace(workspaceID, info.Name); err != nil {
+		if err := a.workspace.RenameWorkspace(workspaceID, newName); err != nil {
 			fmt.Printf("[WARN] Failed to sync workspace name to JSON: %v\n", err)
 		}
 	}
@@ -119,12 +121,12 @@ func (a *App) GetWorkspaceSifuFolder(workspaceID string) string {
 		return ""
 	}
 
-	slug := wsInfo.SifuSlug
-	if slug == "" && wsInfo.SifuName != "" {
-		slug = workspace.Slugify(wsInfo.SifuName)
+	slug := wsInfo.GetSifuSlug()
+	if slug == "" && wsInfo.GetSifuName() != "" {
+		slug = workspace.Slugify(wsInfo.GetSifuName())
 	}
 	if slug == "" {
-		slug = workspace.Slugify(wsInfo.Name)
+		slug = workspace.Slugify(wsInfo.GetName())
 	}
 	if slug == "" {
 		return ""

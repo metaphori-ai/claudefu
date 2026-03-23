@@ -6,8 +6,8 @@ import {
   GetMetaSchema, SaveMetaSchema,
   GetAllWorkspaceRegistryInfo, UpdateWorkspaceMeta,
   GetAllAgentRegistryInfo, UpdateAgentRegistryMeta,
-  GetWorkspaceSifuFolder, SelectDirectory,
-  GetWorkspaceAgentFolders,
+  GetWorkspaceSifuFolder, SelectDirectory, SelectFile,
+  GetWorkspaceAgentFolders, NormalizeDirPath,
 } from '../../wailsjs/go/main/App';
 import { workspace } from '../../wailsjs/go/models';
 
@@ -41,7 +41,7 @@ const AUTO_DERIVE: Record<string, string> = {
   AGENT_NAME: 'AGENT_SLUG',
 };
 
-// Check if a workspace has any blank custom meta values (needs attention)
+// Check if a workspace has any blank non-system meta values (needs attention)
 function hasBlankMeta(info: workspace.WorkspaceInfo, schema: workspace.MetaSchema | null): boolean {
   if (!schema) return false;
   const customAttrs = schema.workspaceAttributes.filter(a => !a.system);
@@ -157,23 +157,12 @@ export function WorkspaceMetaDialog({ isOpen, onClose }: WorkspaceMetaDialogProp
         await SaveMetaSchema(schema);
       }
 
-      // Save workspace draft if on workspaces tab and has changes
+      // Save workspace draft if has changes — merge draft into existing meta
       if (selectedWsId && Object.keys(wsDraft).length > 0) {
         const existing = workspaceInfos[selectedWsId];
         if (existing) {
-          const customMeta: Record<string, string> = { ...(existing.meta || {}) };
-          for (const [k, v] of Object.entries(wsDraft)) {
-            if (!SYSTEM_WORKSPACE_ATTRS.has(k)) customMeta[k] = v;
-          }
-          const info = new workspace.WorkspaceInfo({
-            ...existing,
-            name: wsDraft.WORKSPACE_NAME || existing.name,
-            slug: wsDraft.WORKSPACE_SLUG || existing.slug,
-            sifuName: 'WORKSPACE_SIFU_NAME' in wsDraft ? wsDraft.WORKSPACE_SIFU_NAME : existing.sifuName,
-            sifuSlug: 'WORKSPACE_SIFU_SLUG' in wsDraft ? wsDraft.WORKSPACE_SIFU_SLUG : existing.sifuSlug,
-            meta: customMeta,
-          });
-          await UpdateWorkspaceMeta(selectedWsId, info);
+          const mergedMeta: Record<string, string> = { ...(existing.meta || {}), ...wsDraft };
+          await UpdateWorkspaceMeta(selectedWsId, mergedMeta);
         }
       }
 
@@ -217,14 +206,8 @@ export function WorkspaceMetaDialog({ isOpen, onClose }: WorkspaceMetaDialogProp
     if (attrName in wsDraft) return wsDraft[attrName];
     const info = workspaceInfos[selectedWsId];
     if (!info) return '';
-    switch (attrName) {
-      case 'WORKSPACE_NAME': return info.name || '';
-      case 'WORKSPACE_SLUG': return info.slug || '';
-      case 'WORKSPACE_ID': return info.id || '';
-      case 'WORKSPACE_SIFU_NAME': return info.sifuName || '';
-      case 'WORKSPACE_SIFU_SLUG': return info.sifuSlug || '';
-      default: return info.meta?.[attrName] || '';
-    }
+    if (attrName === 'WORKSPACE_ID') return info.id || '';
+    return info.meta?.[attrName] || '';
   };
 
   const setWsValue = (attrName: string, value: string) => {
@@ -234,11 +217,9 @@ export function WorkspaceMetaDialog({ isOpen, onClose }: WorkspaceMetaDialogProp
     if (deriveTo) {
       const info = workspaceInfos[selectedWsId];
       // Get the original stored slug (not from draft)
-      let originalSlug = '';
-      if (deriveTo === 'WORKSPACE_SLUG') originalSlug = info?.slug || '';
-      else if (deriveTo === 'WORKSPACE_SIFU_SLUG') originalSlug = info?.sifuSlug || '';
+      const originalSlug = info?.meta?.[deriveTo] || '';
       // Get the original source name to see if slug was auto-derived
-      const originalSource = attrName === 'WORKSPACE_NAME' ? info?.name : info?.sifuName;
+      const originalSource = info?.meta?.[attrName] || '';
       const slugWasAutoDerived = !originalSlug || originalSlug === slugify(originalSource || '');
       // Only auto-derive if user hasn't manually customized the slug
       const slugManuallyEdited = deriveTo in wsDraft && wsDraft[deriveTo] !== slugify(wsDraft[attrName] || originalSource || '');
@@ -392,12 +373,17 @@ export function WorkspaceMetaDialog({ isOpen, onClose }: WorkspaceMetaDialogProp
               onFocus={e => { if (!isReadonly) e.currentTarget.style.borderColor = '#d97757'; }}
               onBlur={e => { e.currentTarget.style.borderColor = isReadonly ? '#222' : '#333'; }}
             />
-            {attr.type === 'folder' && !isReadonly && (
+            {(attr.type === 'folder' || attr.type === 'file') && !isReadonly && (
               <button
                 onClick={async () => {
                   try {
-                    const selected = await SelectDirectory('Select Folder');
-                    if (selected) setValue(attr.name, selected);
+                    const selected = attr.type === 'folder'
+                      ? await SelectDirectory('Select Folder')
+                      : await SelectFile('Select File');
+                    if (selected) {
+                      const normalized = await NormalizeDirPath(selected);
+                      setValue(attr.name, normalized);
+                    }
                   } catch { /* cancelled */ }
                 }}
                 style={{
@@ -491,6 +477,7 @@ export function WorkspaceMetaDialog({ isOpen, onClose }: WorkspaceMetaDialogProp
             <option value="text">text</option>
             <option value="textarea">textarea</option>
             <option value="folder">folder</option>
+            <option value="file">file</option>
           </select>
           <input
             type="text"
@@ -526,7 +513,7 @@ export function WorkspaceMetaDialog({ isOpen, onClose }: WorkspaceMetaDialogProp
 
   const wsIds = useMemo(() =>
     Object.keys(workspaceInfos).sort((a, b) =>
-      (workspaceInfos[a].name || '').localeCompare(workspaceInfos[b].name || '')
+      (workspaceInfos[a].meta?.WORKSPACE_NAME || '').localeCompare(workspaceInfos[b].meta?.WORKSPACE_NAME || '')
     ), [workspaceInfos]);
 
   const renderWorkspacesTab = () => {
@@ -551,7 +538,7 @@ export function WorkspaceMetaDialog({ isOpen, onClose }: WorkspaceMetaDialogProp
               const needsAttention = hasBlankMeta(info, schema);
               return (
                 <option key={id} value={id}>
-                  {info.name || id}{id === workspaceId ? ' (current)' : ''}{needsAttention ? ' *' : ''}
+                  {info.meta?.WORKSPACE_NAME || id}{id === workspaceId ? ' (current)' : ''}{needsAttention ? ' *' : ''}
                 </option>
               );
             })}
@@ -639,7 +626,7 @@ export function WorkspaceMetaDialog({ isOpen, onClose }: WorkspaceMetaDialogProp
           >
             <option value="all">All Agents</option>
             {Object.entries(workspaceInfos).map(([id, info]) => (
-              <option key={id} value={id}>{info.name || id}</option>
+              <option key={id} value={id}>{info.meta?.WORKSPACE_NAME || id}</option>
             ))}
           </select>
         </div>

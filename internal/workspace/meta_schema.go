@@ -228,8 +228,8 @@ func validateCustomAttribute(a MetaAttribute, isAgent bool) error {
 	if isAgent && !strings.HasPrefix(a.Name, "AGENT_") {
 		return fmt.Errorf("agent attribute must start with AGENT_: %s", a.Name)
 	}
-	if a.Type != "text" && a.Type != "textarea" && a.Type != "folder" {
-		return fmt.Errorf("invalid attribute type %q for %s (must be text, textarea, or folder)", a.Type, a.Name)
+	if a.Type != "text" && a.Type != "textarea" && a.Type != "folder" && a.Type != "file" {
+		return fmt.Errorf("invalid attribute type %q for %s (must be text, textarea, folder, or file)", a.Type, a.Name)
 	}
 	return nil
 }

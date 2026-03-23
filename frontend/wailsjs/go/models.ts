@@ -1231,10 +1231,6 @@ export namespace workspace {
 	}
 	export class WorkspaceInfo {
 	    id: string;
-	    name?: string;
-	    slug?: string;
-	    sifuName?: string;
-	    sifuSlug?: string;
 	    meta?: Record<string, string>;
 	
 	    static createFrom(source: any = {}) {
@@ -1244,10 +1240,6 @@ export namespace workspace {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
-	        this.name = source["name"];
-	        this.slug = source["slug"];
-	        this.sifuName = source["sifuName"];
-	        this.sifuSlug = source["sifuSlug"];
 	        this.meta = source["meta"];
 	    }
 	}

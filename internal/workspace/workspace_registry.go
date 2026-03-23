@@ -12,14 +12,18 @@ import (
 )
 
 // WorkspaceInfo holds the full identity and metadata for a registered workspace.
+// All values (system + custom) are stored in the Meta map with ALL_CAPS keys.
+// This ensures NAMES consistency — JSON keys match attribute definitions exactly.
 type WorkspaceInfo struct {
-	ID       string            `json:"id"`
-	Name     string            `json:"name,omitempty"`
-	Slug     string            `json:"slug,omitempty"`
-	SifuName string            `json:"sifuName,omitempty"`
-	SifuSlug string            `json:"sifuSlug,omitempty"`
-	Meta     map[string]string `json:"meta,omitempty"` // Custom attribute values (ALL_CAPS keys)
+	ID   string            `json:"id"`
+	Meta map[string]string `json:"meta,omitempty"` // ALL_CAPS keys (WORKSPACE_NAME, WORKSPACE_SLUG, etc.)
 }
+
+// Helper accessors for common fields
+func (w *WorkspaceInfo) GetName() string     { return w.Meta["WORKSPACE_NAME"] }
+func (w *WorkspaceInfo) GetSlug() string     { return w.Meta["WORKSPACE_SLUG"] }
+func (w *WorkspaceInfo) GetSifuName() string { return w.Meta["WORKSPACE_SIFU_NAME"] }
+func (w *WorkspaceInfo) GetSifuSlug() string { return w.Meta["WORKSPACE_SIFU_SLUG"] }
 
 type workspaceRegistryData struct {
 	Version    int                      `json:"version"`
@@ -59,12 +63,73 @@ func (r *WorkspaceRegistry) Load() error {
 		return fmt.Errorf("failed to read workspace registry: %w", err)
 	}
 
-	if err := json.Unmarshal(raw, &r.data); err != nil {
+	// Parse into raw structure to handle migration from old camelCase format
+	var rawData struct {
+		Version    int                                `json:"version"`
+		Workspaces map[string]map[string]interface{} `json:"workspaces"`
+	}
+	if err := json.Unmarshal(raw, &rawData); err != nil {
 		return fmt.Errorf("failed to parse workspace registry: %w", err)
 	}
 
-	if r.data.Workspaces == nil {
-		r.data.Workspaces = make(map[string]WorkspaceInfo)
+	r.data.Version = rawData.Version
+	r.data.Workspaces = make(map[string]WorkspaceInfo)
+
+	needsMigration := false
+	for wsID, rawInfo := range rawData.Workspaces {
+		info := WorkspaceInfo{
+			ID: wsID,
+		}
+
+		// Check if meta already exists (new format)
+		if metaRaw, ok := rawInfo["meta"]; ok && metaRaw != nil {
+			if metaMap, ok := metaRaw.(map[string]interface{}); ok {
+				info.Meta = make(map[string]string, len(metaMap))
+				for k, v := range metaMap {
+					if s, ok := v.(string); ok {
+						info.Meta[k] = s
+					}
+				}
+			}
+		}
+		if info.Meta == nil {
+			info.Meta = make(map[string]string)
+		}
+
+		// Migrate old camelCase fields into meta (if not already in meta)
+		migrations := map[string]string{
+			"name":     "WORKSPACE_NAME",
+			"slug":     "WORKSPACE_SLUG",
+			"sifuName": "WORKSPACE_SIFU_NAME",
+			"sifuSlug": "WORKSPACE_SIFU_SLUG",
+		}
+		for oldKey, newKey := range migrations {
+			if val, ok := rawInfo[oldKey]; ok && val != nil {
+				if s, ok := val.(string); ok && s != "" {
+					if info.Meta[newKey] == "" {
+						info.Meta[newKey] = s
+						needsMigration = true
+					}
+				}
+			}
+		}
+
+		// Ensure ID from the "id" field
+		if idVal, ok := rawInfo["id"]; ok {
+			if s, ok := idVal.(string); ok {
+				info.ID = s
+			}
+		}
+
+		r.data.Workspaces[wsID] = info
+	}
+
+	// Persist migrated format
+	if needsMigration {
+		log.Printf("Workspace registry: migrating camelCase fields to ALL_CAPS meta")
+		if err := r.save(); err != nil {
+			log.Printf("Warning: failed to persist workspace registry migration: %v", err)
+		}
 	}
 
 	return nil
@@ -93,22 +158,24 @@ func (r *WorkspaceRegistry) GetOrCreateInfo(workspaceID, name string) *Workspace
 	}
 
 	info := WorkspaceInfo{
-		ID:   workspaceID,
-		Name: name,
-		Slug: Slugify(name),
+		ID: workspaceID,
+		Meta: map[string]string{
+			"WORKSPACE_NAME": name,
+			"WORKSPACE_SLUG": Slugify(name),
+		},
 	}
 	r.data.Workspaces[workspaceID] = info
 	if err := r.save(); err != nil {
 		log.Printf("Warning: failed to persist workspace registry: %v", err)
 	}
-	log.Printf("Workspace registry: new entry %s → %s (%s)", workspaceID, name, info.Slug)
+	log.Printf("Workspace registry: new entry %s → %s (%s)", workspaceID, name, info.GetSlug())
 	cp := info
 	return &cp
 }
 
-// UpdateMeta updates workspace metadata. Only non-empty string fields and non-nil meta are applied.
-// The Meta map is replaced entirely (not merged) when non-nil — frontend sends the full map.
-func (r *WorkspaceRegistry) UpdateMeta(workspaceID string, update WorkspaceInfo) error {
+// UpdateMeta replaces the workspace's entire meta map.
+// Frontend sends the complete map — all values (system + custom) in ALL_CAPS keys.
+func (r *WorkspaceRegistry) UpdateMeta(workspaceID string, meta map[string]string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -117,35 +184,9 @@ func (r *WorkspaceRegistry) UpdateMeta(workspaceID string, update WorkspaceInfo)
 		return fmt.Errorf("workspace not found in registry: %s", workspaceID)
 	}
 
-	changed := false
-
-	if update.Name != "" && info.Name != update.Name {
-		info.Name = update.Name
-		changed = true
-	}
-	if update.Slug != "" && info.Slug != update.Slug {
-		info.Slug = update.Slug
-		changed = true
-	}
-	if update.SifuName != "" && info.SifuName != update.SifuName {
-		info.SifuName = update.SifuName
-		changed = true
-	}
-	if update.SifuSlug != "" && info.SifuSlug != update.SifuSlug {
-		info.SifuSlug = update.SifuSlug
-		changed = true
-	}
-	// Meta map: replace entirely when provided (allows clearing values)
-	if update.Meta != nil {
-		info.Meta = update.Meta
-		changed = true
-	}
-
-	if changed {
-		r.data.Workspaces[workspaceID] = info
-		return r.save()
-	}
-	return nil
+	info.Meta = meta
+	r.data.Workspaces[workspaceID] = info
+	return r.save()
 }
 
 // SyncName updates the workspace name in the registry. Called on workspace rename.
@@ -157,11 +198,14 @@ func (r *WorkspaceRegistry) SyncName(workspaceID, name string) {
 	if !exists {
 		return
 	}
-	if info.Name == name {
+	if info.Meta == nil {
+		info.Meta = make(map[string]string)
+	}
+	if info.Meta["WORKSPACE_NAME"] == name {
 		return
 	}
 
-	info.Name = name
+	info.Meta["WORKSPACE_NAME"] = name
 	r.data.Workspaces[workspaceID] = info
 	if err := r.save(); err != nil {
 		log.Printf("Warning: failed to sync workspace name to registry: %v", err)
@@ -238,9 +282,11 @@ func (r *WorkspaceRegistry) PopulateFromWorkspaceFiles(workspacesDir string) err
 		}
 
 		r.data.Workspaces[wsID] = WorkspaceInfo{
-			ID:   wsID,
-			Name: name,
-			Slug: Slugify(name),
+			ID: wsID,
+			Meta: map[string]string{
+				"WORKSPACE_NAME": name,
+				"WORKSPACE_SLUG": Slugify(name),
+			},
 		}
 		changed = true
 		log.Printf("Workspace registry: migrated %s → %s", wsID, name)
