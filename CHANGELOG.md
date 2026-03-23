@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **Dialog backdrop drag-close bug** — Dialogs and slide-in panes no longer close when a text selection drag ends outside the dialog. Tracks mousedown origin so only deliberate backdrop clicks close the modal. Fixes DialogBase (all 12+ dialogs) and SlideInPane (tool detail, MCP settings, backlog, @references).
 - **DirectoryRow render loop** — Moved DirectoryRow to module-level component to prevent unmount/remount cycle when copy state changed.
+- **Sifu tab alignment** — Fixed text centering in Global Settings Sifu tab; labels and descriptions now left-aligned.
 
 ## [0.4.31] - 2026-03-19
 

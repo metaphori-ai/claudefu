@@ -11,6 +11,8 @@ import {
   SaveGlobalClaudeMD,
   GetDefaultTemplateMD,
   SaveDefaultTemplateMD,
+  SelectDirectory,
+  NormalizeDirPath,
 } from '../../wailsjs/go/main/App';
 import { settings } from '../../wailsjs/go/models';
 import {
@@ -32,7 +34,7 @@ interface EnvVar {
   value: string;
 }
 
-type TabId = 'env' | 'tools' | 'directories' | 'global-claude-md' | 'default-claude-md';
+type TabId = 'env' | 'tools' | 'directories' | 'global-claude-md' | 'default-claude-md' | 'sifu';
 
 export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogProps) {
   // Tab state
@@ -52,6 +54,10 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
   const [defaultTemplateMD, setDefaultTemplateMD] = useState('');
   const [claudeMDViewMode, setClaudeMDViewMode] = useState<'edit' | 'preview'>('edit');
   const [mdSaved, setMdSaved] = useState(false);
+
+  // Sifu state
+  const [sifuEnabled, setSifuEnabled] = useState(false);
+  const [sifuRootFolder, setSifuRootFolder] = useState('');
 
   // Shared state
   const [isSaving, setIsSaving] = useState(false);
@@ -97,6 +103,10 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
         }
       }
       setEnvVars(vars);
+
+      // Load Sifu settings
+      setSifuEnabled(settingsResult.sifuEnabled || false);
+      setSifuRootFolder(settingsResult.sifuRootFolder || '');
 
       // Convert permission sets to plain objects
       const plainSets: PermissionSet[] = permSetsResult.map(s => ({
@@ -153,6 +163,8 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
         const updatedSettings = new settings.Settings({
           ...currentSettings,
           claudeEnvVars: envMap,
+          sifuEnabled,
+          sifuRootFolder,
         });
         await Promise.all([
           SaveSettings(updatedSettings),
@@ -166,7 +178,7 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
     } finally {
       setIsSaving(false);
     }
-  }, [activeTab, envVars, globalPermissions, globalClaudeMD, defaultTemplateMD, onClose]);
+  }, [activeTab, envVars, globalPermissions, globalClaudeMD, defaultTemplateMD, sifuEnabled, sifuRootFolder, onClose]);
 
   // CMD-S to save
   useSaveShortcut(isOpen, handleSave);
@@ -519,6 +531,7 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
     { id: 'directories', label: 'Directories' },
     { id: 'global-claude-md', label: 'Global CLAUDE.md' },
     { id: 'default-claude-md', label: 'Default CLAUDE.md' },
+    { id: 'sifu', label: 'Sifu' },
   ];
 
   return (
@@ -593,6 +606,132 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
               )}
               {activeTab === 'default-claude-md' && renderClaudeMDTab(
                 defaultTemplateMD, setDefaultTemplateMD, '~/.claudefu/default-templates/CLAUDE.md'
+              )}
+              {activeTab === 'sifu' && (
+                <div style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1.5rem', textAlign: 'left' }}>
+                  <div style={{
+                    fontSize: '0.8rem',
+                    color: '#666',
+                    lineHeight: 1.5,
+                  }}>
+                    Sifu is a workspace-level agent with access to all agent folders. It can coordinate work across your entire workspace.
+                  </div>
+
+                  {/* Enable toggle */}
+                  <label style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.75rem',
+                    cursor: 'pointer',
+                    padding: '0.75rem',
+                    background: '#151515',
+                    borderRadius: '8px',
+                    border: '1px solid #222',
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={sifuEnabled}
+                      onChange={(e) => setSifuEnabled(e.target.checked)}
+                      style={{
+                        width: '18px',
+                        height: '18px',
+                        accentColor: '#d97757',
+                        cursor: 'pointer',
+                      }}
+                    />
+                    <div>
+                      <div style={{ color: '#ccc', fontSize: '0.9rem', fontWeight: 500 }}>
+                        Enable Sifu Agent
+                      </div>
+                      <div style={{ color: '#666', fontSize: '0.75rem', marginTop: '0.2rem' }}>
+                        Adds a Sifu agent to your workspace with cross-agent access
+                      </div>
+                    </div>
+                  </label>
+
+                  {/* Root folder */}
+                  <div>
+                    <div style={{
+                      fontSize: '0.85rem',
+                      fontWeight: 600,
+                      color: '#ccc',
+                      marginBottom: '0.5rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.4rem',
+                    }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                      </svg>
+                      Sifu Root Folder
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '0.5rem' }}>
+                      The folder where the Sifu agent runs. Supports <code style={{
+                        background: '#1a1a1a',
+                        padding: '0.1rem 0.3rem',
+                        borderRadius: '3px',
+                        fontSize: '0.7rem',
+                      }}>~/</code> prefix.
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <input
+                        type="text"
+                        value={sifuRootFolder}
+                        onChange={(e) => setSifuRootFolder(e.target.value)}
+                        placeholder="~/path/to/sifu-workspace"
+                        style={{
+                          flex: 1,
+                          padding: '0.5rem 0.75rem',
+                          borderRadius: '6px',
+                          border: '1px solid #333',
+                          background: '#0d0d0d',
+                          color: '#ccc',
+                          fontSize: '0.85rem',
+                          fontFamily: 'monospace',
+                          outline: 'none',
+                        }}
+                      />
+                      <button
+                        onClick={async () => {
+                          try {
+                            const selected = await SelectDirectory('Select Sifu Root Folder');
+                            if (selected) {
+                              const normalized = await NormalizeDirPath(selected);
+                              setSifuRootFolder(normalized);
+                            }
+                          } catch (err) {
+                            console.error('Failed to select directory:', err);
+                          }
+                        }}
+                        style={{
+                          padding: '0.5rem 0.75rem',
+                          borderRadius: '6px',
+                          border: '1px solid #444',
+                          background: 'transparent',
+                          color: '#888',
+                          fontSize: '0.85rem',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.4rem',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = '#666';
+                          e.currentTarget.style.color = '#ccc';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = '#444';
+                          e.currentTarget.style.color = '#888';
+                        }}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                        </svg>
+                        Browse
+                      </button>
+                    </div>
+                  </div>
+                </div>
               )}
             </>
           )}
