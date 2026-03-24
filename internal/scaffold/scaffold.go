@@ -53,11 +53,10 @@ func CheckAgentSetup(folder string) (*ScaffoldCheck, error) {
 		return nil, err
 	}
 
-	// Projects dir + sessions-index.json
+	// Projects dir — exists if directory is present (sessions-index.json may be absent in older Claude Code versions)
 	encoded := encodeProjectPath(folder)
 	projectDir := filepath.Join(home, ".claude", "projects", encoded)
-	indexPath := filepath.Join(projectDir, "sessions-index.json")
-	if _, err := os.Stat(indexPath); err == nil {
+	if info, err := os.Stat(projectDir); err == nil && info.IsDir() {
 		check.HasProjectsDir = true
 	}
 
