@@ -154,8 +154,8 @@ func (m *Manager) collectAgentMeta(folder string) map[string]string {
 	return values
 }
 
-// RefreshSifuAgent regenerates the Sifu CLAUDE.md from templates.
-// Called when agents are added/removed/slug changed.
+// RefreshSifuAgent regenerates the Sifu CLAUDE.md AND permissions.
+// User-triggered only (not automatic) — call from UI "Regenerate" button.
 func (m *Manager) RefreshSifuAgent(ws *Workspace, sifuEnabled bool, sifuRootFolder string) error {
 	if !sifuEnabled || sifuRootFolder == "" {
 		return nil

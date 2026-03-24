@@ -415,13 +415,13 @@ func (m *Manager) EnsureSifuAgent(ws *Workspace, sifuEnabled bool, sifuRootFolde
 		fmt.Printf("[INFO] EnsureSifuAgent: added sifu agent %s to workspace %s\n", sifuSlug, ws.ID)
 	}
 
-	// Generate CLAUDE.md if missing (don't overwrite user customizations)
-	claudeMdPath := filepath.Join(sifuFolder, "CLAUDE.md")
-	if _, err := os.Stat(claudeMdPath); os.IsNotExist(err) {
-		if genErr := m.GenerateSifuClaudeMD(ws, sifuFolder); genErr != nil {
-			fmt.Printf("[WARN] EnsureSifuAgent: failed to generate CLAUDE.md: %v\n", genErr)
-		}
+	// Always refresh permissions (additive merge of all agent folders)
+	if genErr := m.GenerateSifuPermissions(ws, sifuFolder); genErr != nil {
+		fmt.Printf("[WARN] EnsureSifuAgent: failed to generate permissions: %v\n", genErr)
 	}
+
+	// CLAUDE.md is NOT auto-generated — user triggers via RefreshSifuAgent
+	// Only generate on first creation (scaffold flow handles this)
 
 	return nil
 }
