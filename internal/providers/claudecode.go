@@ -21,12 +21,11 @@ var (
 	claudePath     string
 	claudePathOnce sync.Once
 
-	// shellPATH is the user's full PATH from their login shell.
-	// macOS GUI apps inherit a minimal PATH from launchd (/usr/bin:/bin:/usr/sbin:/sbin),
-	// missing Homebrew, Go, nvm, cargo, pyenv, etc. We resolve the real PATH once at startup
-	// by sourcing the user's shell config, then inject it into all spawned Claude processes.
-	shellPATH     string
-	shellPATHOnce sync.Once
+	// shellPATH is the user's full PATH for spawned processes.
+	// Resolved once at startup from ~/.claudefu/bashrc (if exists) or login shell fallback.
+	shellPATH       string
+	shellPATHSource string // "bashrc" or "login-shell" — for diagnostic logging
+	shellPATHOnce   sync.Once
 )
 
 // findClaudeBinary searches for the claude binary in common locations
@@ -65,10 +64,37 @@ func findClaudeBinary() string {
 	return ""
 }
 
-// resolveShellPATH gets the user's full PATH by spawning a login shell.
-// This is needed because macOS GUI apps only get the minimal launchd PATH.
-func resolveShellPATH() string {
-	// Determine user's shell
+// resolveShellPATH gets the user's full PATH for spawned processes.
+// Priority: ~/.claudefu/bashrc (if exists) → login shell fallback.
+//
+// If ~/.claudefu/bashrc exists, it is sourced to resolve PATH. This lets users
+// curate a clean PATH without macOS/Apple cruft. The file is sourced with bash
+// regardless of the user's default shell.
+//
+// If no bashrc exists, falls back to spawning the user's login shell ($SHELL -l)
+// which sources ~/.zshrc or equivalent.
+func resolveShellPATH() (string, string) {
+	// Check for custom ~/.claudefu/bashrc first
+	home, err := os.UserHomeDir()
+	if err != nil {
+		home = os.Getenv("HOME")
+	}
+	customRC := filepath.Join(home, ".claudefu", "bashrc")
+	if _, err := os.Stat(customRC); err == nil {
+		// Source the custom bashrc and print PATH
+		cmd := exec.Command("/bin/bash", "-c", fmt.Sprintf("source %q && echo $PATH", customRC))
+		cmd.Env = os.Environ()
+		out, err := cmd.Output()
+		if err == nil {
+			result := strings.TrimSpace(string(out))
+			if result != "" {
+				return result, "bashrc"
+			}
+		}
+		// Fall through to login shell if custom bashrc failed
+	}
+
+	// Fallback: resolve from user's login shell
 	shell := os.Getenv("SHELL")
 	if shell == "" {
 		shell = "/bin/zsh" // macOS default
@@ -80,17 +106,23 @@ func resolveShellPATH() string {
 	cmd.Env = os.Environ() // inherit current env so HOME etc. are set
 	out, err := cmd.Output()
 	if err != nil {
-		return ""
+		return "", ""
 	}
-	return strings.TrimSpace(string(out))
+	return strings.TrimSpace(string(out)), "login-shell"
 }
 
 // GetShellPATH returns the user's full shell PATH (resolved once, cached).
 func GetShellPATH() string {
 	shellPATHOnce.Do(func() {
-		shellPATH = resolveShellPATH()
+		shellPATH, shellPATHSource = resolveShellPATH()
 	})
 	return shellPATH
+}
+
+// GetShellPATHSource returns the source of the resolved PATH ("bashrc" or "login-shell").
+func GetShellPATHSource() string {
+	GetShellPATH() // ensure resolved
+	return shellPATHSource
 }
 
 // BuildShellEnv returns an environment slice with the user's full shell PATH.

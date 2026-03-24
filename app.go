@@ -410,8 +410,9 @@ func (a *App) restoreAgentSessionWatches() {
 // initializeClaude initializes the Claude CLI integration
 func (a *App) initializeClaude() {
 	// Eagerly resolve the user's shell PATH (macOS GUI apps only get minimal launchd PATH)
+	// Sources ~/.claudefu/bashrc if it exists, otherwise falls back to login shell
 	if shellPATH := providers.GetShellPATH(); shellPATH != "" {
-		wailsrt.LogInfo(a.ctx, "Shell PATH resolved from login shell")
+		wailsrt.LogInfo(a.ctx, fmt.Sprintf("Shell PATH resolved from %s", providers.GetShellPATHSource()))
 	} else {
 		wailsrt.LogWarning(a.ctx, "Could not resolve shell PATH — spawned processes may have limited PATH")
 	}
