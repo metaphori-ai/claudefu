@@ -422,6 +422,10 @@ export function RefreshSifuAgent() {
   return window['go']['main']['App']['RefreshSifuAgent']();
 }
 
+export function RefreshSifuPermissions() {
+  return window['go']['main']['App']['RefreshSifuPermissions']();
+}
+
 export function RejectPlanReview(arg1, arg2) {
   return window['go']['main']['App']['RejectPlanReview'](arg1, arg2);
 }

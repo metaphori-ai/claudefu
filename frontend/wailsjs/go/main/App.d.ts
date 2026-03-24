@@ -221,6 +221,8 @@ export function RefreshSessions(arg1:string):Promise<Array<types.Session>>;
 
 export function RefreshSifuAgent():Promise<void>;
 
+export function RefreshSifuPermissions():Promise<void>;
+
 export function RejectPlanReview(arg1:string,arg2:string):Promise<void>;
 
 export function ReloadCurrentWorkspace():Promise<workspace.Workspace>;

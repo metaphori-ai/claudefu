@@ -937,14 +937,24 @@ function AgentRow({
             onRemove={() => onRemove(agent.id)}
             onClose={onCloseMenu}
             isSifu={agent.type === 'sifu'}
-            onRefreshSifu={agent.type === 'sifu' ? async () => {
+            onRefreshSifuPermissions={agent.type === 'sifu' ? async () => {
+              onCloseMenu();
+              try {
+                const { RefreshSifuPermissions } = await import('../../wailsjs/go/main/App');
+                await RefreshSifuPermissions();
+                console.log('Sifu permissions refreshed');
+              } catch (err) {
+                console.error('Failed to refresh sifu permissions:', err);
+              }
+            } : undefined}
+            onRegenerateSifuClaudeMD={agent.type === 'sifu' ? async () => {
               onCloseMenu();
               try {
                 const { RefreshSifuAgent } = await import('../../wailsjs/go/main/App');
                 await RefreshSifuAgent();
                 console.log('Sifu CLAUDE.md + permissions regenerated');
               } catch (err) {
-                console.error('Failed to refresh sifu:', err);
+                console.error('Failed to regenerate sifu CLAUDE.md:', err);
               }
             } : undefined}
           />
