@@ -1,4 +1,4 @@
-# {PROJECT_NAME}
+# {{ AGENT_SLUG }}
 
 ## Development Commands
 

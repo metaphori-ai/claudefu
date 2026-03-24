@@ -814,7 +814,9 @@ function AgentRow({
           display: 'flex',
           alignItems: 'center',
           padding: '0.75rem 1rem',
-          background: isSelected ? '#1a1a1a' : 'transparent',
+          background: agent.type === 'sifu'
+            ? (isSelected ? 'rgba(217, 119, 87, 0.13)' : 'rgba(217, 119, 87, 0.08)')
+            : (isSelected ? '#1a1a1a' : 'transparent'),
           borderBottom: '1px solid #1a1a1a',
           position: 'relative',
           cursor: 'pointer'
@@ -883,9 +885,18 @@ function AgentRow({
                 style={{ marginRight: '6px', verticalAlign: 'middle', opacity: 0.85 }}
               />
             )}
-            <span style={{ fontWeight: agent.type === 'sifu' ? 600 : undefined }}>
+            <span style={{ fontWeight: (agent.type === 'sifu' || isSelected) ? 600 : undefined }}>
               {agent.slug || agent.id}
             </span>
+            {agent.type === 'sifu' && (
+              <img
+                src="/assets/claude-fu-icon.png"
+                width="16"
+                height="12"
+                alt=""
+                style={{ marginLeft: '6px', verticalAlign: 'middle', opacity: 0.85 }}
+              />
+            )}
           </span>
         )}
 

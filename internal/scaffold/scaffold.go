@@ -147,7 +147,8 @@ func ensureClaudeProjectsDir(folder string) error {
 
 // ensureClaudeMD copies the CLAUDE.md template to the agent folder if missing.
 // Reads from ~/.claudefu/default-templates/CLAUDE.md (user-customizable).
-// Replaces {PROJECT_NAME}, {AGENT_ID}, and {AGENT_SLUG} with actual values.
+// Replaces {{ KEY }} placeholders with actual values (consistent with template engine).
+// Also supports legacy {KEY} format for backward compatibility with user-customized templates.
 func ensureClaudeMD(folder, configPath string, identity AgentIdentity) error {
 	target := filepath.Join(folder, "CLAUDE.md")
 	if _, err := os.Stat(target); err == nil {
@@ -162,7 +163,15 @@ func ensureClaudeMD(folder, configPath string, identity AgentIdentity) error {
 	}
 
 	projectName := filepath.Base(folder)
-	content := strings.ReplaceAll(string(tmpl), "{PROJECT_NAME}", projectName)
+	content := string(tmpl)
+
+	// New {{ KEY }} format (consistent with Sifu template engine)
+	content = strings.ReplaceAll(content, "{{ AGENT_SLUG }}", identity.Slug)
+	content = strings.ReplaceAll(content, "{{ AGENT_ID }}", identity.ID)
+	content = strings.ReplaceAll(content, "{{ PROJECT_NAME }}", projectName)
+
+	// Legacy {KEY} format (backward compat with user-customized templates)
+	content = strings.ReplaceAll(content, "{PROJECT_NAME}", projectName)
 	content = strings.ReplaceAll(content, "{AGENT_ID}", identity.ID)
 	content = strings.ReplaceAll(content, "{AGENT_SLUG}", identity.Slug)
 
