@@ -98,7 +98,7 @@ function workspaceReducer(state: WorkspaceState, action: WorkspaceAction): Works
       return {
         ...state,
         agents: state.agents.map(a =>
-          a.id === action.payload.agentId ? { ...a, name: action.payload.name } : a
+          a.id === action.payload.agentId ? { ...a, slug: action.payload.name } : a
         ),
       };
 

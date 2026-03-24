@@ -172,7 +172,7 @@ export function ManageAgentsDialog({
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    {agent.name}
+                    {agent.slug}
                     {isCurrent && !isSelected && (
                       <span style={{ color: '#666', fontSize: '0.75rem', marginLeft: '0.5rem' }}>(current)</span>
                     )}
@@ -198,7 +198,7 @@ export function ManageAgentsDialog({
                 >
                   {/* Rename button */}
                   <button
-                    onClick={() => setRenameAgent({ id: agent.id, name: agent.name })}
+                    onClick={() => setRenameAgent({ id: agent.id, name: agent.slug || '' })}
                     style={{
                       background: 'none',
                       border: 'none',
@@ -387,7 +387,7 @@ export function ManageAgentsDialog({
         onClose={() => setDeleteAgentId(null)}
         onConfirm={handleDelete}
         title="Remove Agent"
-        message={`Are you sure you want to remove "${agentToDelete?.name}"? This will not delete any files, but will remove the agent from this workspace.`}
+        message={`Are you sure you want to remove "${agentToDelete?.slug}"? This will not delete any files, but will remove the agent from this workspace.`}
         confirmText="Remove"
         danger
       />

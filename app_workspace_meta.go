@@ -59,7 +59,7 @@ func (a *App) UpdateWorkspaceMeta(workspaceID string, meta map[string]string) er
 	// Check if name changed — need to sync to workspace JSON
 	existing := a.workspace.GetWorkspaceMeta(workspaceID)
 	newName := meta["WORKSPACE_NAME"]
-	nameChanged := existing != nil && newName != "" && newName != existing.GetName()
+	nameChanged := existing != nil && newName != "" && newName != existing.GetSlug()
 
 	if err := a.workspace.UpdateWorkspaceMeta(workspaceID, meta); err != nil {
 		return err

@@ -158,7 +158,7 @@ func (a *App) SetActiveSession(agentID, sessionID string) error {
 				// Same folder - check if the other agent is already watching this session
 				currentActiveAgent, currentActiveSession := a.rt.GetActiveSession()
 				if currentActiveAgent == otherAgent.ID && currentActiveSession == sessionID {
-					return fmt.Errorf("session %s is already active in agent '%s'", sessionID[:8], otherAgent.Name)
+					return fmt.Errorf("session %s is already active in agent '%s'", sessionID[:8], otherAgent.GetSlug())
 				}
 			}
 		}

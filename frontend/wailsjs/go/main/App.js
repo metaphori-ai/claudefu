@@ -402,6 +402,10 @@ export function RejectPlanReview(arg1, arg2) {
   return window['go']['main']['App']['RejectPlanReview'](arg1, arg2);
 }
 
+export function ReloadCurrentWorkspace() {
+  return window['go']['main']['App']['ReloadCurrentWorkspace']();
+}
+
 export function RemoveAgent(arg1) {
   return window['go']['main']['App']['RemoveAgent'](arg1);
 }

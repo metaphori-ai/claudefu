@@ -31,6 +31,8 @@ var allMigrations = []Migration{
 	{4, "agents-camelcase-to-allcaps-meta", migrateAgentsCamelCaseToMeta},
 	{5, "workspaces-camelcase-to-allcaps-meta", migrateWorkspacesCamelCaseToMeta},
 	{6, "meta-schema-ensure-system-attrs", migrateInitMetaIfNilSchemaSystemAttrs},
+	{7, "remove-agent-name-from-meta", migrateRemoveAgentName},
+	{8, "fix-agent-slug-description", migrateFixAgentSlugDescription},
 }
 
 // RunMigrations runs all pending migrations in order.
@@ -444,5 +446,144 @@ func migrateInitMetaIfNilSchemaSystemAttrs(configPath string, m *Manager) error 
 		}
 		log.Printf("Migration 6: ensured system attributes in meta-schema.json")
 	}
+	return nil
+}
+
+// =============================================================================
+// Migration 7: Remove AGENT_NAME from agent registry meta
+// =============================================================================
+
+func migrateRemoveAgentName(configPath string, m *Manager) error {
+	allAgents := m.agentRegistry.GetAllInfo()
+	changed := false
+
+	for folder, info := range allAgents {
+		if info.Meta == nil {
+			continue
+		}
+
+		// If AGENT_SLUG is empty but AGENT_NAME exists, copy name → slug first
+		if info.Meta["AGENT_SLUG"] == "" && info.Meta["AGENT_NAME"] != "" {
+			info.Meta["AGENT_SLUG"] = Slugify(info.Meta["AGENT_NAME"])
+			changed = true
+		}
+
+		// Remove AGENT_NAME
+		if _, exists := info.Meta["AGENT_NAME"]; exists {
+			delete(info.Meta, "AGENT_NAME")
+			changed = true
+		}
+
+		if changed {
+			m.agentRegistry.mu.Lock()
+			m.agentRegistry.data.Agents[folder] = info
+			m.agentRegistry.mu.Unlock()
+		}
+	}
+
+	if changed {
+		m.agentRegistry.mu.Lock()
+		err := m.agentRegistry.save()
+		m.agentRegistry.mu.Unlock()
+		if err != nil {
+			return err
+		}
+		log.Printf("Migration 7: removed AGENT_NAME from agent registry meta")
+	}
+
+	// Also remove AGENT_NAME from meta-schema if present
+	schema := m.metaSchema.GetSchema()
+	filtered := make([]MetaAttribute, 0, len(schema.AgentAttributes))
+	schemaChanged := false
+	for _, attr := range schema.AgentAttributes {
+		if attr.Name == "AGENT_NAME" {
+			schemaChanged = true
+			continue // Remove AGENT_NAME entirely
+		}
+		// Update AGENT_SLUG description to remove "MCP" prefix
+		if attr.Name == "AGENT_SLUG" && strings.Contains(attr.Description, "MCP") {
+			attr.Description = "Agent identifier (displayed in sidebar, used for MCP)"
+			schemaChanged = true
+		}
+		filtered = append(filtered, attr)
+	}
+	if schemaChanged {
+		schema.AgentAttributes = filtered
+		m.metaSchema.mu.Lock()
+		m.metaSchema.schema = schema
+		err := m.metaSchema.save()
+		m.metaSchema.mu.Unlock()
+		if err != nil {
+			return err
+		}
+		log.Printf("Migration 7: removed AGENT_NAME from meta-schema.json")
+	}
+
+	return nil
+}
+
+// =============================================================================
+// Migration 8: Fix AGENT_SLUG description and remove any remaining AGENT_NAME
+// =============================================================================
+
+func migrateFixAgentSlugDescription(configPath string, m *Manager) error {
+	schema := m.metaSchema.GetSchema()
+	changed := false
+
+	// Remove AGENT_NAME if still present (idempotent with migration 7)
+	filtered := make([]MetaAttribute, 0, len(schema.AgentAttributes))
+	for _, attr := range schema.AgentAttributes {
+		if attr.Name == "AGENT_NAME" {
+			changed = true
+			continue
+		}
+		// Fix AGENT_SLUG description
+		if attr.Name == "AGENT_SLUG" && (strings.Contains(attr.Description, "MCP") || attr.Description == "Agent identifier slug") {
+			attr.Description = "Agent identifier (displayed in sidebar, used for MCP)"
+			changed = true
+		}
+		filtered = append(filtered, attr)
+	}
+
+	if changed {
+		schema.AgentAttributes = filtered
+		m.metaSchema.mu.Lock()
+		m.metaSchema.schema = schema
+		err := m.metaSchema.save()
+		m.metaSchema.mu.Unlock()
+		if err != nil {
+			return err
+		}
+		log.Printf("Migration 8: fixed AGENT_SLUG description, removed AGENT_NAME")
+	}
+
+	// Also clean up any remaining AGENT_NAME from agent registry meta
+	allAgents := m.agentRegistry.GetAllInfo()
+	registryChanged := false
+	for folder, info := range allAgents {
+		if info.Meta == nil {
+			continue
+		}
+		if _, exists := info.Meta["AGENT_NAME"]; exists {
+			if info.Meta["AGENT_SLUG"] == "" && info.Meta["AGENT_NAME"] != "" {
+				info.Meta["AGENT_SLUG"] = Slugify(info.Meta["AGENT_NAME"])
+			}
+			delete(info.Meta, "AGENT_NAME")
+			m.agentRegistry.mu.Lock()
+			m.agentRegistry.data.Agents[folder] = info
+			m.agentRegistry.mu.Unlock()
+			registryChanged = true
+		}
+	}
+	if registryChanged {
+		m.agentRegistry.mu.Lock()
+		err := m.agentRegistry.save()
+		m.agentRegistry.mu.Unlock()
+		if err != nil {
+			return err
+		}
+		log.Printf("Migration 8: cleaned AGENT_NAME from agent registry")
+	}
+
 	return nil
 }

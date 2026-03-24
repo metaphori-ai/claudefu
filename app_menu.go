@@ -146,7 +146,7 @@ func (a *App) populateAgentMenu(agentMenu *menu.Menu) {
 	// Add agent items as radio buttons (clicking switches to that agent)
 	for _, agent := range a.currentWorkspace.Agents {
 		agentID := agent.ID // Capture for closure
-		agentName := agent.Name
+		agentName := agent.GetSlug()
 		isSelected := agent.ID == selectedAgentID
 
 		// Use AddRadio instead of AddText for checkmark

@@ -47,12 +47,12 @@ export function useWorkspace() {
     dispatch({ type: 'REMOVE_AGENT', payload: agentId });
   }, [dispatch]);
 
-  const renameAgent = useCallback((agentId: string, name: string) => {
-    dispatch({ type: 'RENAME_AGENT', payload: { agentId, name } });
+  const renameAgent = useCallback((agentId: string, slug: string) => {
+    dispatch({ type: 'RENAME_AGENT', payload: { agentId, name: slug } });
     // Persist to backend so agents.json and workspace file stay current
     const agent = state.agents.find(a => a.id === agentId);
     if (agent) {
-      UpdateAgent({ ...agent, name }).catch(err =>
+      UpdateAgent({ ...agent, slug }).catch(err =>
         console.error('Failed to persist agent rename:', err)
       );
     }

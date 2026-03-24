@@ -20,6 +20,7 @@ type TabId = 'ws-schema' | 'agent-schema' | 'workspaces' | 'agents';
 interface WorkspaceMetaDialogProps {
   isOpen: boolean;
   onClose: () => void;
+  onSaved?: () => void;  // Called after successful save — triggers agent refresh in parent
 }
 
 function slugify(name: string): string {
@@ -32,13 +33,12 @@ const SYSTEM_WORKSPACE_ATTRS = new Set([
   'WORKSPACE_SIFU_NAME', 'WORKSPACE_SIFU_SLUG',
 ]);
 const SYSTEM_AGENT_ATTRS = new Set([
-  'AGENT_NAME', 'AGENT_SLUG', 'AGENT_ID',
+  'AGENT_SLUG', 'AGENT_ID',
   'AGENT_FOLDER', 'AGENT_CLAUDE_PROJECT_FOLDER',
 ]);
 const AUTO_DERIVE: Record<string, string> = {
   WORKSPACE_NAME: 'WORKSPACE_SLUG',
   WORKSPACE_SIFU_NAME: 'WORKSPACE_SIFU_SLUG',
-  AGENT_NAME: 'AGENT_SLUG',
 };
 
 // Check if a workspace has any blank non-system meta values (needs attention)
@@ -61,7 +61,7 @@ function hasBlankAgentMeta(info: workspace.AgentInfo, schema: workspace.MetaSche
 // Component
 // ---------------------------------------------------------------------------
 
-export function WorkspaceMetaDialog({ isOpen, onClose }: WorkspaceMetaDialogProps) {
+export function WorkspaceMetaDialog({ isOpen, onClose, onSaved }: WorkspaceMetaDialogProps) {
   const [activeTab, setActiveTab] = useState<TabId>('workspaces');
   const [schema, setSchema] = useState<workspace.MetaSchema | null>(null);
   const [workspaceInfos, setWorkspaceInfos] = useState<Record<string, workspace.WorkspaceInfo>>({});
@@ -84,7 +84,7 @@ export function WorkspaceMetaDialog({ isOpen, onClose }: WorkspaceMetaDialogProp
   // Agent tab: dropdown selector + workspace filter
   const [selectedAgentFolder, setSelectedAgentFolder] = useState<string>('');
   const [agentDraft, setAgentDraft] = useState<Record<string, string>>({});
-  const [agentWsFilter, setAgentWsFilter] = useState<string>('all');
+  const [agentWsFilter, setAgentWsFilter] = useState<string>('');
   const [wsAgentFolders, setWsAgentFolders] = useState<string[] | null>(null); // null = "all"
 
   const { workspaceId, agents } = useWorkspace();
@@ -122,9 +122,11 @@ export function WorkspaceMetaDialog({ isOpen, onClose }: WorkspaceMetaDialogProp
         setSelectedWsId(ids.length > 0 ? ids[0] : '');
       }
 
-      // Auto-select first agent
-      const folders = Object.keys(agResult);
-      setSelectedAgentFolder(folders.length > 0 ? folders[0] : '');
+      // Default workspace filter to current workspace
+      setAgentWsFilter(workspaceId || 'all');
+
+      // Start with "Select Agent" (empty) — user picks from dropdown
+      setSelectedAgentFolder('');
 
       setLoading(false);
     }).catch(err => {
@@ -166,19 +168,21 @@ export function WorkspaceMetaDialog({ isOpen, onClose }: WorkspaceMetaDialogProp
         }
       }
 
-      // Save agent draft if has changes
+      // Save agent draft if has changes — merge ALL draft values into meta (system + custom)
       if (selectedAgentFolder && Object.keys(agentDraft).length > 0) {
         const existing = agentInfos[selectedAgentFolder];
         if (existing) {
-          const meta: Record<string, string> = { ...(existing.meta || {}) };
-          for (const [k, v] of Object.entries(agentDraft)) {
-            if (!SYSTEM_AGENT_ATTRS.has(k)) meta[k] = v;
-          }
+          const meta: Record<string, string> = { ...(existing.meta || {}), ...agentDraft };
+          // Remove read-only fields that shouldn't be saved (they're derived)
+          delete meta['AGENT_ID'];
+          delete meta['AGENT_FOLDER'];
+          delete meta['AGENT_CLAUDE_PROJECT_FOLDER'];
           await UpdateAgentMeta(selectedAgentFolder, meta);
         }
       }
 
       setSaved(true);
+      onSaved?.(); // Trigger agent refresh in parent (App.tsx)
 
       // Reload data to reflect saved state
       const [wsResult, agResult] = await Promise.all([
@@ -599,7 +603,7 @@ export function WorkspaceMetaDialog({ isOpen, onClose }: WorkspaceMetaDialogProp
             {filteredAgentFolders.map(folder => {
               const info = agentInfos[folder];
               const needsAttention = info ? hasBlankAgentMeta(info, schema) : true;
-              const name = info?.meta?.AGENT_NAME || folder.split('/').pop() || folder;
+              const name = info?.meta?.AGENT_SLUG || folder.split('/').pop() || folder;
               return (
                 <option key={folder} value={folder}>
                   {name}{needsAttention ? ' *' : ''}

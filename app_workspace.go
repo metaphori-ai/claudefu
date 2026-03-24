@@ -38,6 +38,21 @@ func (a *App) GetCurrentWorkspace() *workspace.Workspace {
 	return a.currentWorkspace
 }
 
+// ReloadCurrentWorkspace reloads the current workspace from disk with fresh registry data.
+// Called by frontend after saving to registries (meta dialog, MCP settings) to ensure
+// all UIs see updated agent identity (name, slug, description from PopulateAgentsFromRegistry).
+func (a *App) ReloadCurrentWorkspace() (*workspace.Workspace, error) {
+	if a.workspace == nil || a.currentWorkspace == nil {
+		return nil, fmt.Errorf("no workspace loaded")
+	}
+	ws, err := a.workspace.LoadWorkspace(a.currentWorkspace.ID)
+	if err != nil {
+		return nil, err
+	}
+	a.currentWorkspace = ws
+	return ws, nil
+}
+
 // SwitchWorkspace performs a clean workspace switch with full state teardown
 func (a *App) SwitchWorkspace(workspaceID string) (*workspace.Workspace, error) {
 	fmt.Printf("[DEBUG] SwitchWorkspace called: workspaceID=%s\n", workspaceID)

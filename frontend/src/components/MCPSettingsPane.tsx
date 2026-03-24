@@ -38,8 +38,7 @@ export function MCPSettingsPane({
   const [port, setPort] = useState(mcpConfig?.port || 9315);
   const [agentSettings, setAgentSettings] = useState<Map<string, {
     mcpEnabled: boolean;
-    mcpSlug: string;
-    mcpDescription: string;
+    description: string;
   }>>(new Map());
 
   // Tool instructions state
@@ -60,12 +59,11 @@ export function MCPSettingsPane({
 
   // Initialize agent settings when pane opens or agents change
   useEffect(() => {
-    const settings = new Map<string, { mcpEnabled: boolean; mcpSlug: string; mcpDescription: string }>();
+    const settings = new Map<string, { mcpEnabled: boolean; description: string }>();
     for (const agent of agents) {
       settings.set(agent.id, {
         mcpEnabled: agent.mcpEnabled !== false, // Default true
-        mcpSlug: agent.mcpSlug || '',
-        mcpDescription: agent.mcpDescription || '',
+        description: agent.description || '',
       });
     }
     setAgentSettings(settings);
@@ -142,8 +140,7 @@ export function MCPSettingsPane({
       return {
         ...agent,
         mcpEnabled: settings?.mcpEnabled ?? true,
-        mcpSlug: settings?.mcpSlug || undefined,
-        mcpDescription: settings?.mcpDescription || undefined,
+        description: settings?.description || undefined,
       };
     });
 
@@ -173,20 +170,19 @@ export function MCPSettingsPane({
 
   const updateAgentSetting = (
     agentId: string,
-    field: 'mcpEnabled' | 'mcpSlug' | 'mcpDescription',
+    field: 'mcpEnabled' | 'description',
     value: boolean | string
   ) => {
     setAgentSettings(prev => {
       const next = new Map(prev);
-      const current = next.get(agentId) || { mcpEnabled: true, mcpSlug: '', mcpDescription: '' };
+      const current = next.get(agentId) || { mcpEnabled: true, description: '' };
       next.set(agentId, { ...current, [field]: value });
       return next;
     });
   };
 
   const getEffectiveSlug = (agent: workspace.Agent): string => {
-    const settings = agentSettings.get(agent.id);
-    return settings?.mcpSlug || slugify(agent.name);
+    return agent.slug || slugify(agent.folder?.split('/').pop() || agent.id);
   };
 
   // Update tool availability
@@ -382,7 +378,7 @@ export function MCPSettingsPane({
                         />
                       </label>
                       <span style={{ color: isEnabled ? '#fff' : '#666', fontWeight: 500 }}>
-                        {agent.name}
+                        {agent.slug}
                       </span>
                       <span style={{
                         color: '#8b5cf6',
@@ -398,28 +394,6 @@ export function MCPSettingsPane({
                     {/* Agent Settings (only if enabled) */}
                     {isEnabled && enabled && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', paddingLeft: '1.5rem' }}>
-                        {/* Custom Slug */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                          <label style={{ color: '#666', fontSize: '0.8rem', minWidth: '80px' }}>
-                            Custom slug:
-                          </label>
-                          <input
-                            type="text"
-                            value={settings?.mcpSlug || ''}
-                            onChange={(e) => updateAgentSetting(agent.id, 'mcpSlug', e.target.value)}
-                            placeholder={slugify(agent.name)}
-                            style={{
-                              flex: 1,
-                              padding: '0.4rem 0.6rem',
-                              borderRadius: '4px',
-                              border: '1px solid #333',
-                              background: '#0a0a0a',
-                              color: '#fff',
-                              fontSize: '0.85rem',
-                            }}
-                          />
-                        </div>
-
                         {/* Description */}
                         <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem' }}>
                           <label style={{ color: '#666', fontSize: '0.8rem', minWidth: '80px', marginTop: '0.4rem' }}>
@@ -427,8 +401,8 @@ export function MCPSettingsPane({
                           </label>
                           <input
                             type="text"
-                            value={settings?.mcpDescription || ''}
-                            onChange={(e) => updateAgentSetting(agent.id, 'mcpDescription', e.target.value)}
+                            value={settings?.description || ''}
+                            onChange={(e) => updateAgentSetting(agent.id, 'description', e.target.value)}
                             placeholder="What this agent knows about..."
                             style={{
                               flex: 1,
@@ -470,11 +444,11 @@ export function MCPSettingsPane({
                 .filter(a => agentSettings.get(a.id)?.mcpEnabled !== false)
                 .map(agent => {
                   const settings = agentSettings.get(agent.id);
-                  const slug = settings?.mcpSlug || slugify(agent.name);
-                  const desc = settings?.mcpDescription;
+                  const slug = agent.slug || slugify(agent.folder?.split('/').pop() || agent.id);
+                  const desc = settings?.description;
                   return (
                     <div key={agent.id} style={{ color: '#8b5cf6' }}>
-                      - {slug}: {desc || `(${agent.name})`}
+                      - {slug}{desc ? `: ${desc}` : ''}
                     </div>
                   );
                 })}

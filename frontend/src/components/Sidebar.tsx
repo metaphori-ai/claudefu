@@ -23,7 +23,7 @@ import { InboxDialog } from './InboxDialog';
 import { BacklogPane } from './BacklogPane';
 import { BacklogEditorDialog } from './BacklogEditorDialog';
 import { GlobalSettingsDialog } from './GlobalSettingsDialog';
-import { WorkspaceMetaDialog } from './WorkspaceMetaDialog';
+// WorkspaceMetaDialog rendered in App.tsx for access to refreshAgentsFromBackend
 import { ConfirmDialog } from './ConfirmDialog';
 import { RefreshMenu } from '../../wailsjs/go/main/App';
 import { workspace, types } from '../../wailsjs/go/models';
@@ -41,6 +41,7 @@ interface SidebarProps {
   onSessionsDialogClose?: () => void;       // Callback when sessions dialog closes
   onNewSessionStart?: () => void;           // Called when new session creation starts (for spinner)
   onNewSessionComplete?: () => void;        // Called when new session creation completes
+  onOpenWorkspaceMeta?: () => void;         // Open Workspaces & Agents dialog (rendered in App.tsx)
 }
 
 export function Sidebar({
@@ -51,6 +52,7 @@ export function Sidebar({
   onSessionsDialogClose,
   onNewSessionStart,
   onNewSessionComplete,
+  onOpenWorkspaceMeta,
 }: SidebarProps) {
   // Use context hooks instead of local state
   const {
@@ -88,7 +90,6 @@ export function Sidebar({
   const [renameSessionDialog, setRenameSessionDialog] = useState<{ agent: Agent; session: Session } | null>(null);
   const [sessionsDialogAgent, setSessionsDialogAgent] = useState<Agent | null>(null);
   const [showGlobalSettings, setShowGlobalSettings] = useState(false);
-  const [showWorkspaceMeta, setShowWorkspaceMeta] = useState(false);
   const [confirmRemoveAgentId, setConfirmRemoveAgentId] = useState<string | null>(null);
 
   // Backlog state
@@ -185,7 +186,7 @@ export function Sidebar({
       const names = await GetAllSessionNames(agent.id);
       setAllSessionNames(agent.id, names || {});
     } catch (err) {
-      console.error('Failed to load sessions for', agent.name, err);
+      console.error('Failed to load sessions for', agent.slug, err);
     }
   };
 
@@ -204,7 +205,7 @@ export function Sidebar({
       const names = await GetAllSessionNames(agent.id);
       setAllSessionNames(agent.id, names || {});
     } catch (err) {
-      console.error('Failed to refresh sessions for', agent.name, err);
+      console.error('Failed to refresh sessions for', agent.slug, err);
     }
   };
 
@@ -418,7 +419,7 @@ export function Sidebar({
 
   const startRename = (agent: Agent) => {
     setEditingAgentId(agent.id);
-    setEditName(agent.name);
+    setEditName(agent.slug || '');
   };
 
   const finishRename = () => {
@@ -520,7 +521,7 @@ export function Sidebar({
         {/* Workspaces & Agents Meta Button */}
         <div style={{ padding: '0 1rem 0.25rem' }}>
           <button
-            onClick={() => setShowWorkspaceMeta(true)}
+            onClick={() => onOpenWorkspaceMeta?.()}
             style={{
               width: '100%',
               padding: '0.5rem 1rem',
@@ -599,7 +600,7 @@ export function Sidebar({
       {sessionsDialogAgent && (
         <SessionsDialog
           isOpen={true}
-          agentName={sessionsDialogAgent.name}
+          agentName={sessionsDialogAgent.slug || ''}
           sessions={agentSessions.get(sessionsDialogAgent.id) || []}
           sessionNames={sessionNames.get(sessionsDialogAgent.id) || new Map()}
           currentSessionId={sessionsDialogAgent.selectedSessionId}
@@ -621,7 +622,7 @@ export function Sidebar({
         isOpen={!!renameDialogAgent}
         title="Rename Agent"
         label="Display Name"
-        value={renameDialogAgent?.name || ''}
+        value={renameDialogAgent?.slug || ''}
         placeholder="Enter agent name"
         onSubmit={(name) => {
           if (renameDialogAgent) {
@@ -652,7 +653,7 @@ export function Sidebar({
       {inboxDialogAgent && (
         <InboxDialog
           isOpen={true}
-          agentName={inboxDialogAgent.name}
+          agentName={inboxDialogAgent.slug || ''}
           messages={inboxMessages}
           selectedSessionId={selectedSessionId}
           onInject={handleInjectMessage}
@@ -668,7 +669,7 @@ export function Sidebar({
           isOpen={true}
           onClose={() => setBacklogPaneAgent(null)}
           agentId={backlogPaneAgent.id}
-          agentName={backlogPaneAgent.name}
+          agentName={backlogPaneAgent.slug || ''}
           onEditItem={handleEditBacklogItem}
           onAddItem={handleAddBacklogItem}
         />
@@ -701,11 +702,7 @@ export function Sidebar({
         onClose={() => setShowGlobalSettings(false)}
       />
 
-      {/* Workspaces & Agents Meta Dialog */}
-      <WorkspaceMetaDialog
-        isOpen={showWorkspaceMeta}
-        onClose={() => setShowWorkspaceMeta(false)}
-      />
+      {/* WorkspaceMetaDialog rendered in App.tsx for access to refreshAgentsFromBackend */}
 
       {/* Confirm Remove Agent Dialog */}
       <ConfirmDialog
@@ -724,7 +721,7 @@ export function Sidebar({
           }
         }}
         title="Remove Agent"
-        message={`Are you sure you want to remove "${agents.find(a => a.id === confirmRemoveAgentId)?.name}"? This will remove it from ClaudeFu but won't delete your project files.`}
+        message={`Are you sure you want to remove "${agents.find(a => a.id === confirmRemoveAgentId)?.slug}"? This will remove it from ClaudeFu but won't delete your project files.`}
         confirmText="Remove"
         danger
       />
@@ -848,7 +845,7 @@ function AgentRow({
               onStartRename(agent);
             }}
           >
-            {agent.name}
+            {agent.slug || agent.slug}
           </span>
         )}
 

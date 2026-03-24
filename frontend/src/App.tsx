@@ -17,6 +17,7 @@ import { StartupView } from './components/StartupView';
 import { AuthView } from './components/AuthView';
 import { NotificationToast } from './components/NotificationToast';
 import { NotificationsDialog } from './components/NotificationsDialog';
+import { WorkspaceMetaDialog } from './components/WorkspaceMetaDialog';
 import { WorkspaceProvider, SessionProvider, MessagesProvider } from './context';
 import { useWorkspace, useSession, useSelectedAgent, useSessionName, useKeyboardShortcuts, useErrorListeners, useMenuEvents, useNotifications, WailsEventHub } from './hooks';
 import { QueueWatcher } from './components/QueueWatcher';
@@ -30,6 +31,7 @@ import {
   GetAllWorkspaces,
   GetCurrentWorkspaceID,
   GetCurrentWorkspace,
+  ReloadCurrentWorkspace,
   SwitchWorkspace,
   GetSessions,
   AddAgent,
@@ -87,6 +89,7 @@ function AppContent() {
   const [terminalOpen, setTerminalOpen] = useState<boolean>(false);
   const [showAuthExpired, setShowAuthExpired] = useState<boolean>(false);
   const [rateLimitResetTime, setRateLimitResetTime] = useState<string | null>(null);
+  const [workspaceMetaOpen, setWorkspaceMetaOpen] = useState(false);
   const [scaffoldDialog, setScaffoldDialog] = useState<{
     folder: string;
     name: string;
@@ -438,7 +441,7 @@ function AppContent() {
       if (!check.hasProjectsDir || !check.hasClaudeMD || !check.hasPermissions) {
         setScaffoldDialog({
           folder: agent.folder,
-          name: agent.name,
+          name: agent.slug || '',
           check,
           isAddAgent: false,
           pendingAgentId: agentId,
@@ -584,35 +587,49 @@ function AppContent() {
     }
   };
 
+  // Reload workspace from disk (re-enriches agents from registry) — call after any dialog saves
+  const refreshAgentsFromBackend = useCallback(async () => {
+    if (!workspaceId) return;
+    try {
+      const ws = await ReloadCurrentWorkspace();
+      if (ws?.agents) {
+        setAgents(ws.agents);
+      }
+    } catch (err) {
+      console.error('Failed to refresh agents from backend:', err);
+    }
+  }, [workspaceId, setAgents]);
+
   const handleSaveMCPSettings = async (config: workspace.MCPConfig, updatedAgents: workspace.Agent[]) => {
-    // Sync slug and description changes to the agent registry (single source of truth)
+    // Save slug, description, and enabled changes to the right places
     for (const updated of updatedAgents) {
       const original = agents.find(a => a.id === updated.id);
       if (!original) continue;
 
-      // Slug changed → update via UpdateAgent (syncs to registry)
-      if (updated.mcpSlug !== original.mcpSlug) {
-        try {
-          await UpdateAgent({ ...updated });
-        } catch (err) {
-          console.error('Failed to update agent slug:', err);
-        }
-      }
-
-      // Description changed → update AGENT_DESCRIPTION in registry meta
-      if (updated.mcpDescription !== original.mcpDescription) {
+      // Description changed → save to registry meta (single source of truth)
+      // Note: slug is NOT editable in MCP Settings — managed in Workspaces & Agents dialog
+      if (updated.description !== original.description) {
         try {
           const info = await GetAgentMeta(original.folder);
-          const meta = { ...(info?.meta || {}), AGENT_DESCRIPTION: updated.mcpDescription || '' };
+          const meta = { ...(info?.meta || {}), AGENT_DESCRIPTION: updated.description || '' };
           await UpdateAgentMeta(original.folder, meta);
         } catch (err) {
           console.error('Failed to update agent description:', err);
         }
       }
+
+      // MCPEnabled is per-workspace config — save via UpdateAgent
+      if ((updated.mcpEnabled ?? true) !== (original.mcpEnabled ?? true)) {
+        try {
+          await UpdateAgent({ ...original, mcpEnabled: updated.mcpEnabled });
+        } catch (err) {
+          console.error('Failed to update agent enabled state:', err);
+        }
+      }
     }
 
     setMcpConfig(config);
-    setAgents(updatedAgents);
+    await refreshAgentsFromBackend(); // Reload from backend with fresh registry data
   };
 
   // Keyboard shortcuts
@@ -647,8 +664,8 @@ function AppContent() {
     onSelectSession: () => { if (selectedAgentId) setOpenSessionsForAgentId(selectedAgentId); },
     onRenameAgent: () => {
       if (selectedAgent) {
-        const newName = window.prompt('Rename agent:', selectedAgent.name);
-        if (newName && newName.trim() && newName !== selectedAgent.name) {
+        const newName = window.prompt('Rename agent:', selectedAgent.slug);
+        if (newName && newName.trim() && newName !== selectedAgent.slug) {
           renameAgent(selectedAgentId!, newName.trim());
         }
       }
@@ -737,7 +754,7 @@ function AppContent() {
           {selectedAgent && (
             <>
               <span style={{ color: '#333' }}>/</span>
-              <span style={{ color: '#888', fontSize: '0.9rem' }}>{selectedAgent.name}</span>
+              <span style={{ color: '#888', fontSize: '0.9rem' }}>{selectedAgent.slug}</span>
               {selectedSessionId && (
                 <>
                   <span style={{ color: '#333' }}>/</span>
@@ -931,6 +948,7 @@ function AppContent() {
           onSessionsDialogClose={() => setOpenSessionsForAgentId(null)}
           onNewSessionStart={() => setIsCreatingNewSessionExternally(true)}
           onNewSessionComplete={() => setIsCreatingNewSessionExternally(false)}
+          onOpenWorkspaceMeta={() => setWorkspaceMetaOpen(true)}
         />
 
         {/* Main Content */}
@@ -966,7 +984,7 @@ function AppContent() {
             <ChatView
               key={`${selectedAgentId}-${selectedSessionId}-${reloadKey}`}
               agentId={selectedAgentId}
-              agentName={selectedAgent?.name}
+              agentName={selectedAgent?.slug}
               folder={selectedFolder}
               sessionId={selectedSessionId}
               onSessionCreated={handleNewSessionCreated}
@@ -1050,7 +1068,7 @@ function AppContent() {
           }
         }}
         onAgentUpdated={(updatedAgent) => {
-          renameAgent(updatedAgent.id, updatedAgent.name);
+          renameAgent(updatedAgent.id, updatedAgent.slug || '');
         }}
       />
 
@@ -1091,7 +1109,7 @@ function AppContent() {
           }
         }}
         title="Remove Agent"
-        message={`Remove "${agents.find(a => a.id === confirmRemoveAgentId)?.name || 'this agent'}" from the workspace?`}
+        message={`Remove "${agents.find(a => a.id === confirmRemoveAgentId)?.slug || 'this agent'}" from the workspace?`}
         confirmText="Remove"
         danger
       />
@@ -1123,6 +1141,13 @@ function AppContent() {
         agents={agents}
         mcpConfig={mcpConfig}
         onSave={handleSaveMCPSettings}
+      />
+
+      {/* Workspaces & Agents Meta Dialog */}
+      <WorkspaceMetaDialog
+        isOpen={workspaceMetaOpen}
+        onClose={() => setWorkspaceMetaOpen(false)}
+        onSaved={refreshAgentsFromBackend}
       />
 
       {/* Notifications Dialog */}

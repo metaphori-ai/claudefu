@@ -32,13 +32,13 @@ func (s *MCPService) findMCPEnabledAgent(identifier string) *workspace.Agent {
 	for i := range ws.Agents {
 		agent := &ws.Agents[i]
 		if !agent.GetMCPEnabled() {
-			fmt.Printf("[MCP:findAgent] Skipping '%s' (slug: %s) — MCP disabled\n", agent.Name, agent.GetSlug())
+			fmt.Printf("[MCP:findAgent] Skipping '%s' (slug: %s) — MCP disabled\n", agent.GetSlug(), agent.GetSlug())
 			continue // Skip agents with MCP disabled
 		}
-		// Match by slug (custom or derived) or case-insensitive name
+		// Match by slug (case-insensitive)
 		agentSlug := strings.ToLower(agent.GetSlug())
-		if agentSlug == identifier || strings.EqualFold(agent.Name, identifier) {
-			fmt.Printf("[MCP:findAgent] Found '%s' -> %s (slug: %s, ID: %s)\n", identifier, agent.Name, agentSlug, agent.ID)
+		if agentSlug == identifier {
+			fmt.Printf("[MCP:findAgent] Found '%s' -> %s (ID: %s)\n", identifier, agentSlug, agent.ID)
 			return agent
 		}
 	}
@@ -50,7 +50,7 @@ func (s *MCPService) findMCPEnabledAgent(identifier string) *workspace.Agent {
 		if !agent.GetMCPEnabled() {
 			mcpStatus = "mcp:OFF"
 		}
-		available = append(available, fmt.Sprintf("%s (slug:%s, %s)", agent.Name, agent.GetSlug(), mcpStatus))
+		available = append(available, fmt.Sprintf("%s (slug:%s, %s)", agent.GetSlug(), agent.GetSlug(), mcpStatus))
 	}
 	fmt.Printf("[MCP:findAgent] No match for '%s'. Available agents: [%s]\n", identifier, strings.Join(available, ", "))
 	return nil
@@ -1233,7 +1233,7 @@ func (s *MCPService) resolveAgentID(identifier string) (string, error) {
 		// Valid UUID format — verify it exists in the global registry
 		if s.manager != nil {
 			if info, _ := s.manager.FindAgentByID(identifier); info != nil {
-				fmt.Printf("[MCP:resolveAgent] UUID '%s' found in registry (slug: %s, name: %s)\n", identifier[:8], info.GetSlug(), info.GetName())
+				fmt.Printf("[MCP:resolveAgent] UUID '%s' found in registry (slug: %s, name: %s)\n", identifier[:8], info.GetSlug(), info.GetSlug())
 				return identifier, nil
 			}
 		}

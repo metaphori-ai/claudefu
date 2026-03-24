@@ -26,7 +26,7 @@ func buildAgentListDescription(agents []AgentInfo) string {
 		if agent.Description != "" {
 			sb.WriteString(fmt.Sprintf("\n- %s: %s", agent.Slug, agent.Description))
 		} else {
-			sb.WriteString(fmt.Sprintf("\n- %s (%s)", agent.Slug, agent.Name))
+			sb.WriteString(fmt.Sprintf("\n- %s", agent.Slug))
 		}
 	}
 	return sb.String()

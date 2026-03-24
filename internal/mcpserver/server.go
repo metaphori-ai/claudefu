@@ -287,8 +287,8 @@ func (s *MCPService) getMCPEnabledAgentInfo() []AgentInfo {
 		if agent.GetMCPEnabled() {
 			agents = append(agents, AgentInfo{
 				Slug:        agent.GetSlug(),
-				Name:        agent.Name,
-				Description: agent.MCPDescription,
+				Name:        agent.GetSlug(),
+				Description: agent.Description,
 			})
 		}
 	}

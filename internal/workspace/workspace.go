@@ -15,21 +15,24 @@ import (
 	"claudefu/internal/types"
 )
 
-// Agent represents a configured agent in a workspace
+// Agent represents a configured agent in a workspace.
+// Identity (slug, description) comes from registry via PopulateAgentsFromRegistry.
+// There is no separate "name" — AGENT_SLUG is the single identifier everywhere.
 type Agent struct {
 	ID                string `json:"id"`                          // UUID for stable identification
-	Name              string `json:"name"`                        // Display name
 	Folder            string `json:"folder"`                      // Project folder path this agent monitors
 	WatchMode         string `json:"watchMode,omitempty"`         // "file" or "stream" (default: file)
 	SelectedSessionID string `json:"selectedSessionId,omitempty"` // Last viewed session for this agent
 	Provider          string `json:"provider,omitempty"`          // claude_code, anthropic, openai
 	Specialization    string `json:"specialization,omitempty"`    // backend, frontend, devops, etc.
-	ClaudeMdPath      string `json:"claudeMdPath,omitempty"`
+	ClaudeMdPath      string `json:"claudeMdPath,omitempty"`      // Custom CLAUDE.md path override
 
-	// MCP Inter-Agent Communication Fields
-	MCPSlug        string `json:"mcpSlug,omitempty"`        // Custom MCP identifier (e.g., "bff"). Auto-derived from name if empty
-	MCPEnabled     *bool  `json:"mcpEnabled,omitempty"`     // Participates in inter-agent communication (default: true)
-	MCPDescription string `json:"mcpDescription,omitempty"` // What this agent knows (e.g., "handles auth, sessions")
+	// Agent Identity (populated from registry via PopulateAgentsFromRegistry)
+	Slug        string `json:"slug,omitempty"`        // Agent slug — THE identifier (sidebar, MCP, templates). From AGENT_SLUG in registry.
+	Description string `json:"description,omitempty"` // Agent description, from AGENT_DESCRIPTION in registry
+
+	// Per-workspace MCP config (stored in workspace JSON)
+	MCPEnabled *bool `json:"mcpEnabled,omitempty"` // Participates in inter-agent communication (default: true)
 }
 
 // GetWatchMode returns the agent's watch mode, defaulting to "file"
@@ -48,13 +51,19 @@ func (a *Agent) GetMCPEnabled() bool {
 	return *a.MCPEnabled
 }
 
-// GetSlug returns the MCP slug for this agent.
-// If MCPSlug is set, returns it; otherwise derives from Name.
+// GetSlug returns the agent slug. If Slug is set, returns it; otherwise derives from folder basename.
 func (a *Agent) GetSlug() string {
-	if a.MCPSlug != "" {
-		return a.MCPSlug
+	if a.Slug != "" {
+		return a.Slug
 	}
-	return Slugify(a.Name)
+	// Fallback: derive from folder basename
+	if a.Folder != "" {
+		parts := strings.Split(a.Folder, "/")
+		if len(parts) > 0 {
+			return Slugify(parts[len(parts)-1])
+		}
+	}
+	return a.ID[:8] // Last resort: truncated UUID
 }
 
 // Slugify converts a name to a URL-friendly slug
@@ -263,10 +272,10 @@ func (m *Manager) GetAgentInfo(folder string) *AgentInfo {
 	return m.agentRegistry.GetInfo(folder)
 }
 
-// UpdateAgentIdentity updates the AGENT_SLUG and AGENT_NAME in the agent registry.
-func (m *Manager) UpdateAgentIdentity(folder, slug, name string) {
+// UpdateAgentSlug updates the AGENT_SLUG in the agent registry.
+func (m *Manager) UpdateAgentSlug(folder, slug string) {
 	if m.agentRegistry != nil {
-		m.agentRegistry.UpdateAgentMeta(folder, slug, name)
+		m.agentRegistry.UpdateAgentSlug(folder, slug)
 	}
 }
 
@@ -318,7 +327,7 @@ func (m *Manager) SyncAgentIDsFromRegistry(ws *Workspace) map[string]string {
 	return m.agentRegistry.SyncAgentIDsFromRegistry(ws)
 }
 
-// PopulateAgentsFromRegistry fills Folder/Name/MCPSlug for slim-format agents.
+// PopulateAgentsFromRegistry fills Folder/Name/Slug/Description for agents from registry.
 func (m *Manager) PopulateAgentsFromRegistry(ws *Workspace) {
 	if m.agentRegistry != nil {
 		m.agentRegistry.PopulateAgentsFromRegistry(ws)
@@ -636,7 +645,7 @@ func (m *Manager) clearRuntimeFields(ws *Workspace) {
 // Runtime state (selectedSession, lastOpened, agentSessions) is saved separately
 // via SaveWorkspaceState to avoid sync conflicts on multi-machine setups.
 //
-// v4 slim format: only id/watchMode/mcpEnabled/mcpDescription per agent.
+// v4 slim format: only id/watchMode/mcpEnabled per agent.
 // Agent identity (name, folder, slug) lives exclusively in agents.json.
 func (m *Manager) SaveWorkspace(ws *Workspace) error {
 	// Generate ID if not set

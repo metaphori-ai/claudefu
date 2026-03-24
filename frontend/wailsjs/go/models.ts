@@ -1056,16 +1056,15 @@ export namespace workspace {
 	
 	export class Agent {
 	    id: string;
-	    name: string;
 	    folder: string;
 	    watchMode?: string;
 	    selectedSessionId?: string;
 	    provider?: string;
 	    specialization?: string;
 	    claudeMdPath?: string;
-	    mcpSlug?: string;
+	    slug?: string;
+	    description?: string;
 	    mcpEnabled?: boolean;
-	    mcpDescription?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Agent(source);
@@ -1074,16 +1073,15 @@ export namespace workspace {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
-	        this.name = source["name"];
 	        this.folder = source["folder"];
 	        this.watchMode = source["watchMode"];
 	        this.selectedSessionId = source["selectedSessionId"];
 	        this.provider = source["provider"];
 	        this.specialization = source["specialization"];
 	        this.claudeMdPath = source["claudeMdPath"];
-	        this.mcpSlug = source["mcpSlug"];
+	        this.slug = source["slug"];
+	        this.description = source["description"];
 	        this.mcpEnabled = source["mcpEnabled"];
-	        this.mcpDescription = source["mcpDescription"];
 	    }
 	}
 	export class AgentInfo {

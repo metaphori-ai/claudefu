@@ -211,6 +211,8 @@ export function RefreshSessions(arg1:string):Promise<Array<types.Session>>;
 
 export function RejectPlanReview(arg1:string,arg2:string):Promise<void>;
 
+export function ReloadCurrentWorkspace():Promise<workspace.Workspace>;
+
 export function RemoveAgent(arg1:string):Promise<void>;
 
 export function RenameWorkspace(arg1:string,arg2:string):Promise<void>;

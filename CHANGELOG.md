@@ -5,6 +5,18 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.6] - 2026-03-23
+
+### Changed
+- **AGENT_NAME removed — AGENT_SLUG is the single identifier** — Removed `Agent.Name` field entirely. `AGENT_SLUG` is now the one identifier displayed in sidebar, MCP tool descriptions, menus, and templates. No separate "display name" concept.
+- **MCPSlug/MCPDescription → Slug/Description** — Renamed `Agent.MCPSlug` → `Agent.Slug` and `Agent.MCPDescription` → `Agent.Description` for NAMES consistency. No "MCP" prefix — these are agent-level fields.
+- **Cross-UI refresh** — Added `ReloadCurrentWorkspace` bound method and `refreshAgentsFromBackend()` in App.tsx. MCP Settings and Workspaces & Agents dialog both call it after save, ensuring Sidebar and all UIs see fresh data from registry.
+- **MCP Settings slug removed** — Custom slug field removed from MCP Settings pane. Slug is managed exclusively in Workspaces & Agents dialog. MCP Settings retains only enabled toggle and description.
+- **WorkspaceMetaDialog moved to App.tsx** — Moved from Sidebar for direct access to `refreshAgentsFromBackend`. Sidebar passes `onOpenWorkspaceMeta` callback.
+- **Agent save fix** — System attrs (`AGENT_SLUG`) no longer filtered out during save in Workspaces & Agents dialog.
+- **Agents tab defaults** — Workspace filter defaults to current workspace. Agent dropdown starts on "Select Agent" (blank) instead of first agent.
+- **Migrations 7+8** — Remove AGENT_NAME from registry meta and schema. Fix AGENT_SLUG description from "MCP identifier slug" to "Agent identifier".
+
 ## [0.5.5] - 2026-03-23
 
 ### Changed

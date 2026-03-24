@@ -32,11 +32,10 @@ type AgentRegistry struct {
 // This ensures NAMES consistency — JSON keys match attribute definitions exactly.
 type AgentInfo struct {
 	ID   string            `json:"id"`
-	Meta map[string]string `json:"meta,omitempty"` // ALL_CAPS keys (AGENT_NAME, AGENT_SLUG, etc.)
+	Meta map[string]string `json:"meta,omitempty"` // ALL_CAPS keys (AGENT_SLUG, AGENT_DESCRIPTION, etc.)
 }
 
-// Helper accessors for common fields
-func (a *AgentInfo) GetName() string { return a.Meta["AGENT_NAME"] }
+// Helper accessor for the agent slug — the single identifier.
 func (a *AgentInfo) GetSlug() string { return a.Meta["AGENT_SLUG"] }
 
 // InitMetaIfNil initializes the Meta map if nil
@@ -226,10 +225,9 @@ func (r *AgentRegistry) RegisterID(folder, id string) {
 	}
 }
 
-// UpdateAgentMeta updates the slug and name for a folder's agent entry.
+// UpdateAgentSlug updates the AGENT_SLUG for a folder's agent entry.
 // Called when agents are added or updated to keep registry metadata current.
-// Only updates non-empty values; does not clear existing values.
-func (r *AgentRegistry) UpdateAgentMeta(folder, slug, name string) {
+func (r *AgentRegistry) UpdateAgentSlug(folder, slug string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -242,10 +240,6 @@ func (r *AgentRegistry) UpdateAgentMeta(folder, slug, name string) {
 	changed := false
 	if slug != "" && info.Meta["AGENT_SLUG"] != slug {
 		info.Meta["AGENT_SLUG"] = slug
-		changed = true
-	}
-	if name != "" && info.Meta["AGENT_NAME"] != name {
-		info.Meta["AGENT_NAME"] = name
 		changed = true
 	}
 
@@ -306,7 +300,7 @@ func (r *AgentRegistry) FindBySlug(slug string) (*AgentInfo, string) {
 			return &cp, folder
 		}
 		// Derive slug from name and match
-		if info.GetName() != "" && Slugify(info.GetName()) == slug {
+		if info.GetSlug() != "" && Slugify(info.GetSlug()) == slug {
 			cp := info
 			return &cp, folder
 		}
@@ -324,8 +318,8 @@ func (r *AgentRegistry) GetAllSlugs() []string {
 	seen := make(map[string]bool)
 	for _, info := range r.data.Agents {
 		s := info.GetSlug()
-		if s == "" && info.GetName() != "" {
-			s = Slugify(info.GetName())
+		if s == "" && info.GetSlug() != "" {
+			s = Slugify(info.GetSlug())
 		}
 		if s != "" && !seen[s] {
 			seen[s] = true
@@ -359,7 +353,6 @@ func (r *AgentRegistry) SyncAgentIDsFromRegistry(ws *Workspace) map[string]strin
 				ID: agent.ID,
 				Meta: map[string]string{
 					"AGENT_SLUG": agent.GetSlug(),
-					"AGENT_NAME": agent.Name,
 				},
 			}
 			metaUpdated = true
@@ -370,7 +363,7 @@ func (r *AgentRegistry) SyncAgentIDsFromRegistry(ws *Workspace) map[string]strin
 			oldID := agent.ID
 			agent.ID = info.ID
 			changed[oldID] = info.ID
-			log.Printf("Agent registry: reconciled agent %q (%s → %s)", agent.Name, oldID, info.ID)
+			log.Printf("Agent registry: reconciled agent %q (%s → %s)", agent.GetSlug(), oldID, info.ID)
 		}
 
 		// Only populate slug/name if registry doesn't have them yet (first-write-wins).
@@ -379,10 +372,6 @@ func (r *AgentRegistry) SyncAgentIDsFromRegistry(ws *Workspace) map[string]strin
 		needsUpdate := false
 		if info.GetSlug() == "" && agentSlug != "" {
 			info.Meta["AGENT_SLUG"] = agentSlug
-			needsUpdate = true
-		}
-		if info.GetName() == "" && agent.Name != "" {
-			info.Meta["AGENT_NAME"] = agent.Name
 			needsUpdate = true
 		}
 		if needsUpdate {
@@ -400,7 +389,7 @@ func (r *AgentRegistry) SyncAgentIDsFromRegistry(ws *Workspace) map[string]strin
 	return changed
 }
 
-// PopulateAgentsFromRegistry fills Folder/Name/MCPSlug/MCPDescription for agents
+// PopulateAgentsFromRegistry fills Folder/Name/Slug/Description for agents
 // from the registry. For v4 slim format agents (empty Folder), all fields
 // are populated. For already-populated agents, only Description is refreshed.
 func (r *AgentRegistry) PopulateAgentsFromRegistry(ws *Workspace) {
@@ -433,15 +422,12 @@ func (r *AgentRegistry) PopulateAgentsFromRegistry(ws *Workspace) {
 		}
 
 		// Always populate from registry (single source of truth)
-		if agent.Name == "" {
-			agent.Name = regInfo.GetName()
-		}
-		if agent.MCPSlug == "" {
-			agent.MCPSlug = regInfo.GetSlug()
+		if agent.Slug == "" {
+			agent.Slug = regInfo.GetSlug()
 		}
 		// Description always comes from registry (not stored in workspace JSON)
 		if desc := regInfo.Meta["AGENT_DESCRIPTION"]; desc != "" {
-			agent.MCPDescription = desc
+			agent.Description = desc
 		}
 	}
 }

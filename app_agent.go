@@ -99,29 +99,26 @@ func (a *App) AddAgent(name, folder string) (*workspace.Agent, error) {
 
 	agentID := a.workspace.GetOrCreateAgentID(folder)
 
-	// If the agent already exists in the global registry with a name, use it.
-	// This ensures adding the same folder to a second workspace picks up the
-	// canonical name (e.g., "ClaudeFu App") instead of the folder basename ("app").
-	agentName := name
-	agentSlug := ""
-	if info := a.workspace.GetAgentInfo(folder); info != nil {
-		if info.GetName() != "" {
-			agentName = info.GetName()
-		}
-		agentSlug = info.GetSlug()
+	// If the agent already exists in the registry, use its slug.
+	// Otherwise, derive slug from the provided name (folder basename from frontend).
+	slug := ""
+	if info := a.workspace.GetAgentInfo(folder); info != nil && info.GetSlug() != "" {
+		slug = info.GetSlug()
+	}
+	if slug == "" {
+		slug = workspace.Slugify(name)
 	}
 
 	agent := workspace.Agent{
 		ID:        agentID,
-		Name:      agentName,
 		Folder:    folder,
-		MCPSlug:   agentSlug,
+		Slug:      slug,
 		WatchMode: types.WatchModeFile,
 	}
 
-	// Sync slug/name to global registry if not already set (new agents).
-	if agentSlug == "" {
-		a.workspace.UpdateAgentIdentity(folder, agent.GetSlug(), agentName)
+	// Sync slug to global registry if not already set (new agents).
+	if info := a.workspace.GetAgentInfo(folder); info == nil || info.GetSlug() == "" {
+		a.workspace.UpdateAgentSlug(folder, slug)
 	}
 
 	a.currentWorkspace.Agents = append(a.currentWorkspace.Agents, agent)
@@ -287,8 +284,8 @@ func (a *App) UpdateAgent(agent workspace.Agent) error {
 		if a.currentWorkspace.Agents[i].ID == agent.ID {
 			a.currentWorkspace.Agents[i] = agent
 
-			// Sync slug/name to global registry for cross-workspace resolution
-			a.workspace.UpdateAgentIdentity(agent.Folder, agent.GetSlug(), agent.Name)
+			// Sync slug to global registry for cross-workspace resolution
+			a.workspace.UpdateAgentSlug(agent.Folder, agent.GetSlug())
 
 			return a.workspace.SaveWorkspace(a.currentWorkspace)
 		}

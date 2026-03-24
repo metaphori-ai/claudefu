@@ -346,7 +346,7 @@ func (a *App) startWatchingAllAgents() {
 
 	for _, agent := range a.currentWorkspace.Agents {
 		// Emit per-agent loading status
-		a.emitLoadingStatus(fmt.Sprintf("Loading %s...", agent.Name))
+		a.emitLoadingStatus(fmt.Sprintf("Loading %s...", agent.GetSlug()))
 
 		// Get last viewed timestamps for this agent's sessions
 		var lastViewedMap map[string]int64
@@ -355,7 +355,7 @@ func (a *App) startWatchingAllAgents() {
 		}
 
 		if err := a.watcher.StartWatchingAgent(agent.ID, agent.Folder, lastViewedMap); err != nil {
-			wailsrt.LogWarning(a.ctx, fmt.Sprintf("Failed to start watching agent %s: %v", agent.Name, err))
+			wailsrt.LogWarning(a.ctx, fmt.Sprintf("Failed to start watching agent %s: %v", agent.GetSlug(), err))
 		}
 	}
 }
@@ -432,7 +432,7 @@ func (a *App) initializeMCPServer() {
 		}
 		// Find agent by slug in current workspace
 		for _, agent := range a.currentWorkspace.Agents {
-			if agent.GetSlug() == agentSlug || agent.Name == agentSlug {
+			if agent.GetSlug() == agentSlug || agent.GetSlug() == agentSlug {
 				agentState := a.rt.GetAgentState(agent.ID)
 				if agentState == nil {
 					return agent.ID, "", agent.Folder, ""
