@@ -5,7 +5,7 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.11] - 2026-03-23
 
 ### Changed
 - **Centralized template engine** — Scaffold CLAUDE.md creation now uses `workspace.ProcessTemplate()` — same `{{ KEY }}` engine as Sifu template generation. No duplicate replacement logic.
@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **Agent order preserved** — Removed alphabetical sort from sidebar. Sifu pinned first, all other agents preserve user's insertion order from workspace JSON. CMD-{n} shortcuts match display order.
 - **Case-preserving Slugify** — `Slugify()` no longer lowercases. User's custom slug casing is preserved.
+- **Scaffold skips CLAUDE.md for sifu** — Sifu agents get CLAUDE.md from template engine (SIFU.md + SIFU_AGENT.md), not the generic default template. Generated immediately during scaffold, no reload needed.
+- **SIFU.md template save** — Fixed stale closure in GlobalSettingsDialog useCallback — `sifuTemplateMD` and `sifuAgentTemplateMD` added to dependency array.
 
 ### Improved
 - **Sifu sidebar styling** — Dual ClaudeFu icons (before + after slug), bold slug text, warm orange tinted background (darker on selected).
