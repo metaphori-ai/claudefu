@@ -5,6 +5,11 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.14] - 2026-03-24
+
+### Fixed
+- **Scaffold project dir detection** — Check directory existence instead of `sessions-index.json` (which newer Claude Code versions no longer create). Prevents false "will create" prompts for existing projects.
+
 ## [0.5.13] - 2026-03-24
 
 ### Added
