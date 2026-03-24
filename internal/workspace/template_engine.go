@@ -83,9 +83,9 @@ func (m *Manager) GenerateSifuClaudeMD(ws *Workspace, sifuFolder string) error {
 					seenRefs[ref] = true
 				}
 			}
-			agentValues["AGENT_TDA_REFS"] = strings.Join(refLines, "\n")
+			agentValues["AGENT_AT_INCLUDE_REFS"] = strings.Join(refLines, "\n")
 		} else {
-			agentValues["AGENT_TDA_REFS"] = ""
+			agentValues["AGENT_AT_INCLUDE_REFS"] = ""
 		}
 
 		// Process per-agent template
@@ -95,7 +95,7 @@ func (m *Manager) GenerateSifuClaudeMD(ws *Workspace, sifuFolder string) error {
 
 	// Build final substitution values
 	wsValues["AGENT_SECTIONS"] = strings.Join(agentSections, "\n\n")
-	wsValues["TDA_REFS"] = strings.Join(allTdaRefs, "\n\n")
+	wsValues["AT_INCLUDE_REFS"] = strings.Join(allTdaRefs, "\n\n")
 
 	// Process main template
 	result := ProcessTemplate(string(sifuTemplate), wsValues)
