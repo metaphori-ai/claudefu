@@ -283,7 +283,13 @@ func (m *Manager) GenerateSifuPermissions(ws *Workspace, sifuFolder string) erro
 					}
 					existingSet[tier] = existingArr
 				}
-				toolPerms[setID] = existingSet
+				// Ensure all three tiers exist (prevents null in JSON)
+			for _, tier := range []string{"common", "permissive", "yolo"} {
+				if existingSet[tier] == nil {
+					existingSet[tier] = []interface{}{}
+				}
+			}
+			toolPerms[setID] = existingSet
 			}
 		}
 		// Also merge agent's additionalDirectories
