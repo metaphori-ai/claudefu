@@ -5,6 +5,18 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.15] - 2026-03-24
+
+### Added
+- **Sifu auto-permissions** — On workspace load + agent add/remove, Sifu permissions auto-refresh: merges all workspace agent folders as `additionalDirectories` AND merges each agent's `toolPermissions` (union per set/tier). Sifu inherits all agents' tool access.
+- **Sifu three-dot menu** — Two orange items for sifu agents only:
+  - "Refresh Permissions" — safe, merges agent folders + tool permissions
+  - "Regenerate CLAUDE.md" — regenerates from SIFU.md templates (user-triggered only)
+- **RefreshSifuPermissions** — Lightweight bound method for permissions-only refresh (no CLAUDE.md overwrite).
+
+### Changed
+- **CLAUDE.md never auto-regenerated** — `EnsureSifuAgent` only refreshes permissions on load. CLAUDE.md regeneration is user-triggered via the three-dot menu "Regenerate CLAUDE.md" option.
+
 ## [0.5.14] - 2026-03-24
 
 ### Fixed
