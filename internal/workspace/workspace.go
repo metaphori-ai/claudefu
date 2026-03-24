@@ -80,15 +80,14 @@ func (a *Agent) IsSifu() bool {
 	return a.Type == "sifu"
 }
 
-// Slugify converts a name to a URL-friendly slug
-// e.g., "TrueMemory BFF" -> "truememory-bff"
+// Slugify converts a name to a slug — preserves case, replaces spaces with dashes,
+// strips non-alphanumeric except dashes. e.g., "TrueMemory BFF" -> "TrueMemory-BFF"
 func Slugify(name string) string {
-	slug := strings.ToLower(name)
-	slug = strings.ReplaceAll(slug, " ", "-")
-	// Remove non-alphanumeric characters except dashes
+	slug := strings.ReplaceAll(name, " ", "-")
+	// Remove non-alphanumeric characters except dashes (preserve case)
 	var result strings.Builder
 	for _, r := range slug {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' {
 			result.WriteRune(r)
 		}
 	}

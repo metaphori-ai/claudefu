@@ -37,6 +37,8 @@ import {
   AddAgent,
   GetVersion,
   CheckForUpdates,
+  DownloadUpdate,
+  ApplyUpdateAndRestart,
   RefreshMenu,
   DeleteWorkspace,
   RenameWorkspace,
@@ -632,12 +634,12 @@ function AppContent() {
     await refreshAgentsFromBackend(); // Reload from backend with fresh registry data
   };
 
-  // Sort agents: sifu first, then alphabetical — matches sidebar display order
+  // Sifu pinned first, otherwise preserve user's insertion order — matches sidebar
   const sortedAgents = useMemo(() => {
     return [...agents].sort((a, b) => {
       if (a.type === 'sifu' && b.type !== 'sifu') return -1;
       if (a.type !== 'sifu' && b.type === 'sifu') return 1;
-      return (a.slug || '').localeCompare(b.slug || '');
+      return 0; // Preserve original order
     });
   }, [agents]);
 
@@ -688,11 +690,25 @@ function AppContent() {
         if (updateInfo?.available) {
           notifications.showToast({
             type: 'info',
-            title: `Update Available: v${updateInfo.latestVersion}`,
-            message: `Run: brew upgrade --cask claudefu`,
-            releaseUrl: updateInfo.releaseUrl,
-            releaseNotes: updateInfo.releaseNotes
-          }, 8000);
+            title: `Downloading v${updateInfo.latestVersion}...`,
+            message: `Update will be ready shortly`
+          }, 5000);
+          // Download in background — menu changes to "Restart to Update..."
+          try {
+            await DownloadUpdate(updateInfo.latestVersion);
+            notifications.showToast({
+              type: 'success',
+              title: `v${updateInfo.latestVersion} Ready`,
+              message: `Use ClaudeFu menu → Restart to Update`
+            }, 8000);
+          } catch (downloadErr) {
+            console.error('Update download failed:', downloadErr);
+            notifications.showToast({
+              type: 'info',
+              title: `Update Available: v${updateInfo.latestVersion}`,
+              message: `Run: brew upgrade --cask claudefu`
+            }, 8000);
+          }
         } else {
           notifications.showToast({
             type: 'success',
@@ -702,6 +718,18 @@ function AppContent() {
         }
       } catch (err) {
         console.error('Update check failed:', err);
+      }
+    },
+    onApplyUpdate: async () => {
+      try {
+        await ApplyUpdateAndRestart();
+      } catch (err) {
+        console.error('Failed to apply update:', err);
+        notifications.showToast({
+          type: 'warning',
+          title: 'Update Failed',
+          message: `${err}`
+        }, 8000);
       }
     },
   });

@@ -68,12 +68,12 @@ export function Sidebar({
     setAllSessionNames,
   } = useWorkspace();
 
-  // Sort agents: sifu first, then alphabetical by slug
+  // Sifu pinned first, otherwise preserve user's insertion order (from workspace JSON)
   const sortedAgents = useMemo(() => {
     return [...agents].sort((a, b) => {
       if (a.type === 'sifu' && b.type !== 'sifu') return -1;
       if (a.type !== 'sifu' && b.type === 'sifu') return 1;
-      return (a.slug || '').localeCompare(b.slug || '');
+      return 0; // Preserve original order for non-sifu agents
     });
   }, [agents]);
 
