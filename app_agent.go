@@ -58,9 +58,10 @@ func (a *App) ScaffoldAgent(folder, name string, opts scaffold.ScaffoldOptions) 
 		Slug: slug,
 	}
 
-	// If this is a sifu agent, skip CLAUDE.md creation — EnsureSifuAgent handles it
-	// with the Sifu-specific template (SIFU.md + SIFU_AGENT.md)
+	// If this is a sifu agent, skip generic CLAUDE.md — generate from Sifu templates instead
+	isSifu := false
 	if info := a.workspace.GetAgentInfo(folder); info != nil && info.Meta["AGENT_TYPE"] == "sifu" {
+		isSifu = true
 		opts.ClaudeMD = false
 	}
 
@@ -72,6 +73,15 @@ func (a *App) ScaffoldAgent(folder, name string, opts scaffold.ScaffoldOptions) 
 	if opts.Permissions {
 		a.copyGlobalPermissionsToAgent(folder)
 		a.applyDefaultPermissionSets(folder)
+	}
+
+	// Generate Sifu CLAUDE.md immediately (don't wait for next workspace load)
+	if isSifu && a.currentWorkspace != nil {
+		if err := a.workspace.GenerateSifuClaudeMD(a.currentWorkspace, folder); err != nil {
+			fmt.Printf("[WARN] Failed to generate Sifu CLAUDE.md during scaffold: %v\n", err)
+		} else {
+			fmt.Printf("[INFO] Generated Sifu CLAUDE.md at %s/CLAUDE.md\n", folder)
+		}
 	}
 
 	result := &ScaffoldResult{}
