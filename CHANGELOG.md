@@ -5,6 +5,11 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Sifu Folder live update** — Derived Sifu Folder path in Workspaces & Agents dialog now updates on every keystroke instead of only after save.
+
 ## [0.5.6] - 2026-03-23
 
 ### Changed

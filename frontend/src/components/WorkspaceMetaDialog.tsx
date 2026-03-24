@@ -136,11 +136,22 @@ export function WorkspaceMetaDialog({ isOpen, onClose, onSaved }: WorkspaceMetaD
     });
   }, [isOpen, workspaceId]);
 
-  // Load sifu folder when workspace selection changes
+  // Load sifu folder base path once when workspace changes
   useEffect(() => {
     if (!selectedWsId) { setSifuFolder(''); return; }
     GetWorkspaceSifuFolder(selectedWsId).then(setSifuFolder).catch(() => setSifuFolder(''));
-  }, [selectedWsId, wsDraft]);
+  }, [selectedWsId]);
+
+  // Derive sifu folder reactively from draft slug (updates on every keystroke)
+  const derivedSifuFolder = useMemo(() => {
+    if (!sifuFolder) return '';
+    const draftSlug = getWsValue('WORKSPACE_SIFU_SLUG');
+    if (!draftSlug) return '';
+    // Replace the last path segment with the draft slug
+    const parts = sifuFolder.split('/');
+    parts[parts.length - 1] = draftSlug;
+    return parts.join('/');
+  }, [sifuFolder, wsDraft, selectedWsId]);
 
   // Clear drafts when selection changes
   useEffect(() => { setWsDraft({}); }, [selectedWsId]);
@@ -555,7 +566,7 @@ export function WorkspaceMetaDialog({ isOpen, onClose, onSaved }: WorkspaceMetaD
             )}
 
             {/* Derived Sifu Folder */}
-            {sifuFolder && (
+            {derivedSifuFolder && (
               <div style={{ marginTop: '0.5rem' }}>
                 <label style={{
                   display: 'block', fontSize: '0.7rem', fontWeight: 600,
@@ -568,7 +579,7 @@ export function WorkspaceMetaDialog({ isOpen, onClose, onSaved }: WorkspaceMetaD
                   border: '1px solid #222', background: '#0a0a0a',
                   color: '#555', fontSize: '0.8rem', fontFamily: 'monospace',
                 }}>
-                  {sifuFolder}
+                  {derivedSifuFolder}
                 </div>
               </div>
             )}
