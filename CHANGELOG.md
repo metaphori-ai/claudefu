@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **Shell PATH resolution for GUI app** — macOS GUI apps inherit minimal PATH from launchd (`/usr/bin:/bin:/usr/sbin:/sbin`), missing Homebrew, Go, nvm, cargo, pyenv, etc. ClaudeFu now resolves the user's full PATH from their login shell at startup and injects it into all spawned Claude CLI processes, MCP AgentQuery/SelfQuery subprocesses, and MetalogsQuery commands.
 
+### Added
+- **Custom `~/.claudefu/bashrc`** — If this file exists, it is sourced for PATH resolution instead of the login shell. Lets users curate a clean PATH without macOS/Apple system paths. Falls back to login shell if not present.
+
 ## [0.5.11] - 2026-03-23
 
 ### Changed
