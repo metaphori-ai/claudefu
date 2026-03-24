@@ -25,7 +25,12 @@ interface ToolsTabContentProps {
 
 // Helper to ensure we have a valid ToolPermission object
 function ensureToolPermission(perm: ToolPermission | undefined): ToolPermission {
-  return perm ?? { common: [], permissive: [], yolo: [] };
+  if (!perm) return { common: [], permissive: [], yolo: [] };
+  return {
+    common: perm.common || [],
+    permissive: perm.permissive || [],
+    yolo: perm.yolo || [],
+  };
 }
 
 // Action button component
