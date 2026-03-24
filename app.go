@@ -269,6 +269,14 @@ func (a *App) loadCurrentWorkspace() {
 	// SaveWorkspace() strips these before writing to disk.
 	populateWorkspaceFromState(ws, wsState)
 
+	// Ensure Sifu agent if configured for this workspace
+	if a.settings != nil {
+		settings := a.settings.GetSettings()
+		if err := a.workspace.EnsureSifuAgent(ws, settings.SifuEnabled, settings.SifuRootFolder); err != nil {
+			fmt.Printf("[WARN] EnsureSifuAgent: %v\n", err)
+		}
+	}
+
 	a.currentWorkspace = ws
 	a.workspaceState = wsState
 }

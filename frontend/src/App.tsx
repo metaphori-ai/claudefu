@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import './App.css';
 import { Sidebar } from './components/Sidebar';
 import { ChatView } from './components/ChatView';
@@ -632,13 +632,22 @@ function AppContent() {
     await refreshAgentsFromBackend(); // Reload from backend with fresh registry data
   };
 
-  // Keyboard shortcuts
+  // Sort agents: sifu first, then alphabetical — matches sidebar display order
+  const sortedAgents = useMemo(() => {
+    return [...agents].sort((a, b) => {
+      if (a.type === 'sifu' && b.type !== 'sifu') return -1;
+      if (a.type !== 'sifu' && b.type === 'sifu') return 1;
+      return (a.slug || '').localeCompare(b.slug || '');
+    });
+  }, [agents]);
+
+  // Keyboard shortcuts — uses sortedAgents so CMD-{n} matches sidebar order
   useKeyboardShortcuts({
     onNewWorkspace: handleNewWorkspace,
     onReloadWorkspace: handleReloadWorkspace,
     onSelectAgent: handleAgentSelect,
     onToggleTerminal: () => setTerminalOpen(prev => !prev),
-    agents,
+    agents: sortedAgents,
     settings,
     onSettingsChange: setSettings,
   });

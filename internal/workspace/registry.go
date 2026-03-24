@@ -429,6 +429,10 @@ func (r *AgentRegistry) PopulateAgentsFromRegistry(ws *Workspace) {
 		if desc := regInfo.Meta["AGENT_DESCRIPTION"]; desc != "" {
 			agent.Description = desc
 		}
+		// Type always comes from registry
+		if agentType := regInfo.Meta["AGENT_TYPE"]; agentType != "" {
+			agent.Type = agentType
+		}
 	}
 }
 

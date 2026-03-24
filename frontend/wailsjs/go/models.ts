@@ -1064,6 +1064,7 @@ export namespace workspace {
 	    claudeMdPath?: string;
 	    slug?: string;
 	    description?: string;
+	    type?: string;
 	    mcpEnabled?: boolean;
 	
 	    static createFrom(source: any = {}) {
@@ -1081,6 +1082,7 @@ export namespace workspace {
 	        this.claudeMdPath = source["claudeMdPath"];
 	        this.slug = source["slug"];
 	        this.description = source["description"];
+	        this.type = source["type"];
 	        this.mcpEnabled = source["mcpEnabled"];
 	    }
 	}

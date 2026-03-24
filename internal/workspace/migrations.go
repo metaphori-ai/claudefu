@@ -33,6 +33,7 @@ var allMigrations = []Migration{
 	{6, "meta-schema-ensure-system-attrs", migrateInitMetaIfNilSchemaSystemAttrs},
 	{7, "remove-agent-name-from-meta", migrateRemoveAgentName},
 	{8, "fix-agent-slug-description", migrateFixAgentSlugDescription},
+	{9, "add-agent-type-to-schema", migrateAddAgentTypeToSchema},
 }
 
 // RunMigrations runs all pending migrations in order.
@@ -585,5 +586,56 @@ func migrateFixAgentSlugDescription(configPath string, m *Manager) error {
 		log.Printf("Migration 8: cleaned AGENT_NAME from agent registry")
 	}
 
+	return nil
+}
+
+// =============================================================================
+// Migration 9: Add AGENT_TYPE system attribute to meta-schema
+// =============================================================================
+
+func migrateAddAgentTypeToSchema(configPath string, m *Manager) error {
+	schema := m.metaSchema.GetSchema()
+
+	// Check if AGENT_TYPE already exists
+	for _, attr := range schema.AgentAttributes {
+		if attr.Name == "AGENT_TYPE" {
+			return nil // Already present
+		}
+	}
+
+	// Find position after AGENT_SLUG to insert AGENT_TYPE
+	var updated []MetaAttribute
+	inserted := false
+	for _, attr := range schema.AgentAttributes {
+		updated = append(updated, attr)
+		if attr.Name == "AGENT_SLUG" && !inserted {
+			updated = append(updated, MetaAttribute{
+				Name:        "AGENT_TYPE",
+				Type:        "text",
+				Description: "Agent type (agent, sifu)",
+				System:      true,
+			})
+			inserted = true
+		}
+	}
+
+	if !inserted {
+		updated = append(updated, MetaAttribute{
+			Name:        "AGENT_TYPE",
+			Type:        "text",
+			Description: "Agent type (agent, sifu)",
+			System:      true,
+		})
+	}
+
+	schema.AgentAttributes = updated
+	m.metaSchema.mu.Lock()
+	m.metaSchema.schema = schema
+	err := m.metaSchema.save()
+	m.metaSchema.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	log.Printf("Migration 9: added AGENT_TYPE system attribute to meta-schema")
 	return nil
 }

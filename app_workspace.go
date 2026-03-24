@@ -160,7 +160,15 @@ func (a *App) SwitchWorkspace(workspaceID string) (*workspace.Workspace, error) 
 		}
 	}
 
-	// Step 10: Emit initial state
+	// Step 10: Ensure Sifu agent if configured
+	if a.settings != nil {
+		settings := a.settings.GetSettings()
+		if err := a.workspace.EnsureSifuAgent(ws, settings.SifuEnabled, settings.SifuRootFolder); err != nil {
+			fmt.Printf("[WARN] EnsureSifuAgent on switch: %v\n", err)
+		}
+	}
+
+	// Step 11: Emit initial state
 	a.emitInitialState()
 
 	return ws, nil

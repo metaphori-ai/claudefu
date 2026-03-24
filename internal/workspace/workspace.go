@@ -30,6 +30,7 @@ type Agent struct {
 	// Agent Identity (populated from registry via PopulateAgentsFromRegistry)
 	Slug        string `json:"slug,omitempty"`        // Agent slug — THE identifier (sidebar, MCP, templates). From AGENT_SLUG in registry.
 	Description string `json:"description,omitempty"` // Agent description, from AGENT_DESCRIPTION in registry
+	Type        string `json:"type,omitempty"`        // "agent" (default), "sifu". From AGENT_TYPE in registry.
 
 	// Per-workspace MCP config (stored in workspace JSON)
 	MCPEnabled *bool `json:"mcpEnabled,omitempty"` // Participates in inter-agent communication (default: true)
@@ -64,6 +65,19 @@ func (a *Agent) GetSlug() string {
 		}
 	}
 	return a.ID[:8] // Last resort: truncated UUID
+}
+
+// GetType returns the agent type. Default is "agent".
+func (a *Agent) GetType() string {
+	if a.Type != "" {
+		return a.Type
+	}
+	return "agent"
+}
+
+// IsSifu returns true if this is a Sifu agent.
+func (a *Agent) IsSifu() bool {
+	return a.Type == "sifu"
 }
 
 // Slugify converts a name to a URL-friendly slug
@@ -327,7 +341,85 @@ func (m *Manager) SyncAgentIDsFromRegistry(ws *Workspace) map[string]string {
 	return m.agentRegistry.SyncAgentIDsFromRegistry(ws)
 }
 
-// PopulateAgentsFromRegistry fills Folder/Name/Slug/Description for agents from registry.
+// EnsureSifuAgent creates the Sifu agent folder and registers it if configured for the workspace.
+// Called during workspace load. Idempotent — safe to call multiple times.
+// sifuEnabled and sifuRootFolder come from global settings (Manager doesn't own Settings).
+func (m *Manager) EnsureSifuAgent(ws *Workspace, sifuEnabled bool, sifuRootFolder string) error {
+	if !sifuEnabled || sifuRootFolder == "" {
+		return nil
+	}
+
+	// Get WORKSPACE_SIFU_SLUG from workspace registry
+	wsInfo := m.GetWorkspaceMeta(ws.ID)
+	if wsInfo == nil {
+		return nil
+	}
+	sifuSlug := wsInfo.GetSifuSlug()
+	if sifuSlug == "" {
+		return nil
+	}
+
+	// Derive folder path
+	root := sifuRootFolder
+	if strings.HasPrefix(root, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			root = filepath.Join(home, root[2:])
+		}
+	}
+	sifuFolder := filepath.Join(root, sifuSlug)
+
+	// Create folder if missing
+	if err := os.MkdirAll(sifuFolder, 0755); err != nil {
+		return fmt.Errorf("failed to create sifu folder %s: %w", sifuFolder, err)
+	}
+
+	// Register agent in agents.json if not already registered
+	agentID := m.GetOrCreateAgentID(sifuFolder)
+	info := m.GetAgentInfo(sifuFolder)
+	if info == nil || info.GetSlug() == "" {
+		m.UpdateAgentSlug(sifuFolder, sifuSlug)
+	}
+	// Ensure AGENT_TYPE is "sifu"
+	if info == nil || info.Meta["AGENT_TYPE"] != "sifu" {
+		existingInfo := m.GetAgentInfo(sifuFolder)
+		meta := make(map[string]string)
+		if existingInfo != nil && existingInfo.Meta != nil {
+			for k, v := range existingInfo.Meta {
+				meta[k] = v
+			}
+		}
+		meta["AGENT_TYPE"] = "sifu"
+		meta["AGENT_SLUG"] = sifuSlug
+		m.UpdateAgentCustomMeta(sifuFolder, meta)
+	}
+
+	// Check if agent already in workspace agents list
+	alreadyInWorkspace := false
+	for _, agent := range ws.Agents {
+		if agent.ID == agentID || agent.Folder == sifuFolder {
+			alreadyInWorkspace = true
+			break
+		}
+	}
+
+	// Add to workspace if not present
+	if !alreadyInWorkspace {
+		ws.Agents = append(ws.Agents, Agent{
+			ID:     agentID,
+			Folder: sifuFolder,
+			Slug:   sifuSlug,
+			Type:   "sifu",
+		})
+		if err := m.SaveWorkspace(ws); err != nil {
+			return fmt.Errorf("failed to save workspace after adding sifu: %w", err)
+		}
+		fmt.Printf("[INFO] EnsureSifuAgent: added sifu agent %s to workspace %s\n", sifuSlug, ws.ID)
+	}
+
+	return nil
+}
+
+// PopulateAgentsFromRegistry fills Folder/Slug/Description/Type for agents from registry.
 func (m *Manager) PopulateAgentsFromRegistry(ws *Workspace) {
 	if m.agentRegistry != nil {
 		m.agentRegistry.PopulateAgentsFromRegistry(ws)

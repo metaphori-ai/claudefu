@@ -5,6 +5,16 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.8] - 2026-03-23
+
+### Added
+- **Agent Type system** — `Agent.Type` field (`"agent"` default, `"sifu"`). Stored as `AGENT_TYPE` in registry meta. `PopulateAgentsFromRegistry` fills it on workspace load. Helpers: `GetType()`, `IsSifu()`.
+- **Sifu lifecycle (Phase 1)** — `Manager.EnsureSifuAgent()` creates Sifu folder, registers agent with `AGENT_TYPE=sifu`, adds to workspace. Called automatically during workspace load and switch when `SifuEnabled=true` and `WORKSPACE_SIFU_SLUG` is set.
+- **Sidebar Sifu ordering** — Sifu agents sort first in sidebar, then alphabetical by slug. Icon badge (claude-fu-icon.png) + bold slug for sifu agents.
+- **CMD-{n} alignment** — Keyboard shortcuts now use sorted agent order matching sidebar display.
+- **Migration 9** — Adds `AGENT_TYPE` system attribute to meta-schema.
+- **Sifu TDA** — New `claudefu-sifu.tda.svml.md` documenting the agent type system, Sifu lifecycle, template system design, and future typed agents.
+
 ## [0.5.7] - 2026-03-23
 
 ### Added

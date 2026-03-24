@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   SelectWorkspaceFolder,
   GetSessions,
@@ -67,6 +67,15 @@ export function Sidebar({
     setSessionName: setSessionNameAction,
     setAllSessionNames,
   } = useWorkspace();
+
+  // Sort agents: sifu first, then alphabetical by slug
+  const sortedAgents = useMemo(() => {
+    return [...agents].sort((a, b) => {
+      if (a.type === 'sifu' && b.type !== 'sifu') return -1;
+      if (a.type !== 'sifu' && b.type === 'sifu') return 1;
+      return (a.slug || '').localeCompare(b.slug || '');
+    });
+  }, [agents]);
 
   const {
     selectedSessionId,
@@ -450,12 +459,12 @@ export function Sidebar({
     }}>
       {/* Agents List */}
       <div style={{ flex: 1, overflow: 'auto' }}>
-        {agents.length === 0 ? (
+        {sortedAgents.length === 0 ? (
           <div style={{ padding: '1rem', color: '#444', fontSize: '0.85rem', textAlign: 'center' }}>
             No agents yet. Add a Claude Code project folder.
           </div>
         ) : (
-          agents.map((agent, index) => (
+          sortedAgents.map((agent, index) => (
             <AgentRow
               key={agent.id}
               agent={agent}
@@ -865,7 +874,18 @@ function AgentRow({
               onStartRename(agent);
             }}
           >
-            {agent.slug || agent.slug}
+            {agent.type === 'sifu' && (
+              <img
+                src="/assets/claude-fu-icon.png"
+                width="16"
+                height="12"
+                alt="Sifu"
+                style={{ marginRight: '6px', verticalAlign: 'middle', opacity: 0.85 }}
+              />
+            )}
+            <span style={{ fontWeight: agent.type === 'sifu' ? 600 : undefined }}>
+              {agent.slug || agent.id}
+            </span>
           </span>
         )}
 

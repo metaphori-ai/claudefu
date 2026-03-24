@@ -10,6 +10,7 @@
   ],
   "agentAttributes": [
     { "name": "AGENT_SLUG", "type": "text", "description": "Agent identifier (displayed in sidebar, used for MCP)", "system": true },
+    { "name": "AGENT_TYPE", "type": "text", "description": "Agent type (agent, sifu)", "system": true },
     { "name": "AGENT_ID", "type": "text", "description": "Unique agent UUID", "system": true },
     { "name": "AGENT_FOLDER", "type": "folder", "description": "Project root folder", "system": true },
     { "name": "AGENT_CLAUDE_PROJECT_FOLDER", "type": "folder", "description": "Claude Code project folder (~/.claude/projects/...)", "system": true },
