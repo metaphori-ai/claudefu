@@ -20,6 +20,13 @@ import (
 var (
 	claudePath     string
 	claudePathOnce sync.Once
+
+	// shellPATH is the user's full PATH from their login shell.
+	// macOS GUI apps inherit a minimal PATH from launchd (/usr/bin:/bin:/usr/sbin:/sbin),
+	// missing Homebrew, Go, nvm, cargo, pyenv, etc. We resolve the real PATH once at startup
+	// by sourcing the user's shell config, then inject it into all spawned Claude processes.
+	shellPATH     string
+	shellPATHOnce sync.Once
 )
 
 // findClaudeBinary searches for the claude binary in common locations
@@ -56,6 +63,45 @@ func findClaudeBinary() string {
 	}
 
 	return ""
+}
+
+// resolveShellPATH gets the user's full PATH by spawning a login shell.
+// This is needed because macOS GUI apps only get the minimal launchd PATH.
+func resolveShellPATH() string {
+	// Determine user's shell
+	shell := os.Getenv("SHELL")
+	if shell == "" {
+		shell = "/bin/zsh" // macOS default
+	}
+
+	// Spawn a login shell that prints PATH and exits.
+	// -l = login shell (sources profile/zshrc), -c = command
+	cmd := exec.Command(shell, "-l", "-c", "echo $PATH")
+	cmd.Env = os.Environ() // inherit current env so HOME etc. are set
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// GetShellPATH returns the user's full shell PATH (resolved once, cached).
+func GetShellPATH() string {
+	shellPATHOnce.Do(func() {
+		shellPATH = resolveShellPATH()
+	})
+	return shellPATH
+}
+
+// BuildShellEnv returns an environment slice with the user's full shell PATH.
+// Useful for exec.Cmd.Env in callers outside ClaudeCodeService (e.g., MCP handlers).
+func BuildShellEnv() []string {
+	resolvedPATH := GetShellPATH()
+	if resolvedPATH == "" {
+		return nil // inherit parent env
+	}
+	env := os.Environ()
+	return replaceOrAppendEnv(env, "PATH", resolvedPATH)
 }
 
 // GetClaudePath returns the path to the claude binary (cached)
@@ -133,25 +179,47 @@ func (s *ClaudeCodeService) SetEmitFunc(emitFunc func(eventType string, data map
 }
 
 // buildEnvironment creates the environment slice for exec.Cmd.
-// It merges the parent process environment with custom vars (custom vars override).
-// Returns nil if no custom vars are set (uses Go's default behavior of inheriting parent env).
+// It merges the parent process environment with the user's shell PATH and custom vars.
+// On macOS, GUI apps inherit a minimal PATH from launchd — this ensures spawned Claude
+// processes get the full PATH from the user's login shell (Homebrew, Go, nvm, cargo, etc.).
 func (s *ClaudeCodeService) buildEnvironment() []string {
 	s.envVarsMu.RLock()
 	defer s.envVarsMu.RUnlock()
 
-	if len(s.envVars) == 0 {
-		return nil // Use default behavior (inherit parent env)
+	resolvedPATH := GetShellPATH()
+
+	// If no shell PATH and no custom vars, inherit parent env as-is
+	if resolvedPATH == "" && len(s.envVars) == 0 {
+		return nil
 	}
 
 	// Start with parent environment
 	env := os.Environ()
 
+	// Inject the user's full shell PATH (overrides the minimal launchd PATH)
+	if resolvedPATH != "" {
+		env = replaceOrAppendEnv(env, "PATH", resolvedPATH)
+	}
+
 	// Append custom vars (these override existing vars with same name)
 	for key, value := range s.envVars {
-		env = append(env, fmt.Sprintf("%s=%s", key, value))
+		env = replaceOrAppendEnv(env, key, value)
 	}
 
 	return env
+}
+
+// replaceOrAppendEnv replaces an existing KEY=value entry in the env slice,
+// or appends it if the key doesn't exist. This avoids duplicate keys.
+func replaceOrAppendEnv(env []string, key, value string) []string {
+	prefix := key + "="
+	for i, entry := range env {
+		if strings.HasPrefix(entry, prefix) {
+			env[i] = prefix + value
+			return env
+		}
+	}
+	return append(env, prefix+value)
 }
 
 // trackProcess stores a running command for potential cancellation

@@ -409,6 +409,13 @@ func (a *App) restoreAgentSessionWatches() {
 
 // initializeClaude initializes the Claude CLI integration
 func (a *App) initializeClaude() {
+	// Eagerly resolve the user's shell PATH (macOS GUI apps only get minimal launchd PATH)
+	if shellPATH := providers.GetShellPATH(); shellPATH != "" {
+		wailsrt.LogInfo(a.ctx, "Shell PATH resolved from login shell")
+	} else {
+		wailsrt.LogWarning(a.ctx, "Could not resolve shell PATH — spawned processes may have limited PATH")
+	}
+
 	a.claude = providers.NewClaudeCodeService(a.ctx)
 
 	// Apply custom environment variables from settings (e.g., ANTHROPIC_BASE_URL for proxies)

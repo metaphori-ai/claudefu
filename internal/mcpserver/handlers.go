@@ -135,6 +135,7 @@ func (s *MCPService) handleAgentQuery(ctx context.Context, req mcp.CallToolReque
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		cmd := exec.CommandContext(ctx, claudePath, args...)
 		cmd.Dir = agent.Folder
+		cmd.Env = providers.BuildShellEnv()
 
 		output, cmdErr = cmd.CombinedOutput()
 		if cmdErr == nil {
@@ -229,6 +230,7 @@ func (s *MCPService) handleSelfQuery(ctx context.Context, req mcp.CallToolReques
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		cmd := exec.CommandContext(ctx, claudePath, args...)
 		cmd.Dir = agent.Folder // Run in CALLER'S folder (key difference from AgentQuery)
+		cmd.Env = providers.BuildShellEnv()
 
 		output, cmdErr = cmd.CombinedOutput()
 		if cmdErr == nil {
@@ -1181,6 +1183,7 @@ func (s *MCPService) handleMetalogsQuery(ctx context.Context, req mcp.CallToolRe
 	defer cancel()
 
 	cmd := exec.CommandContext(timeoutCtx, binary, args...)
+	cmd.Env = providers.BuildShellEnv()
 	out, err := cmd.Output()
 	if err != nil {
 		if timeoutCtx.Err() == context.DeadlineExceeded {
