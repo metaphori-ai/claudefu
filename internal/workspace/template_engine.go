@@ -233,6 +233,70 @@ func (m *Manager) GenerateSifuPermissions(ws *Workspace, sifuFolder string) erro
 		dirSet[dir] = true
 	}
 
+	// Merge toolPermissions from each agent's permissions file
+	toolPerms, _ := existing["toolPermissions"].(map[string]interface{})
+	if toolPerms == nil {
+		toolPerms = make(map[string]interface{})
+	}
+	for _, agent := range ws.Agents {
+		if agent.IsSifu() || agent.Folder == "" {
+			continue
+		}
+		agentPermsPath := filepath.Join(agent.Folder, ".claude", "claudefu.permissions.json")
+		agentData, err := os.ReadFile(agentPermsPath)
+		if err != nil {
+			continue // Agent may not have permissions file
+		}
+		var agentPerms map[string]interface{}
+		if err := json.Unmarshal(agentData, &agentPerms); err != nil {
+			continue
+		}
+		// Merge each tool permission set (union of arrays per tier)
+		if agentToolPerms, ok := agentPerms["toolPermissions"].(map[string]interface{}); ok {
+			for setID, tiers := range agentToolPerms {
+				tierMap, ok := tiers.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				existingSet, _ := toolPerms[setID].(map[string]interface{})
+				if existingSet == nil {
+					existingSet = make(map[string]interface{})
+				}
+				// Merge each tier (common, permissive, yolo)
+				for tier, permsVal := range tierMap {
+					permsArr, ok := permsVal.([]interface{})
+					if !ok {
+						continue
+					}
+					existingArr, _ := existingSet[tier].([]interface{})
+					seen := make(map[string]bool)
+					for _, p := range existingArr {
+						if s, ok := p.(string); ok {
+							seen[s] = true
+						}
+					}
+					for _, p := range permsArr {
+						if s, ok := p.(string); ok && !seen[s] {
+							existingArr = append(existingArr, s)
+							seen[s] = true
+						}
+					}
+					existingSet[tier] = existingArr
+				}
+				toolPerms[setID] = existingSet
+			}
+		}
+		// Also merge agent's additionalDirectories
+		if agentDirs, ok := agentPerms["additionalDirectories"].([]interface{}); ok {
+			for _, d := range agentDirs {
+				if s, ok := d.(string); ok {
+					dirSet[s] = true
+				}
+			}
+		}
+	}
+	existing["toolPermissions"] = toolPerms
+
 	// Convert to sorted slice
 	var dirs []string
 	for d := range dirSet {
