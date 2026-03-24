@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { EventsOn } from '../../wailsjs/runtime/runtime';
-import { CheckForUpdates } from '../../wailsjs/go/main/App';
+import { CheckForUpdates, DownloadUpdate } from '../../wailsjs/go/main/App';
 
 export interface NotificationData {
   type: 'info' | 'success' | 'warning' | 'question';
@@ -61,16 +61,10 @@ export function useNotifications() {
 
         const updateInfo = await CheckForUpdates();
         if (updateInfo?.available) {
-          // Extract first meaningful line from release notes for toast
-          const notesPreview = updateInfo.releaseNotes
-            ?.split('\n')
-            .find(line => line.trim() && !line.startsWith('#') && !line.startsWith('*'))
-            ?.substring(0, 80) || '';
-
           setNotification({
             type: 'info',
-            title: `Update Available: v${updateInfo.latestVersion}`,
-            message: `Run: brew upgrade --cask claudefu`,
+            title: `Downloading v${updateInfo.latestVersion}...`,
+            message: `Update will be ready shortly`,
             releaseUrl: updateInfo.releaseUrl,
             releaseNotes: updateInfo.releaseNotes
           });
@@ -78,14 +72,33 @@ export function useNotifications() {
             id: `update-${Date.now()}`,
             type: 'info' as const,
             title: `Update Available: v${updateInfo.latestVersion}`,
-            message: `You're on v${updateInfo.currentVersion}.\n\nUpgrade: brew upgrade --cask claudefu`,
+            message: `Downloading update...`,
             timestamp: new Date(),
             read: false,
             releaseUrl: updateInfo.releaseUrl,
             releaseNotes: updateInfo.releaseNotes
           }, ...prev]);
-          // Keep toast longer for updates
-          setTimeout(() => setNotification(null), 8000);
+          setTimeout(() => setNotification(null), 5000);
+
+          // Download update in background — menu will change to "Restart to Update..."
+          try {
+            await DownloadUpdate(updateInfo.latestVersion);
+            setNotification({
+              type: 'success',
+              title: `v${updateInfo.latestVersion} Ready`,
+              message: `Use ClaudeFu menu → Restart to Update`
+            });
+            setTimeout(() => setNotification(null), 8000);
+          } catch (downloadErr) {
+            console.error('Update download failed:', downloadErr);
+            // Fall back to manual update message
+            setNotification({
+              type: 'info',
+              title: `Update Available: v${updateInfo.latestVersion}`,
+              message: `Run: brew upgrade --cask claudefu`
+            });
+            setTimeout(() => setNotification(null), 8000);
+          }
         }
       } catch (err) {
         // Silently ignore update check failures

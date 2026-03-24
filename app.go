@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	wailsrt "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -39,6 +40,11 @@ type App struct {
 	terminalManager  *terminal.Manager
 	cliArgs          *CLIArgs         // CLI arguments (e.g., `claudefu .`)
 	reconciledIDs    map[string]string // oldAgentID → newAgentID from registry reconciliation
+
+	// Self-update state
+	updateReady   bool   // True when update is downloaded and staged
+	updateVersion string // Version that's staged (e.g., "0.5.10")
+	updateMu      sync.Mutex
 }
 
 // NewApp creates a new App application struct

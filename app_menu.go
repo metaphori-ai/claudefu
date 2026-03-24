@@ -26,9 +26,21 @@ func (a *App) buildMenu() *menu.Menu {
 		claudeFuMenu.AddText("Settings...", keys.CmdOrCtrl(","), func(_ *menu.CallbackData) {
 			a.emitMenuAction("menu:settings")
 		})
-		claudeFuMenu.AddText("Check for Updates...", nil, func(_ *menu.CallbackData) {
-			a.emitMenuAction("menu:check-updates")
-		})
+		// Dynamic update menu item — changes based on staged update state
+		a.updateMu.Lock()
+		updateReady := a.updateReady
+		updateVer := a.updateVersion
+		a.updateMu.Unlock()
+
+		if updateReady {
+			claudeFuMenu.AddText(fmt.Sprintf("Restart to Update to v%s...", updateVer), nil, func(_ *menu.CallbackData) {
+				a.emitMenuAction("menu:apply-update")
+			})
+		} else {
+			claudeFuMenu.AddText("Check for Updates...", nil, func(_ *menu.CallbackData) {
+				a.emitMenuAction("menu:check-updates")
+			})
+		}
 		claudeFuMenu.AddSeparator()
 		claudeFuMenu.AddText("Hide ClaudeFu", keys.CmdOrCtrl("h"), func(_ *menu.CallbackData) {
 			wailsRuntime.Hide(a.ctx)

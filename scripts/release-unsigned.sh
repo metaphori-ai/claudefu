@@ -71,6 +71,13 @@ echo -e "${GREEN}[3/6] Calculating SHA256...${NC}"
 SHA256=$(shasum -a 256 "build/bin/$ZIP_NAME" | awk '{print $1}')
 echo "SHA256: $SHA256"
 
+# Generate checksums.json for self-update verification
+CLEAN_VERSION="${VERSION#v}"
+cat > build/bin/checksums.json <<CHECKSUM_EOF
+{"version":"${CLEAN_VERSION}","sha256":"${SHA256}"}
+CHECKSUM_EOF
+echo "Generated checksums.json"
+
 echo -e "${GREEN}[4/6] Creating git tag...${NC}"
 git tag -a "$VERSION" -m "Release $VERSION"
 
@@ -81,6 +88,7 @@ echo -e "${GREEN}[6/6] Creating GitHub Release...${NC}"
 
 gh release create "$VERSION" \
     "build/bin/$ZIP_NAME" \
+    "build/bin/checksums.json" \
     --title "ClaudeFu $VERSION" \
     --notes "## Installation
 

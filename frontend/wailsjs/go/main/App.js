@@ -34,6 +34,10 @@ export function AppendCancellationMarker(arg1, arg2) {
   return window['go']['main']['App']['AppendCancellationMarker'](arg1, arg2);
 }
 
+export function ApplyUpdateAndRestart() {
+  return window['go']['main']['App']['ApplyUpdateAndRestart']();
+}
+
 export function CancelSession(arg1, arg2) {
   return window['go']['main']['App']['CancelSession'](arg1, arg2);
 }
@@ -92,6 +96,10 @@ export function DeleteWorkspace(arg1) {
 
 export function DetectExperimentalFeatures(arg1) {
   return window['go']['main']['App']['DetectExperimentalFeatures'](arg1);
+}
+
+export function DownloadUpdate(arg1) {
+  return window['go']['main']['App']['DownloadUpdate'](arg1);
 }
 
 export function EnableExperimentalFeature(arg1, arg2, arg3) {
@@ -340,6 +348,10 @@ export function InjectInboxMessage(arg1, arg2, arg3) {
 
 export function IsClaudeInstalled() {
   return window['go']['main']['App']['IsClaudeInstalled']();
+}
+
+export function IsUpdateReady() {
+  return window['go']['main']['App']['IsUpdateReady']();
 }
 
 export function ListFiles(arg1, arg2, arg3) {

@@ -27,6 +27,8 @@ export function AnswerQuestion(arg1:string,arg2:string,arg3:string,arg4:Array<Re
 
 export function AppendCancellationMarker(arg1:string,arg2:string):Promise<void>;
 
+export function ApplyUpdateAndRestart():Promise<void>;
+
 export function CancelSession(arg1:string,arg2:string):Promise<void>;
 
 export function CheckAgentScaffold(arg1:string):Promise<scaffold.ScaffoldCheck>;
@@ -56,6 +58,8 @@ export function DeleteInboxMessage(arg1:string,arg2:string):Promise<boolean>;
 export function DeleteWorkspace(arg1:string):Promise<void>;
 
 export function DetectExperimentalFeatures(arg1:string):Promise<Array<permissions.ExperimentalFeatureStatus>>;
+
+export function DownloadUpdate(arg1:string):Promise<void>;
 
 export function EnableExperimentalFeature(arg1:string,arg2:string,arg3:boolean):Promise<void>;
 
@@ -180,6 +184,8 @@ export function ImportFromClaudeSettings(arg1:string):Promise<main.ImportResult>
 export function InjectInboxMessage(arg1:string,arg2:string,arg3:string):Promise<void>;
 
 export function IsClaudeInstalled():Promise<boolean>;
+
+export function IsUpdateReady():Promise<boolean|string>;
 
 export function ListFiles(arg1:string,arg2:string,arg3:number):Promise<Array<main.FileInfo>>;
 

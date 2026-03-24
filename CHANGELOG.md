@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.10] - 2026-03-23
+
+### Added
+- **Self-update system** — App checks GitHub Releases on startup, downloads update ZIP in background, stages in `~/.claudefu/updates/`. Menu dynamically changes from "Check for Updates..." to "Restart to Update to vX.X.X..." when ready. Atomic `.app` bundle swap with rollback on failure.
+- **SHA256 verification** — Downloads `checksums.json` from GitHub Release assets to verify ZIP integrity before extraction. Gracefully skips if not present (pre-0.5.10 releases).
+- **Release script checksums.json** — Both `release.sh` and `release-unsigned.sh` now generate and upload `checksums.json` alongside the ZIP artifact.
+
 ### Fixed
 - **Agent order preserved** — Removed alphabetical sort from sidebar. Sifu pinned first, all other agents preserve user's insertion order from workspace JSON. CMD-{n} shortcuts match display order.
 - **Case-preserving Slugify** — `Slugify()` no longer lowercases. `"TrueMemory BFF"` → `"TrueMemory-BFF"` instead of `"truememory-bff"`. User's custom slug casing is preserved.

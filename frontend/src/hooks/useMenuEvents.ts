@@ -17,6 +17,7 @@ interface MenuEventHandlers {
   onSwitchAgent: (agentId: string) => void;
   // App
   onCheckUpdates: () => void;
+  onApplyUpdate: () => void;
 }
 
 export function useMenuEvents(handlers: MenuEventHandlers) {
@@ -34,6 +35,9 @@ export function useMenuEvents(handlers: MenuEventHandlers) {
       }),
       EventsOn('menu:check-updates', () => {
         handlers.onCheckUpdates();
+      }),
+      EventsOn('menu:apply-update', () => {
+        handlers.onApplyUpdate();
       }),
       EventsOn('menu:new-session', () => {
         handlers.onNewSession();

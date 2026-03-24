@@ -261,6 +261,7 @@ export namespace main {
 	    releaseUrl: string;
 	    releaseNotes: string;
 	    publishedAt: string;
+	    downloadUrl: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new UpdateInfo(source);
@@ -274,6 +275,7 @@ export namespace main {
 	        this.releaseUrl = source["releaseUrl"];
 	        this.releaseNotes = source["releaseNotes"];
 	        this.publishedAt = source["publishedAt"];
+	        this.downloadUrl = source["downloadUrl"];
 	    }
 	}
 
