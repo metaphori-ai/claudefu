@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **CLAUDE.md never auto-regenerated** — `EnsureSifuAgent` only refreshes permissions on load. CLAUDE.md regeneration is user-triggered via the three-dot menu "Regenerate CLAUDE.md" option.
 
+### Fixed
+- **Permission tier null crash** — Merged toolPermission sets could have null `common`/`permissive`/`yolo` arrays. Backend now initializes empty arrays for missing tiers. Frontend `ensureToolPermission` defensively handles null fields (not just undefined).
+
 ## [0.5.14] - 2026-03-24
 
 ### Fixed
