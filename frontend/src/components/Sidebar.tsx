@@ -936,6 +936,17 @@ function AgentRow({
             onRename={() => onRenameDialogOpen(agent)}
             onRemove={() => onRemove(agent.id)}
             onClose={onCloseMenu}
+            isSifu={agent.type === 'sifu'}
+            onRefreshSifu={agent.type === 'sifu' ? async () => {
+              onCloseMenu();
+              try {
+                const { RefreshSifuAgent } = await import('../../wailsjs/go/main/App');
+                await RefreshSifuAgent();
+                console.log('Sifu CLAUDE.md + permissions regenerated');
+              } catch (err) {
+                console.error('Failed to refresh sifu:', err);
+              }
+            } : undefined}
           />
         )}
       </div>

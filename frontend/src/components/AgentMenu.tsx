@@ -5,9 +5,11 @@ interface AgentMenuProps {
   onRename: () => void;
   onRemove: () => void;
   onClose: () => void;
+  isSifu?: boolean;
+  onRefreshSifu?: () => void;
 }
 
-export function AgentMenu({ onViewSessions, onRename, onRemove, onClose }: AgentMenuProps) {
+export function AgentMenu({ onViewSessions, onRename, onRemove, onClose, isSifu, onRefreshSifu }: AgentMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Close menu when clicking outside
@@ -143,6 +145,30 @@ export function AgentMenu({ onViewSessions, onRename, onRemove, onClose }: Agent
         </svg>
         Remove
       </button>
+      {isSifu && onRefreshSifu && (
+        <>
+          <div style={{ height: '1px', background: '#333', margin: '0.25rem 0' }} />
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onRefreshSifu();
+            }}
+            style={{ ...menuItemStyle, color: '#d97757' }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = '#252525';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent';
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="23 4 23 10 17 10" />
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+            </svg>
+            Regenerate CLAUDE.md
+          </button>
+        </>
+      )}
     </div>
   );
 }
