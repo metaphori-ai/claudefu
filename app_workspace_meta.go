@@ -140,6 +140,15 @@ func (a *App) GetWorkspaceSifuFolder(workspaceID string) string {
 	return filepath.Join(root, slug)
 }
 
+// RefreshSifuAgent regenerates the Sifu CLAUDE.md and permissions from current workspace state.
+func (a *App) RefreshSifuAgent() error {
+	if a.workspace == nil || a.currentWorkspace == nil || a.settings == nil {
+		return fmt.Errorf("not initialized")
+	}
+	settings := a.settings.GetSettings()
+	return a.workspace.RefreshSifuAgent(a.currentWorkspace, settings.SifuEnabled, settings.SifuRootFolder)
+}
+
 // GetWorkspaceAgentFolders returns the agent folders for a given workspace.
 func (a *App) GetWorkspaceAgentFolders(workspaceID string) ([]string, error) {
 	if a.workspace == nil {

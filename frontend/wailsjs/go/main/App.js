@@ -418,6 +418,10 @@ export function RefreshSessions(arg1) {
   return window['go']['main']['App']['RefreshSessions'](arg1);
 }
 
+export function RefreshSifuAgent() {
+  return window['go']['main']['App']['RefreshSifuAgent']();
+}
+
 export function RejectPlanReview(arg1, arg2) {
   return window['go']['main']['App']['RejectPlanReview'](arg1, arg2);
 }

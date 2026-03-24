@@ -1,10 +1,12 @@
 package workspace
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -176,5 +178,97 @@ func (m *Manager) RefreshSifuAgent(ws *Workspace, sifuEnabled bool, sifuRootFold
 	}
 	sifuFolder := filepath.Join(root, sifuSlug)
 
-	return m.GenerateSifuClaudeMD(ws, sifuFolder)
+	if err := m.GenerateSifuClaudeMD(ws, sifuFolder); err != nil {
+		return err
+	}
+	return m.GenerateSifuPermissions(ws, sifuFolder)
+}
+
+// GenerateSifuPermissions reads existing sifu permissions (or global defaults),
+// merges in all workspace agent folders as additionalDirectories, and writes back.
+func (m *Manager) GenerateSifuPermissions(ws *Workspace, sifuFolder string) error {
+	permsDir := filepath.Join(sifuFolder, ".claude")
+	if err := os.MkdirAll(permsDir, 0755); err != nil {
+		return fmt.Errorf("failed to create .claude dir for sifu: %w", err)
+	}
+
+	permsPath := filepath.Join(permsDir, "claudefu.permissions.json")
+
+	// Read existing permissions (from previous generation or global copy)
+	var existing map[string]interface{}
+	if data, err := os.ReadFile(permsPath); err == nil {
+		json.Unmarshal(data, &existing)
+	}
+	if existing == nil {
+		// Fall back to global permissions as base
+		home, _ := os.UserHomeDir()
+		globalPath := filepath.Join(home, ".claudefu", "global.permissions.json")
+		if data, err := os.ReadFile(globalPath); err == nil {
+			json.Unmarshal(data, &existing)
+		}
+	}
+	if existing == nil {
+		existing = map[string]interface{}{"version": float64(2), "toolPermissions": map[string]interface{}{}}
+	}
+
+	// Collect all non-sifu agent folders (normalized to ~/)
+	dirSet := make(map[string]bool)
+	// Keep existing additional directories
+	if existingDirs, ok := existing["additionalDirectories"].([]interface{}); ok {
+		for _, d := range existingDirs {
+			if s, ok := d.(string); ok {
+				dirSet[s] = true
+			}
+		}
+	}
+	// Add all workspace agent folders
+	for _, agent := range ws.Agents {
+		if agent.IsSifu() || agent.Folder == "" {
+			continue
+		}
+		dir := agent.Folder
+		if home, err := os.UserHomeDir(); err == nil && strings.HasPrefix(dir, home) {
+			dir = "~" + dir[len(home):]
+		}
+		dirSet[dir] = true
+	}
+
+	// Convert to sorted slice
+	var dirs []string
+	for d := range dirSet {
+		dirs = append(dirs, d)
+	}
+	sort.Strings(dirs)
+
+	// Update and write back
+	existing["additionalDirectories"] = dirs
+	data, err := json.MarshalIndent(existing, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal sifu permissions: %w", err)
+	}
+
+	if err := os.WriteFile(permsPath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write sifu permissions: %w", err)
+	}
+
+	fmt.Printf("[INFO] Generated Sifu permissions at %s (%d dirs)\n", permsPath, len(dirs))
+	return nil
+}
+
+// toJSONArray formats a string slice as a JSON array.
+func toJSONArray(items []string) string {
+	if len(items) == 0 {
+		return "[]"
+	}
+	var sb strings.Builder
+	sb.WriteString("[\n")
+	for i, item := range items {
+		sb.WriteString(fmt.Sprintf("    %q", item))
+		if i < len(items)-1 {
+			sb.WriteString(",")
+		}
+		sb.WriteString("\n")
+	}
+	sb.WriteString("  ]")
+	return sb.String()
 }
