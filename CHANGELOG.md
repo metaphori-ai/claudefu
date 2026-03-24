@@ -5,6 +5,12 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Agent order preserved** — Removed alphabetical sort from sidebar. Sifu pinned first, all other agents preserve user's insertion order from workspace JSON. CMD-{n} shortcuts match display order.
+- **Case-preserving Slugify** — `Slugify()` no longer lowercases. `"TrueMemory BFF"` → `"TrueMemory-BFF"` instead of `"truememory-bff"`. User's custom slug casing is preserved.
+
 ## [0.5.9] - 2026-03-23
 
 ### Added
