@@ -159,6 +159,9 @@ func (a *App) AddAgent(name, folder string) (*workspace.Agent, error) {
 		})
 	}
 
+	// Refresh Sifu permissions (adds new agent folder)
+	a.RefreshSifuPermissions()
+
 	return &agent, nil
 }
 
@@ -286,6 +289,9 @@ func (a *App) RemoveAgent(agentID string) error {
 			"agentId": agentID,
 		})
 	}
+
+	// Refresh Sifu permissions (removed agent folder no longer needed)
+	a.RefreshSifuPermissions()
 
 	return nil
 }

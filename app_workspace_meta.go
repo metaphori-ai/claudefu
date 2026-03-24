@@ -140,6 +140,36 @@ func (a *App) GetWorkspaceSifuFolder(workspaceID string) string {
 	return filepath.Join(root, slug)
 }
 
+// RefreshSifuPermissions refreshes only the Sifu permissions (additive merge of agent folders).
+// Called automatically after agent add/remove.
+func (a *App) RefreshSifuPermissions() {
+	if a.workspace == nil || a.currentWorkspace == nil || a.settings == nil {
+		return
+	}
+	settings := a.settings.GetSettings()
+	if !settings.SifuEnabled || settings.SifuRootFolder == "" {
+		return
+	}
+	wsInfo := a.workspace.GetWorkspaceMeta(a.currentWorkspace.ID)
+	if wsInfo == nil {
+		return
+	}
+	sifuSlug := wsInfo.GetSifuSlug()
+	if sifuSlug == "" {
+		return
+	}
+	root := settings.SifuRootFolder
+	if strings.HasPrefix(root, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			root = filepath.Join(home, root[2:])
+		}
+	}
+	sifuFolder := filepath.Join(root, sifuSlug)
+	if err := a.workspace.GenerateSifuPermissions(a.currentWorkspace, sifuFolder); err != nil {
+		fmt.Printf("[WARN] RefreshSifuPermissions: %v\n", err)
+	}
+}
+
 // RefreshSifuAgent regenerates the Sifu CLAUDE.md and permissions from current workspace state.
 func (a *App) RefreshSifuAgent() error {
 	if a.workspace == nil || a.currentWorkspace == nil || a.settings == nil {
