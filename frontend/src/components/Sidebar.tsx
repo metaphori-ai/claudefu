@@ -24,6 +24,7 @@ import { BacklogPane } from './BacklogPane';
 import { BacklogEditorDialog } from './BacklogEditorDialog';
 import { GlobalSettingsDialog } from './GlobalSettingsDialog';
 // WorkspaceMetaDialog rendered in App.tsx for access to refreshAgentsFromBackend
+import { AddAgentDialog } from './AddAgentDialog';
 import { ConfirmDialog } from './ConfirmDialog';
 import { RefreshMenu } from '../../wailsjs/go/main/App';
 import { workspace, types } from '../../wailsjs/go/models';
@@ -91,6 +92,7 @@ export function Sidebar({
   const [sessionsDialogAgent, setSessionsDialogAgent] = useState<Agent | null>(null);
   const [showGlobalSettings, setShowGlobalSettings] = useState(false);
   const [confirmRemoveAgentId, setConfirmRemoveAgentId] = useState<string | null>(null);
+  const [addAgentDialogOpen, setAddAgentDialogOpen] = useState(false);
 
   // Backlog state
   const [backlogPaneAgent, setBacklogPaneAgent] = useState<Agent | null>(null);
@@ -209,14 +211,20 @@ export function Sidebar({
     }
   };
 
-  const handleAddAgent = async () => {
+  // Opens the Add Agent dialog (pick from registry or browse new)
+  const handleAddAgent = () => {
+    setAddAgentDialogOpen(true);
+  };
+
+  // Browse for a new folder (called from AddAgentDialog's "+ New Agent" button)
+  const handleBrowseNewAgent = async () => {
+    setAddAgentDialogOpen(false);
     setIsLoading(true);
     try {
       const folder = await SelectWorkspaceFolder();
       if (folder) {
-        // Extract folder name as default agent name
-        const name = folder.split('/').pop() || 'Agent';
-        onAddAgent(folder, name);
+        const slug = folder.split('/').pop() || 'agent';
+        onAddAgent(folder, slug);
       }
     } catch (err) {
       console.error('Failed to add agent:', err);
@@ -703,6 +711,18 @@ export function Sidebar({
       />
 
       {/* WorkspaceMetaDialog rendered in App.tsx for access to refreshAgentsFromBackend */}
+
+      {/* Add Agent Dialog (pick from registry or browse new) */}
+      <AddAgentDialog
+        isOpen={addAgentDialogOpen}
+        onClose={() => setAddAgentDialogOpen(false)}
+        onSelectAgent={(folder, slug) => {
+          setAddAgentDialogOpen(false);
+          onAddAgent(folder, slug);
+        }}
+        onBrowseNew={handleBrowseNewAgent}
+        currentAgentFolders={new Set(agents.map(a => a.folder))}
+      />
 
       {/* Confirm Remove Agent Dialog */}
       <ConfirmDialog

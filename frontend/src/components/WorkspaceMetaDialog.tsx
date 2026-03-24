@@ -142,17 +142,6 @@ export function WorkspaceMetaDialog({ isOpen, onClose, onSaved }: WorkspaceMetaD
     GetWorkspaceSifuFolder(selectedWsId).then(setSifuFolder).catch(() => setSifuFolder(''));
   }, [selectedWsId]);
 
-  // Derive sifu folder reactively from draft slug (updates on every keystroke)
-  const derivedSifuFolder = useMemo(() => {
-    if (!sifuFolder) return '';
-    const draftSlug = getWsValue('WORKSPACE_SIFU_SLUG');
-    if (!draftSlug) return '';
-    // Replace the last path segment with the draft slug
-    const parts = sifuFolder.split('/');
-    parts[parts.length - 1] = draftSlug;
-    return parts.join('/');
-  }, [sifuFolder, wsDraft, selectedWsId]);
-
   // Clear drafts when selection changes
   useEffect(() => { setWsDraft({}); }, [selectedWsId]);
   useEffect(() => { setAgentDraft({}); }, [selectedAgentFolder]);
@@ -224,6 +213,16 @@ export function WorkspaceMetaDialog({ isOpen, onClose, onSaved }: WorkspaceMetaD
     if (attrName === 'WORKSPACE_ID') return info.id || '';
     return info.meta?.[attrName] || '';
   };
+
+  // Derive sifu folder reactively from draft slug (updates on every keystroke)
+  const derivedSifuFolder = useMemo(() => {
+    if (!sifuFolder) return '';
+    const draftSlug = getWsValue('WORKSPACE_SIFU_SLUG');
+    if (!draftSlug) return '';
+    const parts = sifuFolder.split('/');
+    parts[parts.length - 1] = draftSlug;
+    return parts.join('/');
+  }, [sifuFolder, wsDraft, selectedWsId, workspaceInfos]);
 
   const setWsValue = (attrName: string, value: string) => {
     const newDraft = { ...wsDraft, [attrName]: value };

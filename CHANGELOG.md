@@ -5,10 +5,15 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.7] - 2026-03-23
+
+### Added
+- **Add Agent dialog** — "+ Claude Code Agent" button now opens a dialog showing all known agents from the registry (minus ones already in workspace). Filter by slug, click to add. "+ New" button for browsing new folders.
 
 ### Fixed
 - **Sifu Folder live update** — Derived Sifu Folder path in Workspaces & Agents dialog now updates on every keystroke instead of only after save.
+- **WorkspaceMetaDialog TDZ error** — Fixed `getWsValue` reference before initialization crash when opening Workspaces & Agents dialog.
+- **Agents tab defaults** — Workspace filter defaults to current workspace. Agent dropdown starts on "Select Agent".
 
 ## [0.5.6] - 2026-03-23
 
