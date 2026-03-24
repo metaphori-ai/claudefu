@@ -3,6 +3,7 @@
 package scaffold
 
 import (
+	"claudefu/internal/workspace"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -147,7 +148,7 @@ func ensureClaudeProjectsDir(folder string) error {
 
 // ensureClaudeMD copies the CLAUDE.md template to the agent folder if missing.
 // Reads from ~/.claudefu/default-templates/CLAUDE.md (user-customizable).
-// Replaces {{ KEY }} placeholders with actual values (consistent with template engine).
+// Uses the centralized template engine (workspace.ProcessTemplate) for {{ KEY }} substitutions.
 // Also supports legacy {KEY} format for backward compatibility with user-customized templates.
 func ensureClaudeMD(folder, configPath string, identity AgentIdentity) error {
 	target := filepath.Join(folder, "CLAUDE.md")
@@ -163,17 +164,14 @@ func ensureClaudeMD(folder, configPath string, identity AgentIdentity) error {
 	}
 
 	projectName := filepath.Base(folder)
-	content := string(tmpl)
+	values := map[string]string{
+		"AGENT_SLUG":    identity.Slug,
+		"AGENT_ID":      identity.ID,
+		"PROJECT_NAME":  projectName,
+	}
 
-	// New {{ KEY }} format (consistent with Sifu template engine)
-	content = strings.ReplaceAll(content, "{{ AGENT_SLUG }}", identity.Slug)
-	content = strings.ReplaceAll(content, "{{ AGENT_ID }}", identity.ID)
-	content = strings.ReplaceAll(content, "{{ PROJECT_NAME }}", projectName)
-
-	// Legacy {KEY} format (backward compat with user-customized templates)
-	content = strings.ReplaceAll(content, "{PROJECT_NAME}", projectName)
-	content = strings.ReplaceAll(content, "{AGENT_ID}", identity.ID)
-	content = strings.ReplaceAll(content, "{AGENT_SLUG}", identity.Slug)
+	// Centralized {{ KEY }} substitution (same engine as Sifu templates)
+	content := workspace.ProcessTemplate(string(tmpl), values)
 
 	return os.WriteFile(target, []byte(content), 0644)
 }
