@@ -58,6 +58,12 @@ func (a *App) ScaffoldAgent(folder, name string, opts scaffold.ScaffoldOptions) 
 		Slug: slug,
 	}
 
+	// If this is a sifu agent, skip CLAUDE.md creation — EnsureSifuAgent handles it
+	// with the Sifu-specific template (SIFU.md + SIFU_AGENT.md)
+	if info := a.workspace.GetAgentInfo(folder); info != nil && info.Meta["AGENT_TYPE"] == "sifu" {
+		opts.ClaudeMD = false
+	}
+
 	if err := scaffold.EnsureAgentSetup(folder, configPath, identity, opts); err != nil {
 		return nil, err
 	}
