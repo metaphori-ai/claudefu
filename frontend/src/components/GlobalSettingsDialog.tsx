@@ -195,7 +195,7 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
     } finally {
       setIsSaving(false);
     }
-  }, [activeTab, envVars, globalPermissions, globalClaudeMD, defaultTemplateMD, sifuEnabled, sifuRootFolder, onClose]);
+  }, [activeTab, envVars, globalPermissions, globalClaudeMD, defaultTemplateMD, sifuTemplateMD, sifuAgentTemplateMD, sifuEnabled, sifuRootFolder, onClose]);
 
   // CMD-S to save
   useSaveShortcut(isOpen, handleSave);
