@@ -5,6 +5,15 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.9] - 2026-03-23
+
+### Added
+- **Sifu Phase 2: Template Engine** — `{{ KEY }}` substitution engine (`internal/workspace/template_engine.go`) with `ProcessTemplate`, `ParseAtReferences`, `GenerateSifuClaudeMD`, and `RefreshSifuAgent`. Generates Sifu CLAUDE.md from SIFU.md + SIFU_AGENT.md templates with workspace meta, agent meta, and collected @ TDA references.
+- **Default Sifu templates** — `default_sifu.md` and `default_sifu_agent.md` embedded via `go:embed`, copied to `~/.claudefu/default-templates/` on first launch.
+- **EnsureSifuAgent generates CLAUDE.md** — If Sifu folder exists but CLAUDE.md is missing, auto-generates from templates.
+- **Global Settings: SIFU.md + SIFU_AGENT.md tabs** — Edit Sifu templates in Global Settings dialog, same edit/preview pattern as CLAUDE.md tabs.
+- **Sifu TDA updated** — `claudefu-sifu.tda.svml.md` Section 8 fully specified with engine design, pipeline, default templates, UI integration.
+
 ## [0.5.8] - 2026-03-23
 
 ### Added

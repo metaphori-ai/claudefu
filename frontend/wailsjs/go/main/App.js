@@ -286,6 +286,14 @@ export function GetSettings() {
   return window['go']['main']['App']['GetSettings']();
 }
 
+export function GetSifuAgentTemplateMD() {
+  return window['go']['main']['App']['GetSifuAgentTemplateMD']();
+}
+
+export function GetSifuTemplateMD() {
+  return window['go']['main']['App']['GetSifuTemplateMD']();
+}
+
 export function GetSubagentConversation(arg1, arg2, arg3) {
   return window['go']['main']['App']['GetSubagentConversation'](arg1, arg2, arg3);
 }
@@ -476,6 +484,14 @@ export function SaveMetaSchema(arg1) {
 
 export function SaveSettings(arg1) {
   return window['go']['main']['App']['SaveSettings'](arg1);
+}
+
+export function SaveSifuAgentTemplateMD(arg1) {
+  return window['go']['main']['App']['SaveSifuAgentTemplateMD'](arg1);
+}
+
+export function SaveSifuTemplateMD(arg1) {
+  return window['go']['main']['App']['SaveSifuTemplateMD'](arg1);
 }
 
 export function SaveWorkspace(arg1) {

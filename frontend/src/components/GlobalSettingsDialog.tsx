@@ -11,6 +11,10 @@ import {
   SaveGlobalClaudeMD,
   GetDefaultTemplateMD,
   SaveDefaultTemplateMD,
+  GetSifuTemplateMD,
+  SaveSifuTemplateMD,
+  GetSifuAgentTemplateMD,
+  SaveSifuAgentTemplateMD,
   SelectDirectory,
   NormalizeDirPath,
 } from '../../wailsjs/go/main/App';
@@ -34,7 +38,7 @@ interface EnvVar {
   value: string;
 }
 
-type TabId = 'env' | 'tools' | 'directories' | 'global-claude-md' | 'default-claude-md' | 'sifu';
+type TabId = 'env' | 'tools' | 'directories' | 'global-claude-md' | 'default-claude-md' | 'sifu' | 'sifu-md' | 'sifu-agent-md';
 
 export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogProps) {
   // Tab state
@@ -58,6 +62,8 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
   // Sifu state
   const [sifuEnabled, setSifuEnabled] = useState(false);
   const [sifuRootFolder, setSifuRootFolder] = useState('');
+  const [sifuTemplateMD, setSifuTemplateMD] = useState('');
+  const [sifuAgentTemplateMD, setSifuAgentTemplateMD] = useState('');
 
   // Shared state
   const [isSaving, setIsSaving] = useState(false);
@@ -94,6 +100,9 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
       let defaultMD = '';
       try { globalMD = await GetGlobalClaudeMD(); } catch { /* ok */ }
       try { defaultMD = await GetDefaultTemplateMD(); } catch { /* ok */ }
+      let sifuMD = '', sifuAgentMD = '';
+      try { sifuMD = await GetSifuTemplateMD(); } catch { /* ok */ }
+      try { sifuAgentMD = await GetSifuAgentTemplateMD(); } catch { /* ok */ }
 
       // Convert settings env vars map to array
       const vars: EnvVar[] = [];
@@ -132,6 +141,8 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
 
       setGlobalClaudeMD(globalMD);
       setDefaultTemplateMD(defaultMD);
+      setSifuTemplateMD(sifuMD);
+      setSifuAgentTemplateMD(sifuAgentMD);
     } catch (err) {
       console.error('Failed to load settings:', err);
       setError('Failed to load settings');
@@ -150,6 +161,12 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
         setMdSaved(true);
       } else if (activeTab === 'default-claude-md') {
         await SaveDefaultTemplateMD(defaultTemplateMD);
+        setMdSaved(true);
+      } else if (activeTab === 'sifu-md') {
+        await SaveSifuTemplateMD(sifuTemplateMD);
+        setMdSaved(true);
+      } else if (activeTab === 'sifu-agent-md') {
+        await SaveSifuAgentTemplateMD(sifuAgentTemplateMD);
         setMdSaved(true);
       } else {
         // Save env + permissions for non-MD tabs
@@ -225,7 +242,7 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
     });
   };
 
-  const isMDTab = activeTab === 'global-claude-md' || activeTab === 'default-claude-md';
+  const isMDTab = activeTab === 'global-claude-md' || activeTab === 'default-claude-md' || activeTab === 'sifu-md' || activeTab === 'sifu-agent-md';
 
   const renderEnvVarsTab = () => (
     <div style={{ padding: '1rem' }}>
@@ -532,6 +549,8 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
     { id: 'global-claude-md', label: 'Global CLAUDE.md' },
     { id: 'default-claude-md', label: 'Default CLAUDE.md' },
     { id: 'sifu', label: 'Sifu' },
+    { id: 'sifu-md', label: 'SIFU.md' },
+    { id: 'sifu-agent-md', label: 'SIFU_AGENT.md' },
   ];
 
   return (
@@ -606,6 +625,12 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
               )}
               {activeTab === 'default-claude-md' && renderClaudeMDTab(
                 defaultTemplateMD, setDefaultTemplateMD, '~/.claudefu/default-templates/CLAUDE.md'
+              )}
+              {activeTab === 'sifu-md' && renderClaudeMDTab(
+                sifuTemplateMD, setSifuTemplateMD, '~/.claudefu/default-templates/SIFU.md'
+              )}
+              {activeTab === 'sifu-agent-md' && renderClaudeMDTab(
+                sifuAgentTemplateMD, setSifuAgentTemplateMD, '~/.claudefu/default-templates/SIFU_AGENT.md'
               )}
               {activeTab === 'sifu' && (
                 <div style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1.5rem', textAlign: 'left' }}>

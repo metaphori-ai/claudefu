@@ -212,6 +212,22 @@ func (a *App) ensureDefaultTemplates() {
 			wailsrt.LogWarning(a.ctx, fmt.Sprintf("Failed to write default CLAUDE.md template: %v", err))
 		}
 	}
+
+	// SIFU.md template — only write if missing
+	sifuMDPath := filepath.Join(templatesDir, "SIFU.md")
+	if _, err := os.Stat(sifuMDPath); os.IsNotExist(err) {
+		if err := os.WriteFile(sifuMDPath, []byte(defaults.SifuMDTemplate()), 0644); err != nil {
+			wailsrt.LogWarning(a.ctx, fmt.Sprintf("Failed to write default SIFU.md template: %v", err))
+		}
+	}
+
+	// SIFU_AGENT.md template — only write if missing
+	sifuAgentMDPath := filepath.Join(templatesDir, "SIFU_AGENT.md")
+	if _, err := os.Stat(sifuAgentMDPath); os.IsNotExist(err) {
+		if err := os.WriteFile(sifuAgentMDPath, []byte(defaults.SifuAgentMDTemplate()), 0644); err != nil {
+			wailsrt.LogWarning(a.ctx, fmt.Sprintf("Failed to write default SIFU_AGENT.md template: %v", err))
+		}
+	}
 }
 
 // loadCurrentWorkspace loads the current workspace, migrates runtime fields to local/,

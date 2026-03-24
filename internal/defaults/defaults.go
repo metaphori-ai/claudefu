@@ -13,6 +13,12 @@ var claudeMDTemplate string
 //go:embed default_meta_schema.json
 var metaSchemaJSON []byte
 
+//go:embed default_sifu.md
+var sifuMDTemplate string
+
+//go:embed default_sifu_agent.md
+var sifuAgentMDTemplate string
+
 // ToolInstructionsJSON returns the embedded default tool instructions JSON bytes.
 func ToolInstructionsJSON() []byte {
 	return toolInstructionsJSON
@@ -26,4 +32,14 @@ func ClaudeMDTemplate() string {
 // MetaSchemaJSON returns the embedded default meta schema JSON bytes.
 func MetaSchemaJSON() []byte {
 	return metaSchemaJSON
+}
+
+// SifuMDTemplate returns the embedded default SIFU.md template content.
+func SifuMDTemplate() string {
+	return sifuMDTemplate
+}
+
+// SifuAgentMDTemplate returns the embedded default SIFU_AGENT.md template content.
+func SifuAgentMDTemplate() string {
+	return sifuAgentMDTemplate
 }

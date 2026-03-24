@@ -416,6 +416,14 @@ func (m *Manager) EnsureSifuAgent(ws *Workspace, sifuEnabled bool, sifuRootFolde
 		fmt.Printf("[INFO] EnsureSifuAgent: added sifu agent %s to workspace %s\n", sifuSlug, ws.ID)
 	}
 
+	// Generate CLAUDE.md if missing (don't overwrite user customizations)
+	claudeMdPath := filepath.Join(sifuFolder, "CLAUDE.md")
+	if _, err := os.Stat(claudeMdPath); os.IsNotExist(err) {
+		if genErr := m.GenerateSifuClaudeMD(ws, sifuFolder); genErr != nil {
+			fmt.Printf("[WARN] EnsureSifuAgent: failed to generate CLAUDE.md: %v\n", genErr)
+		}
+	}
+
 	return nil
 }
 

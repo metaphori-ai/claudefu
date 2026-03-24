@@ -157,3 +157,51 @@ func (a *App) GetWorkspaceAgentFolders(workspaceID string) ([]string, error) {
 	}
 	return folders, nil
 }
+
+// GetSifuTemplateMD reads the SIFU.md template from ~/.claudefu/default-templates/.
+func (a *App) GetSifuTemplateMD() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	path := filepath.Join(home, ".claudefu", "default-templates", "SIFU.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// SaveSifuTemplateMD writes the SIFU.md template to ~/.claudefu/default-templates/.
+func (a *App) SaveSifuTemplateMD(content string) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(home, ".claudefu", "default-templates", "SIFU.md")
+	return os.WriteFile(path, []byte(content), 0644)
+}
+
+// GetSifuAgentTemplateMD reads the SIFU_AGENT.md template from ~/.claudefu/default-templates/.
+func (a *App) GetSifuAgentTemplateMD() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	path := filepath.Join(home, ".claudefu", "default-templates", "SIFU_AGENT.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// SaveSifuAgentTemplateMD writes the SIFU_AGENT.md template to ~/.claudefu/default-templates/.
+func (a *App) SaveSifuAgentTemplateMD(content string) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(home, ".claudefu", "default-templates", "SIFU_AGENT.md")
+	return os.WriteFile(path, []byte(content), 0644)
+}

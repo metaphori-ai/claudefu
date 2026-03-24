@@ -153,6 +153,10 @@ export function GetSetByCommand(arg1:string):Promise<main.PermissionSetMatch>;
 
 export function GetSettings():Promise<settings.Settings>;
 
+export function GetSifuAgentTemplateMD():Promise<string>;
+
+export function GetSifuTemplateMD():Promise<string>;
+
 export function GetSubagentConversation(arg1:string,arg2:string,arg3:string):Promise<Array<types.Message>>;
 
 export function GetTerminals():Promise<Array<terminal.TerminalInfo>>;
@@ -248,6 +252,10 @@ export function SaveMCPToolInstructions(arg1:mcpserver.ToolInstructions):Promise
 export function SaveMetaSchema(arg1:workspace.MetaSchema):Promise<void>;
 
 export function SaveSettings(arg1:settings.Settings):Promise<void>;
+
+export function SaveSifuAgentTemplateMD(arg1:string):Promise<void>;
+
+export function SaveSifuTemplateMD(arg1:string):Promise<void>;
 
 export function SaveWorkspace(arg1:workspace.Workspace):Promise<void>;
 
