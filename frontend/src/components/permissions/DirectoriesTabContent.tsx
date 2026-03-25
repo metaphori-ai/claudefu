@@ -173,7 +173,8 @@ export function DirectoriesTabContent({
     border: '1px solid #2a2a2a',
     borderRadius: '8px',
     background: '#0d0d0d',
-    overflow: 'hidden' as const,
+    overflow: 'auto' as const,
+    maxHeight: '200px',
   };
 
   const emptyStateStyle = {
@@ -184,7 +185,7 @@ export function DirectoriesTabContent({
   };
 
   return (
-    <div style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+    <div style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1.5rem', overflow: 'auto', flex: 1, minHeight: 0 }}>
       {/* Description */}
       <div style={{
         fontSize: '0.8rem',

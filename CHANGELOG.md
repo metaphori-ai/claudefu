@@ -5,6 +5,13 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.16] - 2026-03-25
+
+### Fixed
+- **Permissions Directories tab scrollable** — Directory lists now scroll when many folders are added (was clipped by `overflow: hidden`). Each list section has 200px max-height with independent scroll.
+- **Template {{ AGENT_SLUG }} and {{ AGENT_ID }} substitution** — Sifu CLAUDE.md generation now correctly substitutes the sifu agent's own identity placeholders. Previously these passed through unsubstituted because `collectAgentMeta` for the sifu folder wasn't merged into workspace values.
+- **ScaffoldAgent syncs slug to registry** — `ScaffoldAgent` now calls `UpdateAgentSlug` to persist the computed slug (matching `AddAgent` behavior). Without this, `collectAgentMeta` couldn't find `AGENT_SLUG` for later template operations.
+
 ## [0.5.15] - 2026-03-24
 
 ### Added

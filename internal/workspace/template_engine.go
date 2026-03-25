@@ -99,6 +99,16 @@ func (m *Manager) GenerateSifuClaudeMD(ws *Workspace, sifuFolder string) error {
 	wsValues["AGENT_SECTIONS"] = strings.Join(agentSections, "\n\n")
 	wsValues["AT_INCLUDE_REFS"] = strings.Join(allTdaRefs, "\n\n")
 
+	// Add the sifu agent's own identity to workspace values
+	// (the main SIFU.md template uses {{ AGENT_ID }} and {{ AGENT_SLUG }} for the sifu's own identity)
+	sifuMeta := m.collectAgentMeta(sifuFolder)
+	if v, ok := sifuMeta["AGENT_ID"]; ok {
+		wsValues["AGENT_ID"] = v
+	}
+	if v, ok := sifuMeta["AGENT_SLUG"]; ok {
+		wsValues["AGENT_SLUG"] = v
+	}
+
 	// Process main template
 	result := ProcessTemplate(string(sifuTemplate), wsValues)
 

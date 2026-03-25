@@ -58,6 +58,12 @@ func (a *App) ScaffoldAgent(folder, name string, opts scaffold.ScaffoldOptions) 
 		Slug: slug,
 	}
 
+	// Sync slug to global registry if not already set (matches AddAgent behavior).
+	// Without this, collectAgentMeta() can't find AGENT_SLUG for template substitution.
+	if info := a.workspace.GetAgentInfo(folder); info == nil || info.GetSlug() == "" {
+		a.workspace.UpdateAgentSlug(folder, slug)
+	}
+
 	// If this is a sifu agent, skip generic CLAUDE.md — generate from Sifu templates instead
 	isSifu := false
 	if info := a.workspace.GetAgentInfo(folder); info != nil && info.Meta["AGENT_TYPE"] == "sifu" {
