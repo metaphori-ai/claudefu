@@ -126,7 +126,7 @@ export function TerminalTab({ id, isActive }: TerminalTabProps) {
         width: '100%',
         height: '100%',
         display: isActive ? 'block' : 'none',
-        paddingLeft: '10px',
+        padding: '10px',
       }}
     />
   );

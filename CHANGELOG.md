@@ -5,6 +5,14 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.17] - 2026-03-25
+
+### Improved
+- **Terminal tabs on left side** — Tab list moved from right to left for easier mouse/keyboard access.
+- **Terminal labels show folder name** — Tabs display the folder basename (e.g., `api-metaphori-ai`) instead of generic "Terminal 1". Dynamically updates via OSC 7 when you `cd` to a new directory.
+- **CMD+Up/Down terminal switching** — Navigate between multiple terminal tabs with keyboard shortcuts (wraps around at edges).
+- **Terminal even padding** — Uniform 10px padding on all sides of the terminal content area.
+
 ## [0.5.16] - 2026-03-25
 
 ### Fixed

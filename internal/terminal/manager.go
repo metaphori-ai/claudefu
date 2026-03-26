@@ -1,12 +1,15 @@
 package terminal
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sync"
 
 	"github.com/creack/pty"
@@ -49,7 +52,10 @@ func NewManager(emitFunc func(string, ...any)) *Manager {
 func (m *Manager) Create(folder string) (*TerminalInfo, error) {
 	m.mu.Lock()
 	m.counter++
-	label := fmt.Sprintf("Terminal %d", m.counter)
+	label := filepath.Base(folder)
+	if label == "" || label == "/" || label == "." {
+		label = fmt.Sprintf("Terminal %d", m.counter)
+	}
 	m.mu.Unlock()
 
 	// Determine shell
@@ -99,7 +105,8 @@ func (m *Manager) Create(folder string) (*TerminalInfo, error) {
 	return info, nil
 }
 
-// readOutput reads PTY output and emits it as base64-encoded events
+// readOutput reads PTY output and emits it as base64-encoded events.
+// Also parses OSC 7 sequences (CWD reporting) to update the terminal label.
 func (m *Manager) readOutput(sess *Session, ctx context.Context) {
 	buf := make([]byte, 4096)
 	for {
@@ -111,7 +118,21 @@ func (m *Manager) readOutput(sess *Session, ctx context.Context) {
 
 		n, err := sess.pty.Read(buf)
 		if n > 0 {
-			encoded := base64.StdEncoding.EncodeToString(buf[:n])
+			chunk := buf[:n]
+
+			// Check for OSC 7 sequence: \x1b]7;file://host/path\x07 (or \x1b\\)
+			if newLabel := parseOSC7(chunk); newLabel != "" {
+				m.mu.Lock()
+				sess.Label = newLabel
+				m.mu.Unlock()
+				m.emitFunc("terminal:cwd", map[string]any{
+					"id":    sess.ID,
+					"label": newLabel,
+					"path":  sess.Folder, // keep full path too
+				})
+			}
+
+			encoded := base64.StdEncoding.EncodeToString(chunk)
 			m.emitFunc("terminal:output", map[string]any{
 				"id":   sess.ID,
 				"data": encoded,
@@ -129,6 +150,57 @@ func (m *Manager) readOutput(sess *Session, ctx context.Context) {
 			return
 		}
 	}
+}
+
+// parseOSC7 extracts the CWD basename from an OSC 7 escape sequence.
+// Format: \x1b]7;file://hostname/path\x07  (or terminated by \x1b\\)
+// Returns the basename of the path, or "" if no OSC 7 found.
+func parseOSC7(data []byte) string {
+	// Look for OSC 7 start: \x1b]7; or \x9d7;
+	marker := []byte("\x1b]7;")
+	idx := bytes.Index(data, marker)
+	if idx < 0 {
+		return ""
+	}
+	start := idx + len(marker)
+	if start >= len(data) {
+		return ""
+	}
+
+	// Find terminator: BEL (\x07) or ST (\x1b\\)
+	end := -1
+	for i := start; i < len(data); i++ {
+		if data[i] == 0x07 {
+			end = i
+			break
+		}
+		if data[i] == 0x1b && i+1 < len(data) && data[i+1] == '\\' {
+			end = i
+			break
+		}
+	}
+	if end < 0 {
+		return ""
+	}
+
+	uri := string(data[start:end])
+
+	// Parse as URL: file://hostname/path/to/dir
+	parsed, err := url.Parse(uri)
+	if err != nil {
+		return ""
+	}
+
+	path := parsed.Path
+	if path == "" {
+		return ""
+	}
+
+	base := filepath.Base(path)
+	if base == "" || base == "/" || base == "." {
+		return ""
+	}
+	return base
 }
 
 // Write sends data to a terminal's PTY stdin

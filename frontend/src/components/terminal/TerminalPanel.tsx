@@ -35,6 +35,51 @@ export function TerminalPanel({ selectedFolder }: TerminalPanelProps) {
     return () => cancel();
   }, []);
 
+  // Listen for CWD changes (OSC 7) to update tab labels
+  useEffect(() => {
+    const cancel = EventsOn('terminal:cwd', (payload: any) => {
+      if (payload?.id && payload?.label) {
+        setTerminals(prev =>
+          prev.map(t => t.id === payload.id ? { ...t, label: payload.label } : t)
+        );
+      }
+    });
+    return () => cancel();
+  }, []);
+
+  // CMD+Up/Down to switch between terminals
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!e.metaKey) return;
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      setTerminals(currentTerminals => {
+        if (currentTerminals.length < 2) return currentTerminals;
+
+        setActiveId(currentActiveId => {
+          const idx = currentTerminals.findIndex(t => t.id === currentActiveId);
+          if (idx < 0) return currentActiveId;
+
+          let nextIdx: number;
+          if (e.key === 'ArrowUp') {
+            nextIdx = idx > 0 ? idx - 1 : currentTerminals.length - 1;
+          } else {
+            nextIdx = idx < currentTerminals.length - 1 ? idx + 1 : 0;
+          }
+          return currentTerminals[nextIdx].id;
+        });
+
+        return currentTerminals;
+      });
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   const handleNewTerminal = useCallback(async () => {
     try {
       const folder = selectedFolder || '/';
@@ -67,39 +112,14 @@ export function TerminalPanel({ selectedFolder }: TerminalPanelProps) {
 
   return (
     <div style={{ display: 'flex', height: '100%' }}>
-      {/* Terminal content area */}
-      <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-        {terminals.map((t) => (
-          <TerminalTab
-            key={t.id}
-            id={t.id}
-            isActive={t.id === activeId}
-          />
-        ))}
-        {terminals.length === 0 && (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              height: '100%',
-              color: '#555',
-              fontSize: '0.85rem',
-            }}
-          >
-            No terminals open
-          </div>
-        )}
-      </div>
-
-      {/* Right-side tab list (VS Code style) */}
+      {/* Left-side tab list */}
       <div
         style={{
           display: 'flex',
           flexDirection: 'column',
           background: '#111',
-          borderLeft: '1px solid #222',
-          width: '140px',
+          borderRight: '1px solid #222',
+          width: '190px',
           flexShrink: 0,
           overflow: 'auto',
         }}
@@ -168,6 +188,31 @@ export function TerminalPanel({ selectedFolder }: TerminalPanelProps) {
           <span>+</span>
           <span>New</span>
         </button>
+      </div>
+
+      {/* Terminal content area */}
+      <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+        {terminals.map((t) => (
+          <TerminalTab
+            key={t.id}
+            id={t.id}
+            isActive={t.id === activeId}
+          />
+        ))}
+        {terminals.length === 0 && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: '100%',
+              color: '#555',
+              fontSize: '0.85rem',
+            }}
+          >
+            No terminals open
+          </div>
+        )}
       </div>
     </div>
   );
