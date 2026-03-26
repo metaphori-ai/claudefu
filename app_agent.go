@@ -322,6 +322,42 @@ func (a *App) UpdateAgent(agent workspace.Agent) error {
 	return fmt.Errorf("agent not found: %s", agent.ID)
 }
 
+// ReorderAgents reorders agents in the current workspace.
+// orderedIDs is the full list of agent IDs in the desired order.
+func (a *App) ReorderAgents(orderedIDs []string) error {
+	if a.currentWorkspace == nil {
+		return fmt.Errorf("no workspace loaded")
+	}
+
+	// Build lookup of current agents by ID
+	agentMap := make(map[string]workspace.Agent, len(a.currentWorkspace.Agents))
+	for _, agent := range a.currentWorkspace.Agents {
+		agentMap[agent.ID] = agent
+	}
+
+	// Validate all IDs exist
+	if len(orderedIDs) != len(a.currentWorkspace.Agents) {
+		return fmt.Errorf("expected %d agent IDs, got %d", len(a.currentWorkspace.Agents), len(orderedIDs))
+	}
+
+	reordered := make([]workspace.Agent, 0, len(orderedIDs))
+	for _, id := range orderedIDs {
+		agent, ok := agentMap[id]
+		if !ok {
+			return fmt.Errorf("agent not found: %s", id)
+		}
+		reordered = append(reordered, agent)
+	}
+
+	a.currentWorkspace.Agents = reordered
+
+	if err := a.workspace.SaveWorkspace(a.currentWorkspace); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // GetAgent returns an agent by ID
 func (a *App) GetAgent(agentID string) (*workspace.Agent, error) {
 	agent := a.getAgentByID(agentID)

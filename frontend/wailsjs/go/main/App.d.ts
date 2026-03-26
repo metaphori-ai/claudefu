@@ -233,6 +233,8 @@ export function RemoveAgent(arg1:string):Promise<void>;
 
 export function RenameWorkspace(arg1:string,arg2:string):Promise<void>;
 
+export function ReorderAgents(arg1:Array<string>):Promise<void>;
+
 export function ResetMCPToolInstructions():Promise<void>;
 
 export function ResizeTerminal(arg1:string,arg2:number,arg3:number):Promise<void>;

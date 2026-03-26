@@ -446,6 +446,10 @@ export function RenameWorkspace(arg1, arg2) {
   return window['go']['main']['App']['RenameWorkspace'](arg1, arg2);
 }
 
+export function ReorderAgents(arg1) {
+  return window['go']['main']['App']['ReorderAgents'](arg1);
+}
+
 export function ResetMCPToolInstructions() {
   return window['go']['main']['App']['ResetMCPToolInstructions']();
 }

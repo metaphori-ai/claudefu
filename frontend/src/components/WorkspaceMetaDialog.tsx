@@ -8,6 +8,7 @@ import {
   GetAllAgentMeta, UpdateAgentMeta,
   GetWorkspaceSifuFolder, SelectDirectory, SelectFile,
   GetWorkspaceAgentFolders, NormalizeDirPath,
+  ReorderAgents, ReloadCurrentWorkspace,
 } from '../../wailsjs/go/main/App';
 import { workspace } from '../../wailsjs/go/models';
 
@@ -15,7 +16,7 @@ import { workspace } from '../../wailsjs/go/models';
 // Types & Constants
 // ---------------------------------------------------------------------------
 
-type TabId = 'ws-schema' | 'agent-schema' | 'workspaces' | 'agents';
+type TabId = 'ws-schema' | 'agent-schema' | 'workspaces' | 'agents' | 'reorder';
 
 interface WorkspaceMetaDialogProps {
   isOpen: boolean;
@@ -87,6 +88,10 @@ export function WorkspaceMetaDialog({ isOpen, onClose, onSaved }: WorkspaceMetaD
   const [agentWsFilter, setAgentWsFilter] = useState<string>('');
   const [wsAgentFolders, setWsAgentFolders] = useState<string[] | null>(null); // null = "all"
 
+  // Reorder tab: local ordered copy of agents (committed on save)
+  const [reorderList, setReorderList] = useState<{ id: string; slug: string; type: string }[]>([]);
+  const [reorderDirty, setReorderDirty] = useState(false);
+
   const { workspaceId, agents } = useWorkspace();
 
   // Saved indicator (2s green flash)
@@ -127,6 +132,10 @@ export function WorkspaceMetaDialog({ isOpen, onClose, onSaved }: WorkspaceMetaD
 
       // Start with "Select Agent" (empty) — user picks from dropdown
       setSelectedAgentFolder('');
+
+      // Initialize reorder list from current agent order
+      setReorderList(agents.map(a => ({ id: a.id, slug: a.slug || a.id.slice(0, 8), type: a.type || 'agent' })));
+      setReorderDirty(false);
 
       setLoading(false);
     }).catch(err => {
@@ -656,6 +665,158 @@ export function WorkspaceMetaDialog({ isOpen, onClose, onSaved }: WorkspaceMetaD
   };
 
   // ---------------------------------------------------------------------------
+  // Render: reorder tab
+  // ---------------------------------------------------------------------------
+
+  const moveAgent = useCallback((index: number, direction: 'up' | 'down') => {
+    setReorderList(prev => {
+      const next = [...prev];
+      const targetIndex = direction === 'up' ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= next.length) return prev;
+      // Don't swap into/out of sifu position (index 0 if sifu)
+      if (next[index].type === 'sifu' || next[targetIndex].type === 'sifu') return prev;
+      [next[index], next[targetIndex]] = [next[targetIndex], next[index]];
+      return next;
+    });
+    setReorderDirty(true);
+  }, []);
+
+  const handleSaveReorder = useCallback(async () => {
+    setIsSaving(true);
+    setError(null);
+    try {
+      await ReorderAgents(reorderList.map(a => a.id));
+      // Reload workspace so context picks up the new order
+      const ws = await ReloadCurrentWorkspace();
+      if (ws) {
+        setReorderList(ws.agents.map((a: any) => ({
+          id: a.id, slug: a.slug || a.id.slice(0, 8), type: a.type || 'agent',
+        })));
+      }
+      setReorderDirty(false);
+      setSaved(true);
+      onSaved?.();
+    } catch (err: any) {
+      setError(err?.message || 'Failed to reorder');
+    } finally {
+      setIsSaving(false);
+    }
+  }, [reorderList, onSaved]);
+
+  const renderReorderTab = () => {
+    // Find where non-sifu agents start
+    const sifuCount = reorderList.filter(a => a.type === 'sifu').length;
+
+    return (
+      <div style={{ padding: '1rem' }}>
+        <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '0.75rem' }}>
+          Drag order determines sidebar position and CMD+{'{n}'} shortcuts.
+          {sifuCount > 0 && ' Sifu agents are always pinned first.'}
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          {reorderList.map((agent, index) => {
+            const isSifu = agent.type === 'sifu';
+            const isFirst = isSifu ? true : index === sifuCount;
+            const isLast = index === reorderList.length - 1;
+
+            return (
+              <div
+                key={agent.id}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '0.5rem',
+                  padding: '0.5rem 0.75rem', borderRadius: '6px',
+                  background: isSifu ? 'rgba(217, 119, 87, 0.08)' : '#151515',
+                  border: `1px solid ${isSifu ? 'rgba(217, 119, 87, 0.2)' : '#222'}`,
+                }}
+              >
+                {/* Position number */}
+                <span style={{
+                  fontSize: '0.7rem', color: '#555', fontFamily: 'monospace',
+                  minWidth: '1.2rem', textAlign: 'right',
+                }}>
+                  {index + 1}
+                </span>
+
+                {/* Agent slug */}
+                <span style={{
+                  flex: 1, fontSize: '0.85rem',
+                  color: isSifu ? '#d97757' : '#ccc',
+                  fontWeight: isSifu ? 600 : 400,
+                }}>
+                  {agent.slug}
+                </span>
+
+                {/* Sifu badge or up/down buttons */}
+                {isSifu ? (
+                  <span style={{
+                    fontSize: '0.65rem', color: '#d97757', opacity: 0.6,
+                    fontStyle: 'italic',
+                  }}>
+                    pinned
+                  </span>
+                ) : (
+                  <div style={{ display: 'flex', gap: '2px' }}>
+                    <button
+                      onClick={() => moveAgent(index, 'up')}
+                      disabled={isFirst}
+                      style={{
+                        width: '24px', height: '24px', borderRadius: '4px',
+                        border: '1px solid #333', background: 'transparent',
+                        color: isFirst ? '#333' : '#888',
+                        cursor: isFirst ? 'default' : 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: '0.75rem', padding: 0,
+                      }}
+                      title="Move up"
+                    >
+                      ▲
+                    </button>
+                    <button
+                      onClick={() => moveAgent(index, 'down')}
+                      disabled={isLast}
+                      style={{
+                        width: '24px', height: '24px', borderRadius: '4px',
+                        border: '1px solid #333', background: 'transparent',
+                        color: isLast ? '#333' : '#888',
+                        cursor: isLast ? 'default' : 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: '0.75rem', padding: 0,
+                      }}
+                      title="Move down"
+                    >
+                      ▼
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Apply button (only when dirty) */}
+        {reorderDirty && (
+          <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'flex-end' }}>
+            <button
+              onClick={handleSaveReorder}
+              disabled={isSaving}
+              style={{
+                padding: '0.5rem 1.25rem', borderRadius: '6px',
+                border: 'none', background: '#d97757', color: '#fff',
+                cursor: isSaving ? 'not-allowed' : 'pointer',
+                fontSize: '0.8rem', fontWeight: 500,
+                opacity: isSaving ? 0.7 : 1,
+              }}
+            >
+              {isSaving ? 'Saving...' : 'Apply Order'}
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // ---------------------------------------------------------------------------
   // Tabs
   // ---------------------------------------------------------------------------
 
@@ -664,6 +825,7 @@ export function WorkspaceMetaDialog({ isOpen, onClose, onSaved }: WorkspaceMetaD
     { id: 'agent-schema', label: 'Agent Schema' },
     { id: 'workspaces', label: 'Workspaces' },
     { id: 'agents', label: 'Agents' },
+    { id: 'reorder', label: 'Reorder' },
   ];
 
   return (
@@ -719,6 +881,7 @@ export function WorkspaceMetaDialog({ isOpen, onClose, onSaved }: WorkspaceMetaD
               {activeTab === 'agent-schema' && schema && renderSchemaList('agent', schema.agentAttributes)}
               {activeTab === 'workspaces' && renderWorkspacesTab()}
               {activeTab === 'agents' && renderAgentsTab()}
+              {activeTab === 'reorder' && renderReorderTab()}
             </>
           )}
         </div>
