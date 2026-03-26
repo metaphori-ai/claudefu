@@ -774,6 +774,7 @@ func (m *Manager) SaveWorkspace(ws *Workspace) error {
 	}
 
 	wsPath := filepath.Join(m.configPath, "workspaces", ws.ID+".json")
+	fmt.Printf("[DEBUG] SaveWorkspace: writing %d agents to %s (%d bytes)\n", len(disk.Agents), wsPath, len(data))
 	return os.WriteFile(wsPath, data, 0644)
 }
 

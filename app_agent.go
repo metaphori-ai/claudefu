@@ -146,8 +146,10 @@ func (a *App) AddAgent(name, folder string) (*workspace.Agent, error) {
 	a.currentWorkspace.Agents = append(a.currentWorkspace.Agents, agent)
 
 	if err := a.workspace.SaveWorkspace(a.currentWorkspace); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to save workspace after adding agent %s: %w", agent.ID, err)
 	}
+	fmt.Printf("[DEBUG] AddAgent: saved workspace with %d agents (added %s / %s)\n",
+		len(a.currentWorkspace.Agents), agent.GetSlug(), agent.ID[:8])
 
 	// Start watching the new agent
 	if a.watcher != nil && a.rt != nil {
