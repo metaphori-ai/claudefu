@@ -121,13 +121,22 @@ export function TerminalTab({ id, isActive }: TerminalTabProps) {
 
   return (
     <div
-      ref={containerRef}
       style={{
         width: '100%',
         height: '100%',
-        display: isActive ? 'block' : 'none',
+        display: isActive ? 'flex' : 'none',
         padding: '10px',
+        boxSizing: 'border-box',
       }}
-    />
+    >
+      <div
+        ref={containerRef}
+        style={{
+          flex: 1,
+          minHeight: 0,
+          minWidth: 0,
+        }}
+      />
+    </div>
   );
 }

@@ -50,7 +50,7 @@ export function TerminalPanel({ selectedFolder }: TerminalPanelProps) {
   // CMD+Up/Down to switch between terminals
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (!e.metaKey) return;
+      if (!e.metaKey || !e.shiftKey) return;
       if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
 
       e.preventDefault();

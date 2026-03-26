@@ -5,6 +5,12 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.18] - 2026-03-25
+
+### Fixed
+- **Terminal padding overflow** — Terminal content no longer scrolls past the bottom. Separated padding wrapper from xterm container so FitAddon measures the correct usable space.
+- **Terminal tab shortcut changed to CMD+Shift+Up/Down** — CMD+Up/Down conflicted with input area navigation; now requires Shift modifier.
+
 ## [0.5.17] - 2026-03-25
 
 ### Improved
