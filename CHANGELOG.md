@@ -5,12 +5,12 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.21] - 2026-03-26
 
 ### Added
 - **Agent reordering** — New "Reorder" tab in Workspaces & Agents dialog. Up/down buttons to rearrange agents. Sifu agents pinned first. Order persists to workspace JSON, affects sidebar display and CMD+{n} shortcuts.
-
 - **Duplicate session** — Copy any session from the Sessions dialog. Duplicates the JSONL file with a new UUID and appends " copy" to the session name. Duplicate button (copy icon) on each session row, turns orange on hover.
+- **Debug logging for workspace saves** — `SaveWorkspace` and `AddAgent` now log agent count, file path, and byte count to diagnose persistence issues.
 
 ### Changed
 - **CMD-R refreshes session messages** — CMD-R now reloads the current session's messages from disk (useful for Syncthing-synced sessions). Previously it reloaded the workspace config.
