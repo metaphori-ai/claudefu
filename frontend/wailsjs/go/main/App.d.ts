@@ -53,6 +53,8 @@ export function CreateWorkspace(arg1:string):Promise<workspace.Workspace>;
 
 export function DeleteBacklogItem(arg1:string,arg2:string):Promise<boolean>;
 
+export function DeleteFromMessage(arg1:string,arg2:string,arg3:string):Promise<number>;
+
 export function DeleteInboxMessage(arg1:string,arg2:string):Promise<boolean>;
 
 export function DeleteWorkspace(arg1:string):Promise<void>;

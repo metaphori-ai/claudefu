@@ -19,6 +19,7 @@ interface MessageListProps {
   onQuestionAnswer?: (toolUseId: string, questions: any[], answers: Record<string, string>) => void;
   onQuestionSkip?: (toolUseId: string) => void;
   onAddPermission?: (toolName: string, command?: string) => void;
+  onDeleteFromMessage?: (messageUUID: string) => void;
 }
 
 export function MessageList({
@@ -37,7 +38,8 @@ export function MessageList({
   onViewToolDetails,
   onQuestionAnswer,
   onQuestionSkip,
-  onAddPermission
+  onAddPermission,
+  onDeleteFromMessage
 }: MessageListProps) {
   // Filter out tool_result_carrier messages and sort by timestamp
   const displayableMessages = messages
@@ -146,20 +148,28 @@ export function MessageList({
           </div>
         )}
 
-        {displayableMessages.map((message, index) => (
-          <div key={message.uuid || index}>
-            <MessageRow
-              message={message}
-              globalToolResultMap={globalToolResultMap}
-              globalPendingQuestionMap={globalPendingQuestionMap}
-              onCompactionClick={onCompactionClick}
-              onViewToolDetails={onViewToolDetails}
-              onQuestionAnswer={onQuestionAnswer}
-              onQuestionSkip={onQuestionSkip}
-              onAddPermission={onAddPermission}
-            />
-          </div>
-        ))}
+        {displayableMessages.map((message, index) => {
+          const canDelete = onDeleteFromMessage
+            && message.type === 'user'
+            && !message.isCompaction
+            && message.uuid;
+
+          return (
+            <div key={message.uuid || index}>
+              <MessageRow
+                message={message}
+                globalToolResultMap={globalToolResultMap}
+                globalPendingQuestionMap={globalPendingQuestionMap}
+                onCompactionClick={onCompactionClick}
+                onViewToolDetails={onViewToolDetails}
+                onQuestionAnswer={onQuestionAnswer}
+                onQuestionSkip={onQuestionSkip}
+                onAddPermission={onAddPermission}
+                onDeleteTurn={canDelete ? () => onDeleteFromMessage(message.uuid) : undefined}
+              />
+            </div>
+          );
+        })}
 
         <div style={{ height: '60px' }} /> {/* Bottom spacer */}
         <div ref={messagesEndRef} />

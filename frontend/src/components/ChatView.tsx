@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { GetConversationPaged, SetActiveSession, ClearActiveSession, SendMessage, MarkSessionViewed, NewSession, ReadPlanFile, TouchPlanFile, AnswerQuestion, CancelSession, AcceptPlanReview, RejectPlanReview, RunSlashCommand } from '../../wailsjs/go/main/App';
+import { GetConversationPaged, SetActiveSession, ClearActiveSession, SendMessage, MarkSessionViewed, NewSession, ReadPlanFile, TouchPlanFile, AnswerQuestion, CancelSession, AcceptPlanReview, RejectPlanReview, RunSlashCommand, DeleteFromMessage } from '../../wailsjs/go/main/App';
 import { types } from '../../wailsjs/go/models';
 
 // Extracted components
@@ -20,6 +20,7 @@ import { SlideInPane } from './SlideInPane';
 import { ClaudeSettingsDialog } from './ClaudeSettingsDialog';
 import { PermissionsDialog } from './PermissionsDialog';
 import { AddPermissionWizard } from './AddPermissionWizard';
+import { ConfirmDialog } from './ConfirmDialog';
 
 // Hooks
 import { useScrollManagement } from '../hooks/useScrollManagement';
@@ -96,6 +97,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [deleteMessageUUID, setDeleteMessageUUID] = useState<string | null>(null);
 
   // Ref for InputArea imperative control (setValue, focus)
   const inputAreaRef = useRef<InputAreaHandle>(null);
@@ -723,6 +725,22 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
     setPermissionWizardOpen(true);
   };
 
+  // ===== DELETE LAST TURN =====
+
+  const handleDeleteFromMessage = async () => {
+    if (!deleteMessageUUID) return;
+    const uuid = deleteMessageUUID;
+    setDeleteMessageUUID(null);
+    try {
+      await DeleteFromMessage(agentId, sessionId, uuid);
+      // Clear cached messages then force reload from disk
+      clearContextSession(agentId, sessionId);
+      await loadConversation(true);
+    } catch (err) {
+      console.error('Failed to delete from message:', err);
+    }
+  };
+
   // ===== MESSAGE QUEUE HANDLERS =====
 
   // Add message to queue (called when user presses Enter/Queue while Claude is responding)
@@ -823,6 +841,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
         onQuestionAnswer={handleQuestionAnswer}
         onQuestionSkip={handleQuestionSkip}
         onAddPermission={handleAddPermission}
+        onDeleteFromMessage={(uuid) => setDeleteMessageUUID(uuid)}
       />
 
       {/* Input Area */}
@@ -1064,6 +1083,15 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
         folder={folder}
         toolName={permissionWizardTool}
         command={permissionWizardCommand}
+      />
+      <ConfirmDialog
+        isOpen={!!deleteMessageUUID}
+        onClose={() => setDeleteMessageUUID(null)}
+        onConfirm={handleDeleteFromMessage}
+        title="Delete From Here"
+        message="This will remove this message and everything after it from the session file. This cannot be undone."
+        confirmText="Delete"
+        danger
       />
     </div>
   );

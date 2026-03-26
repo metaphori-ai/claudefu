@@ -18,6 +18,7 @@ interface MessageRowProps {
   onQuestionAnswer?: (toolUseId: string, questions: any[], answers: Record<string, string>) => void;
   onQuestionSkip?: (toolUseId: string) => void;
   onAddPermission?: (toolName: string, command?: string) => void;
+  onDeleteTurn?: () => void;
 }
 
 // Styled file reference component
@@ -135,7 +136,8 @@ export function MessageRow({
   onViewToolDetails,
   onQuestionAnswer,
   onQuestionSkip,
-  onAddPermission
+  onAddPermission,
+  onDeleteTurn
 }: MessageRowProps) {
   // Expand/collapse state for long user messages
   const [isExpanded, setIsExpanded] = useState(false);
@@ -334,9 +336,35 @@ export function MessageRow({
                   {isExpanded ? 'Show less' : `Show more (${lineCount} lines)`}
                 </button>
               )}
-              {/* Copy button for user message (show on hover) */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '4px', opacity: isHovered ? 1 : 0, transition: 'opacity 0.15s ease' }}>
+              {/* Copy + Delete buttons for user message (show on hover) */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '4px', marginTop: '4px', opacity: isHovered ? 1 : 0, transition: 'opacity 0.15s ease' }}>
                 <CopyButton text={message.content} id={message.uuid} alwaysVisible />
+                {onDeleteTurn && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDeleteTurn();
+                    }}
+                    title="Delete this turn and all responses below"
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#d97757',
+                      cursor: 'pointer',
+                      padding: '2px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      transition: 'color 0.15s',
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.color = '#f87171'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.color = '#d97757'; }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                    </svg>
+                  </button>
+                )}
               </div>
             </div>
           );

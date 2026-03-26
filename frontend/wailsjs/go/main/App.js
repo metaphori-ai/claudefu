@@ -86,6 +86,10 @@ export function DeleteBacklogItem(arg1, arg2) {
   return window['go']['main']['App']['DeleteBacklogItem'](arg1, arg2);
 }
 
+export function DeleteFromMessage(arg1, arg2, arg3) {
+  return window['go']['main']['App']['DeleteFromMessage'](arg1, arg2, arg3);
+}
+
 export function DeleteInboxMessage(arg1, arg2) {
   return window['go']['main']['App']['DeleteInboxMessage'](arg1, arg2);
 }

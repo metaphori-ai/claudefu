@@ -510,3 +510,69 @@ func FindLatestToolUseID(folder, sessionID, toolName string) (toolID string, ass
 
 	return "", "", fmt.Errorf("no tool_use block found for %s in session %s", toolName, sessionID)
 }
+
+// DeleteFromMessage truncates a session JSONL file from the message with the given
+// UUID and everything after it. The target message and all subsequent messages are removed.
+// Always truncates downward — no parent_uuid patching needed.
+// Returns the number of lines removed, or an error.
+func DeleteFromMessage(folder, sessionID, messageUUID string) (int, error) {
+	encodedName := encodeProjectPath(folder)
+	sessionPath := filepath.Join(os.Getenv("HOME"), ".claude", "projects", encodedName, sessionID+".jsonl")
+
+	data, err := os.ReadFile(sessionPath)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read session file: %w", err)
+	}
+
+	lines := strings.Split(string(data), "\n")
+
+	// Find the line with the matching UUID
+	cutIndex := -1
+	for i, line := range lines {
+		if line == "" {
+			continue
+		}
+		if !strings.Contains(line, messageUUID) {
+			continue
+		}
+
+		var event map[string]any
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			continue
+		}
+
+		if event["uuid"] == messageUUID {
+			cutIndex = i
+			break
+		}
+	}
+
+	if cutIndex < 0 {
+		return 0, fmt.Errorf("message not found: %s", messageUUID)
+	}
+
+	// Count non-empty lines being removed
+	removed := 0
+	for i := cutIndex; i < len(lines); i++ {
+		if lines[i] != "" {
+			removed++
+		}
+	}
+
+	// Truncate: keep everything before cutIndex
+	lines = lines[:cutIndex]
+
+	// Write back
+	output := strings.Join(lines, "\n")
+	// Ensure file ends with a newline if there's content
+	if len(output) > 0 && !strings.HasSuffix(output, "\n") {
+		output += "\n"
+	}
+
+	if err := os.WriteFile(sessionPath, []byte(output), 0644); err != nil {
+		return 0, fmt.Errorf("failed to write truncated session file: %w", err)
+	}
+
+	fmt.Printf("[PATCH] DeleteFromMessage: removed %d lines from %s (cut at line %d, uuid=%s)\n", removed, sessionPath, cutIndex, messageUUID)
+	return removed, nil
+}

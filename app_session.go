@@ -299,6 +299,30 @@ func (a *App) SetSessionName(agentID, sessionID, name string) error {
 	return a.sessions.SetSessionName(agent.Folder, sessionID, name)
 }
 
+// DeleteFromMessage truncates a session from the specified message UUID downward.
+// Removes the target message and everything after it from the JSONL file.
+// Returns the number of JSONL lines removed.
+func (a *App) DeleteFromMessage(agentID, sessionID, messageUUID string) (int, error) {
+	agent := a.getAgentByID(agentID)
+	if agent == nil {
+		return 0, fmt.Errorf("agent not found: %s", agentID)
+	}
+
+	removed, err := workspace.DeleteFromMessage(agent.Folder, sessionID, messageUUID)
+	if err != nil {
+		return 0, err
+	}
+
+	// Reload session to refresh frontend state
+	if a.watcher != nil {
+		if reloadErr := a.watcher.ReloadSession(agentID, agent.Folder, sessionID); reloadErr != nil {
+			fmt.Printf("[WARN] DeleteFromMessage: reload failed: %v\n", reloadErr)
+		}
+	}
+
+	return removed, nil
+}
+
 // GetAllSessionNames returns all session names for an agent
 func (a *App) GetAllSessionNames(agentID string) map[string]string {
 	if a.sessions == nil {
