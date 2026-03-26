@@ -5,9 +5,8 @@ import { workspace } from '../../wailsjs/go/models';
 import { debugLogger } from '../utils/debugLogger';
 
 interface KeyboardShortcutConfig {
-  onNewWorkspace: () => void;
-  onReloadWorkspace: () => void;
   onHardReload: () => void;
+  onNewWorkspace: () => void;
   onSelectAgent: (agentId: string) => void;
   onToggleTerminal: () => void;
   agents: workspace.Agent[];
@@ -16,7 +15,7 @@ interface KeyboardShortcutConfig {
 }
 
 export function useKeyboardShortcuts(config: KeyboardShortcutConfig) {
-  const { onNewWorkspace, onReloadWorkspace, onHardReload, onSelectAgent, onToggleTerminal,
+  const { onHardReload, onNewWorkspace, onSelectAgent, onToggleTerminal,
           agents, settings, onSettingsChange } = config;
 
   useEffect(() => {
@@ -30,16 +29,18 @@ export function useKeyboardShortcuts(config: KeyboardShortcutConfig) {
         return;
       }
 
-      // CMD-Option-R: hard reload (full re-initialization with splash screen)
-      if ((e.metaKey || e.ctrlKey) && e.altKey && e.key === 'r') {
+      // CMD-Option-R: hard reload workspaces from disk (splash screen)
+      // Use e.code because Option+R produces ® on macOS, not 'r'
+      if ((e.metaKey || e.ctrlKey) && e.altKey && e.code === 'KeyR') {
         e.preventDefault();
         onHardReload();
         return;
       }
 
+      // CMD-R: refresh current session messages from disk
       if ((e.metaKey || e.ctrlKey) && e.key === 'r') {
         e.preventDefault();
-        onReloadWorkspace();
+        window.dispatchEvent(new CustomEvent('claudefu:refresh-session'));
         return;
       }
 
@@ -77,5 +78,5 @@ export function useKeyboardShortcuts(config: KeyboardShortcutConfig) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [agents, settings, onNewWorkspace, onReloadWorkspace, onHardReload, onSelectAgent, onToggleTerminal, onSettingsChange]);
+  }, [agents, settings, onNewWorkspace, onHardReload, onSelectAgent, onToggleTerminal, onSettingsChange]);
 }

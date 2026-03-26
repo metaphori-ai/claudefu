@@ -248,6 +248,17 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
     return () => window.removeEventListener('claudefu:inject-into-prompt', handleInject);
   }, []);
 
+  // CMD-R: refresh session messages from disk
+  useEffect(() => {
+    const handleRefresh = () => {
+      console.log('[ChatView] CMD-R: refreshing session messages from disk');
+      clearContextSession(agentId, sessionId);
+      loadConversation(true);
+    };
+    window.addEventListener('claudefu:refresh-session', handleRefresh);
+    return () => window.removeEventListener('claudefu:refresh-session', handleRefresh);
+  }, [agentId, sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Check for pending inbox inject (stored by Sidebar when injecting into a different agent)
   useEffect(() => {
     try {

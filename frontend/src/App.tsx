@@ -645,9 +645,8 @@ function AppContent() {
 
   // Keyboard shortcuts — uses sortedAgents so CMD-{n} matches sidebar order
   useKeyboardShortcuts({
-    onNewWorkspace: handleNewWorkspace,
-    onReloadWorkspace: handleReloadWorkspace,
     onHardReload: () => workspaceId ? handleSwitchWorkspace(workspaceId) : undefined,
+    onNewWorkspace: handleNewWorkspace,
     onSelectAgent: handleAgentSelect,
     onToggleTerminal: () => setTerminalOpen(prev => !prev),
     agents: sortedAgents,

@@ -5,6 +5,12 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **CMD-R refreshes session messages** — CMD-R now reloads the current session's messages from disk (useful for Syncthing-synced sessions). Previously it reloaded the workspace config.
+- **CMD-Option-R fixed** — Option key detection now uses `e.code` instead of `e.key` (macOS Option+R produces `®`, not `r`).
+
 ## [0.5.20] - 2026-03-25
 
 ### Added
