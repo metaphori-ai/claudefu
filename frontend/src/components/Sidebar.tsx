@@ -617,6 +617,7 @@ export function Sidebar({
       {sessionsDialogAgent && (
         <SessionsDialog
           isOpen={true}
+          agentId={sessionsDialogAgent.id}
           agentName={sessionsDialogAgent.slug || ''}
           sessions={agentSessions.get(sessionsDialogAgent.id) || []}
           sessionNames={sessionNames.get(sessionsDialogAgent.id) || new Map()}

@@ -106,6 +106,10 @@ export function DownloadUpdate(arg1) {
   return window['go']['main']['App']['DownloadUpdate'](arg1);
 }
 
+export function DuplicateSession(arg1, arg2) {
+  return window['go']['main']['App']['DuplicateSession'](arg1, arg2);
+}
+
 export function EnableExperimentalFeature(arg1, arg2, arg3) {
   return window['go']['main']['App']['EnableExperimentalFeature'](arg1, arg2, arg3);
 }

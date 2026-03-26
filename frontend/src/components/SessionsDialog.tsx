@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { types } from '../../wailsjs/go/models';
 import { ClipboardSetText } from '../../wailsjs/runtime/runtime';
+import { DuplicateSession } from '../../wailsjs/go/main/App';
 import { DialogBase } from './DialogBase';
 
 type Session = types.Session;
@@ -8,6 +9,7 @@ type SortOrder = 'recency' | 'messages';
 
 interface SessionsDialogProps {
   isOpen: boolean;
+  agentId: string;
   agentName: string;
   sessions: Session[];
   sessionNames: Map<string, string>;
@@ -21,6 +23,7 @@ interface SessionsDialogProps {
 
 export function SessionsDialog({
   isOpen,
+  agentId,
   agentName,
   sessions,
   sessionNames,
@@ -37,6 +40,7 @@ export function SessionsDialog({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -53,6 +57,19 @@ export function SessionsDialog({
       await onNewSession();
     } finally {
       setIsCreating(false);
+    }
+  };
+
+  const handleDuplicate = async (e: React.MouseEvent, sessionId: string) => {
+    e.stopPropagation();
+    setDuplicatingId(sessionId);
+    try {
+      await DuplicateSession(agentId, sessionId);
+      await onRefresh();
+    } catch (err) {
+      console.error('Failed to duplicate session:', err);
+    } finally {
+      setDuplicatingId(null);
     }
   };
 
@@ -344,38 +361,51 @@ export function SessionsDialog({
                 alignItems: 'flex-start',
                 gap: '0.75rem'
               }}>
-                {/* Edit button */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onRenameSession(session);
-                  }}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                    padding: '0.25rem',
-                    color: '#555',
-                    flexShrink: 0,
-                    marginTop: '0.1rem'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.color = '#888'}
-                  onMouseLeave={(e) => e.currentTarget.style.color = '#555'}
-                  title="Rename session"
-                >
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
+                {/* Action buttons */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', flexShrink: 0, marginTop: '0.1rem' }}>
+                  {/* Edit button */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onRenameSession(session);
+                    }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      padding: '0.25rem',
+                      color: '#555',
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.color = '#888'}
+                    onMouseLeave={(e) => e.currentTarget.style.color = '#555'}
+                    title="Rename session"
                   >
-                    <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
-                  </svg>
-                </button>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+                    </svg>
+                  </button>
+                  {/* Duplicate button */}
+                  <button
+                    onClick={(e) => handleDuplicate(e, session.id)}
+                    disabled={duplicatingId === session.id}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      cursor: duplicatingId === session.id ? 'default' : 'pointer',
+                      padding: '0.25rem',
+                      color: '#555',
+                      opacity: duplicatingId === session.id ? 0.4 : 1,
+                    }}
+                    onMouseEnter={(e) => duplicatingId !== session.id && (e.currentTarget.style.color = '#d97757')}
+                    onMouseLeave={(e) => e.currentTarget.style.color = '#555'}
+                    title="Duplicate session"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                    </svg>
+                  </button>
+                </div>
 
                 {/* Session info */}
                 <div style={{ flex: 1, minWidth: 0 }}>

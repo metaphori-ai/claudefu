@@ -63,6 +63,8 @@ export function DetectExperimentalFeatures(arg1:string):Promise<Array<permission
 
 export function DownloadUpdate(arg1:string):Promise<void>;
 
+export function DuplicateSession(arg1:string,arg2:string):Promise<string>;
+
 export function EnableExperimentalFeature(arg1:string,arg2:string,arg3:boolean):Promise<void>;
 
 export function GetAgent(arg1:string):Promise<workspace.Agent>;

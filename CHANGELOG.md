@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Agent reordering** — New "Reorder" tab in Workspaces & Agents dialog. Up/down buttons to rearrange agents. Sifu agents pinned first. Order persists to workspace JSON, affects sidebar display and CMD+{n} shortcuts.
 
+- **Duplicate session** — Copy any session from the Sessions dialog. Duplicates the JSONL file with a new UUID and appends " copy" to the session name. Duplicate button (copy icon) on each session row, turns orange on hover.
+
 ### Changed
 - **CMD-R refreshes session messages** — CMD-R now reloads the current session's messages from disk (useful for Syncthing-synced sessions). Previously it reloaded the workspace config.
 - **CMD-Option-R fixed** — Option key detection now uses `e.code` instead of `e.key` (macOS Option+R produces `®`, not `r`).

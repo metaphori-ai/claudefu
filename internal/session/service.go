@@ -297,6 +297,99 @@ func (s *Service) addToIndex(projectDir, sessionID, jsonlPath, folder string) er
 	return os.WriteFile(indexPath, data, 0644)
 }
 
+// DuplicateSession copies an existing session JSONL to a new UUID file.
+// Updates sessions-index.json with the new entry.
+// Returns the new session ID.
+func (s *Service) DuplicateSession(folder, sourceSessionID string) (string, error) {
+	encodedFolder := encodeFolder(folder)
+	projectDir := filepath.Join(s.claudeProjectsPath, encodedFolder)
+	sourcePath := filepath.Join(projectDir, sourceSessionID+".jsonl")
+
+	// Read source file
+	data, err := os.ReadFile(sourcePath)
+	if err != nil {
+		return "", fmt.Errorf("read source session: %w", err)
+	}
+
+	// Generate new session ID and write copy
+	newSessionID := uuid.New().String()
+	newPath := filepath.Join(projectDir, newSessionID+".jsonl")
+
+	if err := os.WriteFile(newPath, data, 0644); err != nil {
+		return "", fmt.Errorf("write duplicated session: %w", err)
+	}
+
+	// Count messages for index entry
+	messageCount := 0
+	firstPrompt := ""
+	for _, line := range strings.Split(string(data), "\n") {
+		if line == "" {
+			continue
+		}
+		var event map[string]any
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			continue
+		}
+		eventType, _ := event["type"].(string)
+		if eventType == "user" || eventType == "assistant" {
+			messageCount++
+		}
+		// Grab first user message as preview
+		if eventType == "user" && firstPrompt == "" {
+			if msg, ok := event["message"].(map[string]any); ok {
+				if content, ok := msg["content"].(string); ok {
+					firstPrompt = content
+					if len(firstPrompt) > 100 {
+						firstPrompt = firstPrompt[:100]
+					}
+				}
+			}
+		}
+	}
+
+	// Update sessions-index.json
+	if err := s.addDuplicateToIndex(projectDir, newSessionID, newPath, folder, firstPrompt, messageCount); err != nil {
+		fmt.Printf("[WARN] Failed to update sessions-index.json for duplicate: %v\n", err)
+	}
+
+	fmt.Printf("[SESSION] Duplicated %s → %s (%d messages)\n", sourceSessionID, newSessionID, messageCount)
+	return newSessionID, nil
+}
+
+// addDuplicateToIndex adds a duplicated session entry to sessions-index.json.
+func (s *Service) addDuplicateToIndex(projectDir, sessionID, jsonlPath, folder, firstPrompt string, messageCount int) error {
+	indexPath := filepath.Join(projectDir, "sessions-index.json")
+	now := time.Now().UTC()
+
+	var index SessionIndex
+	if data, err := os.ReadFile(indexPath); err == nil {
+		if err := json.Unmarshal(data, &index); err != nil {
+			index = SessionIndex{Version: 1, Entries: []IndexEntry{}}
+		}
+	} else {
+		index = SessionIndex{Version: 1, Entries: []IndexEntry{}}
+	}
+
+	entry := IndexEntry{
+		SessionID:    sessionID,
+		FullPath:     jsonlPath,
+		FileMtime:    now.UnixMilli(),
+		FirstPrompt:  firstPrompt,
+		MessageCount: messageCount,
+		Created:      now,
+		Modified:     now,
+		ProjectPath:  folder,
+		IsSidechain:  false,
+	}
+	index.Entries = append(index.Entries, entry)
+
+	data, err := json.MarshalIndent(index, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(indexPath, data, 0644)
+}
+
 // SessionIndex matches Claude Code's sessions-index.json structure.
 type SessionIndex struct {
 	Version int          `json:"version"` // Number, not string

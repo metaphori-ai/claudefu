@@ -323,6 +323,34 @@ func (a *App) DeleteFromMessage(agentID, sessionID, messageUUID string) (int, er
 	return removed, nil
 }
 
+// DuplicateSession copies a session JSONL to a new file with " copy" appended to the name.
+// Returns the new session ID.
+func (a *App) DuplicateSession(agentID, sessionID string) (string, error) {
+	agent := a.getAgentByID(agentID)
+	if agent == nil {
+		return "", fmt.Errorf("agent not found: %s", agentID)
+	}
+
+	if a.sessionService == nil {
+		return "", fmt.Errorf("session service not initialized")
+	}
+
+	newID, err := a.sessionService.DuplicateSession(agent.Folder, sessionID)
+	if err != nil {
+		return "", err
+	}
+
+	// Copy session name with " copy" suffix
+	if a.sessions != nil {
+		sourceName := a.sessions.GetSessionName(agent.Folder, sessionID)
+		if sourceName != "" {
+			_ = a.sessions.SetSessionName(agent.Folder, newID, sourceName+" copy")
+		}
+	}
+
+	return newID, nil
+}
+
 // GetAllSessionNames returns all session names for an agent
 func (a *App) GetAllSessionNames(agentID string) map[string]string {
 	if a.sessions == nil {
