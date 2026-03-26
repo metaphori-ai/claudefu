@@ -401,18 +401,22 @@ func (m *Manager) EnsureSifuAgent(ws *Workspace, sifuEnabled bool, sifuRootFolde
 		}
 	}
 
-	// Add to workspace if not present
+	// Add to workspace if not present (prepend — sifu always first)
 	if !alreadyInWorkspace {
-		ws.Agents = append(ws.Agents, Agent{
+		sifuAgent := Agent{
 			ID:     agentID,
 			Folder: sifuFolder,
 			Slug:   sifuSlug,
 			Type:   "sifu",
-		})
+		}
+		ws.Agents = append([]Agent{sifuAgent}, ws.Agents...)
 		if err := m.SaveWorkspace(ws); err != nil {
 			return fmt.Errorf("failed to save workspace after adding sifu: %w", err)
 		}
-		fmt.Printf("[INFO] EnsureSifuAgent: added sifu agent %s to workspace %s\n", sifuSlug, ws.ID)
+		fmt.Printf("[INFO] EnsureSifuAgent: added sifu agent %s to workspace %s (prepended)\n", sifuSlug, ws.ID)
+	} else {
+		// Ensure sifu is at index 0 — it may have been appended by an older version
+		m.ensureSifuFirst(ws)
 	}
 
 	// Always refresh permissions (additive merge of all agent folders)
@@ -424,6 +428,31 @@ func (m *Manager) EnsureSifuAgent(ws *Workspace, sifuEnabled bool, sifuRootFolde
 	// Only generate on first creation (scaffold flow handles this)
 
 	return nil
+}
+
+// ensureSifuFirst moves the first sifu agent to index 0 if it isn't already there.
+// Only moves one sifu — find-first, not iterate-all. Saves workspace if moved.
+func (m *Manager) ensureSifuFirst(ws *Workspace) {
+	if len(ws.Agents) == 0 {
+		return
+	}
+	// Already at top?
+	if ws.Agents[0].Type == "sifu" {
+		return
+	}
+	// Find first sifu
+	for i := 1; i < len(ws.Agents); i++ {
+		if ws.Agents[i].Type == "sifu" {
+			sifu := ws.Agents[i]
+			ws.Agents = append(append([]Agent{sifu}, ws.Agents[:i]...), ws.Agents[i+1:]...)
+			if err := m.SaveWorkspace(ws); err != nil {
+				fmt.Printf("[WARN] ensureSifuFirst: failed to save: %v\n", err)
+			} else {
+				fmt.Printf("[INFO] ensureSifuFirst: moved %s to index 0\n", sifu.GetSlug())
+			}
+			return
+		}
+	}
 }
 
 // PopulateAgentsFromRegistry fills Folder/Slug/Description/Type for agents from registry.

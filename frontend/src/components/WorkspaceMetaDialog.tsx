@@ -133,9 +133,26 @@ export function WorkspaceMetaDialog({ isOpen, onClose, onSaved }: WorkspaceMetaD
       // Start with "Select Agent" (empty) — user picks from dropdown
       setSelectedAgentFolder('');
 
-      // Initialize reorder list from current agent order
-      setReorderList(agents.map(a => ({ id: a.id, slug: a.slug || a.id.slice(0, 8), type: a.type || 'agent' })));
+      // Initialize reorder list — auto-promote sifu to top if misplaced
+      const mapped = agents.map(a => ({ id: a.id, slug: a.slug || a.id.slice(0, 8), type: a.type || 'agent' }));
+      let sifuPromoted = false;
+      if (mapped.length > 0 && mapped[0].type !== 'sifu') {
+        const sifuIdx = mapped.findIndex(a => a.type === 'sifu');
+        if (sifuIdx > 0) {
+          const [sifu] = mapped.splice(sifuIdx, 1);
+          mapped.unshift(sifu);
+          sifuPromoted = true;
+        }
+      }
+      setReorderList(mapped);
       setReorderDirty(false);
+
+      // Auto-save sifu promotion (correction, not user choice)
+      if (sifuPromoted) {
+        ReorderAgents(mapped.map(a => a.id)).then(() => {
+          ReloadCurrentWorkspace().then(() => onSaved?.());
+        }).catch(err => console.error('Failed to auto-promote sifu:', err));
+      }
 
       setLoading(false);
     }).catch(err => {
