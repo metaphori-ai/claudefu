@@ -7,6 +7,7 @@ import { debugLogger } from '../utils/debugLogger';
 interface KeyboardShortcutConfig {
   onNewWorkspace: () => void;
   onReloadWorkspace: () => void;
+  onHardReload: () => void;
   onSelectAgent: (agentId: string) => void;
   onToggleTerminal: () => void;
   agents: workspace.Agent[];
@@ -15,7 +16,7 @@ interface KeyboardShortcutConfig {
 }
 
 export function useKeyboardShortcuts(config: KeyboardShortcutConfig) {
-  const { onNewWorkspace, onReloadWorkspace, onSelectAgent, onToggleTerminal,
+  const { onNewWorkspace, onReloadWorkspace, onHardReload, onSelectAgent, onToggleTerminal,
           agents, settings, onSettingsChange } = config;
 
   useEffect(() => {
@@ -26,6 +27,13 @@ export function useKeyboardShortcuts(config: KeyboardShortcutConfig) {
       if ((e.metaKey || e.ctrlKey) && e.key === 'n') {
         e.preventDefault();
         onNewWorkspace();
+        return;
+      }
+
+      // CMD-Option-R: hard reload (full re-initialization with splash screen)
+      if ((e.metaKey || e.ctrlKey) && e.altKey && e.key === 'r') {
+        e.preventDefault();
+        onHardReload();
         return;
       }
 
@@ -69,5 +77,5 @@ export function useKeyboardShortcuts(config: KeyboardShortcutConfig) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [agents, settings, onNewWorkspace, onReloadWorkspace, onSelectAgent, onToggleTerminal, onSettingsChange]);
+  }, [agents, settings, onNewWorkspace, onReloadWorkspace, onHardReload, onSelectAgent, onToggleTerminal, onSettingsChange]);
 }

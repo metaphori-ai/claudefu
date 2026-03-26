@@ -5,6 +5,14 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.20] - 2026-03-25
+
+### Added
+- **Expanded permission sets (8 → 16)** — New sets: Search & Transform (rg, fd, jq, yq), GitHub CLI (gh), Rust (cargo, rustc, rustup), Network (curl, dig, openssl, ssh), Database (sqlite3, psql, redis-cli, prisma), Deploy (fly, kubectl, terraform, helm), System (brew, which, env, kill). Expanded existing: Files (+sed, awk, echo, diff, sort, xargs), Git (+git -C, switch, restore), Go (+go mod init, go work), Node (+npx tsc, prisma, eslint), Docker (+docker compose), Make (+cmake, buf), Python (+uv, twine).
+- **Better defaults** — Git and Files now enable permissive tier by default. Go and Node enable common+permissive. Search, Network, GitHub, and System enable common tier. Safer out-of-the-box experience for everyday development.
+- **Auto-migrate custom → built-in** — On load, entries in the Custom permission set that match a built-in set are automatically moved to their proper home. Cleans up custom sets as new built-in sets are added.
+- **CMD+Option+R hard reload** — Full app re-initialization with splash screen. Reloads workspace from disk, restarts watchers, clears all caches. Like restarting the app without quitting.
+
 ## [0.5.19] - 2026-03-25
 
 ### Added

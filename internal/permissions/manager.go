@@ -2,6 +2,7 @@ package permissions
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -72,38 +73,74 @@ func NewManager() (*Manager, error) {
 
 // DefaultGlobalPermissions returns sensible default permissions for new users
 func DefaultGlobalPermissions() *ClaudeFuPermissions {
-	// Get built-in set definitions to populate defaults
-	builtinSet := GetSetByID("claude-builtin")
-	filesSet := GetSetByID("files")
-	gitSet := GetSetByID("git")
+	// Helper to get a set's tiers
+	s := func(id string) PermissionTiers { return GetSetByID(id).Permissions }
+	empty := func() ToolPermission { return ToolPermission{Common: []string{}, Permissive: []string{}, YOLO: []string{}} }
 
 	return &ClaudeFuPermissions{
 		Version: 2,
 		ToolPermissions: map[string]ToolPermission{
-			// Claude Built-in Tools: common + permissive enabled (YOLO disabled)
+			// Claude Built-in: common + permissive ON
 			"claude-builtin": {
-				Common:     builtinSet.Permissions.Common,
-				Permissive: builtinSet.Permissions.Permissive,
-				YOLO:       []string{}, // YOLO disabled by default (blanket Bash)
+				Common:     s("claude-builtin").Common,
+				Permissive: s("claude-builtin").Permissive,
+				YOLO:       []string{},
 			},
-			// Files: common enabled only (read-only)
+			// Files: common + permissive ON (cp/mv/mkdir/sed are safe)
 			"files": {
-				Common:     filesSet.Permissions.Common,
+				Common:     s("files").Common,
+				Permissive: s("files").Permissive,
+				YOLO:       []string{},
+			},
+			// Search: common ON (read-only tools)
+			"search": {
+				Common:     s("search").Common,
 				Permissive: []string{},
 				YOLO:       []string{},
 			},
-			// Git: common enabled only (read-only)
+			// Git: common + permissive ON (add/commit/stash/fetch are safe)
 			"git": {
-				Common:     gitSet.Permissions.Common,
+				Common:     s("git").Common,
+				Permissive: s("git").Permissive,
+				YOLO:       []string{},
+			},
+			// GitHub CLI: common ON
+			"github": {
+				Common:     s("github").Common,
 				Permissive: []string{},
 				YOLO:       []string{},
 			},
-			// Other sets: all disabled by default
-			"docker": {Common: []string{}, Permissive: []string{}, YOLO: []string{}},
-			"go":     {Common: []string{}, Permissive: []string{}, YOLO: []string{}},
-			"make":   {Common: []string{}, Permissive: []string{}, YOLO: []string{}},
-			"node":   {Common: []string{}, Permissive: []string{}, YOLO: []string{}},
-			"python": {Common: []string{}, Permissive: []string{}, YOLO: []string{}},
+			// Go: common + permissive ON
+			"go": {
+				Common:     s("go").Common,
+				Permissive: s("go").Permissive,
+				YOLO:       []string{},
+			},
+			// Node: common + permissive ON
+			"node": {
+				Common:     s("node").Common,
+				Permissive: s("node").Permissive,
+				YOLO:       []string{},
+			},
+			// Network: common ON (curl/dig/nslookup are read-only)
+			"network": {
+				Common:     s("network").Common,
+				Permissive: []string{},
+				YOLO:       []string{},
+			},
+			// System: common ON (which/env/brew list are read-only)
+			"system": {
+				Common:     s("system").Common,
+				Permissive: []string{},
+				YOLO:       []string{},
+			},
+			// Disabled by default
+			"rust":     empty(),
+			"python":   empty(),
+			"docker":   empty(),
+			"make":     empty(),
+			"database": empty(),
+			"deploy":   empty(),
 		},
 		AdditionalDirectories: []string{},
 	}
@@ -124,6 +161,7 @@ func (m *Manager) LoadGlobalPermissions() (*ClaudeFuPermissions, error) {
 		}
 		return nil, err
 	}
+	MigrateCustomToBuiltIn(perms)
 	return perms, nil
 }
 
@@ -153,6 +191,7 @@ func (m *Manager) LoadAgentPermissions(agentFolder string) (*ClaudeFuPermissions
 		}
 		return nil, err
 	}
+	MigrateCustomToBuiltIn(perms)
 	return perms, nil
 }
 
@@ -712,6 +751,114 @@ func toSet(slice []string) map[string]bool {
 		m[s] = true
 	}
 	return m
+}
+
+// MigrateCustomToBuiltIn moves entries from the "custom" permission set to their
+// proper built-in set if they match. For each tier (common/permissive/yolo) in custom,
+// check every entry against all built-in sets. If found in a built-in set's tier,
+// ensure it's enabled there and remove from custom. Mutates perms in-place.
+func MigrateCustomToBuiltIn(perms *ClaudeFuPermissions) {
+	if perms == nil || perms.ToolPermissions == nil {
+		return
+	}
+
+	customPerm, hasCustom := perms.ToolPermissions["custom"]
+	if !hasCustom {
+		return
+	}
+
+	// Build a lookup: pattern → (setID, tier) for all built-in sets (excluding custom)
+	type location struct {
+		setID string
+		tier  string // "common", "permissive", "yolo"
+	}
+	builtInIndex := make(map[string]location)
+
+	for setID, set := range BuiltInSets() {
+		if setID == "custom" {
+			continue
+		}
+		for _, p := range set.Permissions.Common {
+			builtInIndex[p] = location{setID, "common"}
+		}
+		for _, p := range set.Permissions.Permissive {
+			builtInIndex[p] = location{setID, "permissive"}
+		}
+		for _, p := range set.Permissions.YOLO {
+			builtInIndex[p] = location{setID, "yolo"}
+		}
+	}
+
+	migrated := 0
+
+	// Process each custom tier
+	processTier := func(customTier *[]string, customTierName string) {
+		var remaining []string
+		for _, entry := range *customTier {
+			loc, found := builtInIndex[entry]
+			if !found {
+				remaining = append(remaining, entry)
+				continue
+			}
+
+			// Found in a built-in set — enable it there
+			setPerm := perms.ToolPermissions[loc.setID]
+			// Ensure arrays are initialized
+			if setPerm.Common == nil {
+				setPerm.Common = []string{}
+			}
+			if setPerm.Permissive == nil {
+				setPerm.Permissive = []string{}
+			}
+			if setPerm.YOLO == nil {
+				setPerm.YOLO = []string{}
+			}
+
+			// Add to the correct tier in the built-in set (if not already there)
+			switch loc.tier {
+			case "common":
+				if !containsString(setPerm.Common, entry) {
+					setPerm.Common = append(setPerm.Common, entry)
+				}
+			case "permissive":
+				if !containsString(setPerm.Permissive, entry) {
+					setPerm.Permissive = append(setPerm.Permissive, entry)
+				}
+			case "yolo":
+				if !containsString(setPerm.YOLO, entry) {
+					setPerm.YOLO = append(setPerm.YOLO, entry)
+				}
+			}
+			perms.ToolPermissions[loc.setID] = setPerm
+			migrated++
+
+			fmt.Printf("[PERMS] Migrated %q from custom.%s → %s.%s\n", entry, customTierName, loc.setID, loc.tier)
+		}
+		if remaining == nil {
+			remaining = []string{}
+		}
+		*customTier = remaining
+	}
+
+	processTier(&customPerm.Common, "common")
+	processTier(&customPerm.Permissive, "permissive")
+	processTier(&customPerm.YOLO, "yolo")
+
+	perms.ToolPermissions["custom"] = customPerm
+
+	if migrated > 0 {
+		fmt.Printf("[PERMS] MigrateCustomToBuiltIn: moved %d entries from custom to built-in sets\n", migrated)
+	}
+}
+
+// containsString checks if a string slice contains a value
+func containsString(slice []string, val string) bool {
+	for _, s := range slice {
+		if s == val {
+			return true
+		}
+	}
+	return false
 }
 
 // writePermissionsFile writes permissions to a JSON file

@@ -647,6 +647,7 @@ function AppContent() {
   useKeyboardShortcuts({
     onNewWorkspace: handleNewWorkspace,
     onReloadWorkspace: handleReloadWorkspace,
+    onHardReload: () => workspaceId ? handleSwitchWorkspace(workspaceId) : undefined,
     onSelectAgent: handleAgentSelect,
     onToggleTerminal: () => setTerminalOpen(prev => !prev),
     agents: sortedAgents,
