@@ -510,13 +510,17 @@ func (a *App) initializeMCPServer() {
 
 	// Load inbox and backlog for current workspace
 	if a.currentWorkspace != nil {
-		if err := a.mcpServer.LoadInbox(a.currentWorkspace.ID); err != nil {
-			wailsrt.LogWarning(a.ctx, fmt.Sprintf("Failed to load inbox: %v", err))
+		agentIDs := a.agentIDs()
+
+		// Migrate old per-workspace inbox DB to per-agent DBs (one-time)
+		inboxPath := filepath.Join(a.settings.GetConfigPath(), "inbox")
+		if err := mcpserver.MigrateInboxFromWorkspaceDB(inboxPath, a.currentWorkspace.ID, a.reconciledIDs); err != nil {
+			wailsrt.LogWarning(a.ctx, fmt.Sprintf("Inbox migration warning: %v", err))
 		}
 
-		// Migrate inbox agent IDs if reconciliation changed any
-		if len(a.reconciledIDs) > 0 {
-			a.mcpServer.MigrateInboxAgentIDs(a.reconciledIDs)
+		// Load per-agent inbox databases
+		if err := a.mcpServer.LoadInbox(agentIDs); err != nil {
+			wailsrt.LogWarning(a.ctx, fmt.Sprintf("Failed to load inbox: %v", err))
 		}
 
 		// Migrate old per-workspace backlog DB to per-agent DBs (one-time)
@@ -526,7 +530,7 @@ func (a *App) initializeMCPServer() {
 		}
 
 		// Load per-agent backlog databases
-		if err := a.mcpServer.LoadBacklog(a.agentIDs()); err != nil {
+		if err := a.mcpServer.LoadBacklog(agentIDs); err != nil {
 			wailsrt.LogWarning(a.ctx, fmt.Sprintf("Failed to load backlog: %v", err))
 		}
 	}

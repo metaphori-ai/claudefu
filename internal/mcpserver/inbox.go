@@ -22,51 +22,76 @@ type InboxMessage struct {
 	Read          bool      `json:"read"`
 }
 
-// InboxManager manages inbox state for all agents with SQLite persistence
+// InboxManager manages inbox state with per-agent SQLite persistence.
+// Each agent gets its own database at {configPath}/agents/{agent_id}.db.
 type InboxManager struct {
-	store      *InboxStore
-	configPath string // ~/.claudefu/inbox
+	stores     map[string]*InboxStore // agentID → store
+	configPath string                 // ~/.claudefu/inbox
 	mu         sync.RWMutex
 }
 
 // NewInboxManager creates a new inbox manager with the given config path
 func NewInboxManager(configPath string) *InboxManager {
 	return &InboxManager{
+		stores:     make(map[string]*InboxStore),
 		configPath: configPath,
 	}
 }
 
-// LoadWorkspace opens the SQLite database for the given workspace
-func (im *InboxManager) LoadWorkspace(workspaceID string) error {
+// LoadAgents opens per-agent SQLite databases for the given agent IDs.
+func (im *InboxManager) LoadAgents(agentIDs []string) error {
 	im.mu.Lock()
 	defer im.mu.Unlock()
 
-	// Close existing store if any
-	if im.store != nil {
-		im.store.Close()
-		im.store = nil
+	// Close all existing stores
+	for id, store := range im.stores {
+		store.Close()
+		delete(im.stores, id)
 	}
 
-	dbPath := filepath.Join(im.configPath, workspaceID+".db")
-	store, err := NewInboxStore(dbPath)
-	if err != nil {
-		return err
+	// Open a store for each agent
+	for _, agentID := range agentIDs {
+		if agentID == "" {
+			continue
+		}
+		dbPath := filepath.Join(im.configPath, "agents", agentID+".db")
+		store, err := NewInboxStore(dbPath)
+		if err != nil {
+			log.Printf("Failed to open inbox DB for agent %s: %v", agentID, err)
+			continue
+		}
+		im.stores[agentID] = store
 	}
 
-	im.store = store
-	log.Printf("Inbox loaded for workspace %s", workspaceID)
 	return nil
 }
 
-// Close closes the SQLite database
+// getStoreOrOpen returns the store for an agent, opening it if not already loaded.
+// Caller must hold im.mu.Lock() (write lock).
+func (im *InboxManager) getStoreOrOpen(agentID string) *InboxStore {
+	if store, ok := im.stores[agentID]; ok {
+		return store
+	}
+
+	// Lazy open
+	dbPath := filepath.Join(im.configPath, "agents", agentID+".db")
+	store, err := NewInboxStore(dbPath)
+	if err != nil {
+		log.Printf("Failed to lazy-open inbox DB for agent %s: %v", agentID, err)
+		return nil
+	}
+	im.stores[agentID] = store
+	return store
+}
+
+// Close closes all SQLite databases
 func (im *InboxManager) Close() error {
 	im.mu.Lock()
 	defer im.mu.Unlock()
 
-	if im.store != nil {
-		err := im.store.Close()
-		im.store = nil
-		return err
+	for id, store := range im.stores {
+		store.Close()
+		delete(im.stores, id)
 	}
 	return nil
 }
@@ -91,14 +116,15 @@ func (im *InboxManager) AddMessage(toAgentID string, fromAgentID, fromAgentName,
 		Read:          false,
 	}
 
-	if im.store != nil {
-		if err := im.store.AddMessage(msg); err != nil {
+	store := im.getStoreOrOpen(toAgentID)
+	if store != nil {
+		if err := store.AddMessage(msg); err != nil {
 			fmt.Printf("[MCP:Inbox] FAILED to persist message %s to agent %s: %v\n", msg.ID, toAgentID, err)
 		} else {
 			fmt.Printf("[MCP:Inbox] Persisted message %s from '%s' to agent %s\n", msg.ID, fromAgentName, toAgentID)
 		}
 	} else {
-		fmt.Printf("[MCP:Inbox] WARNING: No store loaded, message %s NOT persisted (to agent %s)\n", msg.ID, toAgentID)
+		fmt.Printf("[MCP:Inbox] WARNING: Could not open store for agent %s, message %s NOT persisted\n", toAgentID, msg.ID)
 	}
 
 	return msg
@@ -106,32 +132,33 @@ func (im *InboxManager) AddMessage(toAgentID string, fromAgentID, fromAgentName,
 
 // GetMessages returns all messages for an agent
 func (im *InboxManager) GetMessages(agentID string) []InboxMessage {
-	im.mu.RLock()
-	defer im.mu.RUnlock()
+	im.mu.Lock()
+	defer im.mu.Unlock()
 
-	if im.store == nil {
+	store := im.getStoreOrOpen(agentID)
+	if store == nil {
 		return []InboxMessage{}
 	}
 
-	msgs, err := im.store.GetMessages(agentID)
+	msgs, err := store.GetMessages(agentID)
 	if err != nil {
 		fmt.Printf("[MCP:Inbox] FAILED to get messages for agent %s: %v\n", agentID, err)
 		return []InboxMessage{}
 	}
-	fmt.Printf("[MCP:Inbox] GetMessages for agent %s: %d messages\n", agentID, len(msgs))
 	return msgs
 }
 
 // GetUnreadCount returns the number of unread messages for an agent
 func (im *InboxManager) GetUnreadCount(agentID string) int {
-	im.mu.RLock()
-	defer im.mu.RUnlock()
+	im.mu.Lock()
+	defer im.mu.Unlock()
 
-	if im.store == nil {
+	store := im.getStoreOrOpen(agentID)
+	if store == nil {
 		return 0
 	}
 
-	count, err := im.store.GetUnreadCount(agentID)
+	count, err := store.GetUnreadCount(agentID)
 	if err != nil {
 		log.Printf("Failed to get unread count: %v", err)
 		return 0
@@ -141,14 +168,15 @@ func (im *InboxManager) GetUnreadCount(agentID string) int {
 
 // GetTotalCount returns the total number of messages for an agent
 func (im *InboxManager) GetTotalCount(agentID string) int {
-	im.mu.RLock()
-	defer im.mu.RUnlock()
+	im.mu.Lock()
+	defer im.mu.Unlock()
 
-	if im.store == nil {
+	store := im.getStoreOrOpen(agentID)
+	if store == nil {
 		return 0
 	}
 
-	count, err := im.store.GetTotalCount(agentID)
+	count, err := store.GetTotalCount(agentID)
 	if err != nil {
 		log.Printf("Failed to get total count: %v", err)
 		return 0
@@ -161,11 +189,12 @@ func (im *InboxManager) MarkRead(agentID, messageID string) bool {
 	im.mu.Lock()
 	defer im.mu.Unlock()
 
-	if im.store == nil {
+	store := im.getStoreOrOpen(agentID)
+	if store == nil {
 		return false
 	}
 
-	marked, err := im.store.MarkRead(agentID, messageID)
+	marked, err := store.MarkRead(agentID, messageID)
 	if err != nil {
 		log.Printf("Failed to mark message as read: %v", err)
 		return false
@@ -178,11 +207,12 @@ func (im *InboxManager) MarkAllRead(agentID string) {
 	im.mu.Lock()
 	defer im.mu.Unlock()
 
-	if im.store == nil {
+	store := im.getStoreOrOpen(agentID)
+	if store == nil {
 		return
 	}
 
-	if err := im.store.MarkAllRead(agentID); err != nil {
+	if err := store.MarkAllRead(agentID); err != nil {
 		log.Printf("Failed to mark all messages as read: %v", err)
 	}
 }
@@ -192,11 +222,12 @@ func (im *InboxManager) DeleteMessage(agentID, messageID string) bool {
 	im.mu.Lock()
 	defer im.mu.Unlock()
 
-	if im.store == nil {
+	store := im.getStoreOrOpen(agentID)
+	if store == nil {
 		return false
 	}
 
-	deleted, err := im.store.DeleteMessage(agentID, messageID)
+	deleted, err := store.DeleteMessage(agentID, messageID)
 	if err != nil {
 		log.Printf("Failed to delete message: %v", err)
 		return false
@@ -209,68 +240,39 @@ func (im *InboxManager) Clear(agentID string) {
 	im.mu.Lock()
 	defer im.mu.Unlock()
 
-	if im.store == nil {
+	store := im.getStoreOrOpen(agentID)
+	if store == nil {
 		return
 	}
 
-	if err := im.store.Clear(agentID); err != nil {
+	if err := store.Clear(agentID); err != nil {
 		log.Printf("Failed to clear agent inbox: %v", err)
 	}
 }
 
-// MigrateAgentIDs updates agent IDs in the inbox database.
-// Used when agent IDs are reconciled against the global registry.
-func (im *InboxManager) MigrateAgentIDs(oldToNew map[string]string) {
-	im.mu.Lock()
-	defer im.mu.Unlock()
-
-	if im.store == nil || len(oldToNew) == 0 {
-		return
-	}
-
-	for oldID, newID := range oldToNew {
-		// Update to_agent_id
-		if _, err := im.store.db.Exec(
-			`UPDATE messages SET to_agent_id = ? WHERE to_agent_id = ?`,
-			newID, oldID,
-		); err != nil {
-			log.Printf("Failed to migrate inbox to_agent_id %s → %s: %v", oldID, newID, err)
-		}
-		// Update from_agent_id
-		if _, err := im.store.db.Exec(
-			`UPDATE messages SET from_agent_id = ? WHERE from_agent_id = ?`,
-			newID, oldID,
-		); err != nil {
-			log.Printf("Failed to migrate inbox from_agent_id %s → %s: %v", oldID, newID, err)
-		}
-	}
-	log.Printf("Inbox: migrated agent IDs for %d mappings", len(oldToNew))
-}
-
-// ClearAll removes all messages for all agents (called on workspace switch)
+// ClearAll removes all messages for all loaded agents
 func (im *InboxManager) ClearAll() {
 	im.mu.Lock()
 	defer im.mu.Unlock()
 
-	if im.store == nil {
-		return
-	}
-
-	if err := im.store.ClearAll(); err != nil {
-		log.Printf("Failed to clear all inbox: %v", err)
+	for _, store := range im.stores {
+		if err := store.ClearAll(); err != nil {
+			log.Printf("Failed to clear inbox store: %v", err)
+		}
 	}
 }
 
 // GetMessage returns a specific message by ID
 func (im *InboxManager) GetMessage(agentID, messageID string) *InboxMessage {
-	im.mu.RLock()
-	defer im.mu.RUnlock()
+	im.mu.Lock()
+	defer im.mu.Unlock()
 
-	if im.store == nil {
+	store := im.getStoreOrOpen(agentID)
+	if store == nil {
 		return nil
 	}
 
-	msg, err := im.store.GetMessage(agentID, messageID)
+	msg, err := store.GetMessage(agentID, messageID)
 	if err != nil {
 		log.Printf("Failed to get message: %v", err)
 		return nil

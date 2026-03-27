@@ -187,6 +187,38 @@ func (s *InboxStore) GetTotalCount(agentID string) (int, error) {
 	return count, err
 }
 
+// GetAllMessages returns all messages in the database (no agent filter).
+// Used only by migration to read old workspace-scoped DBs.
+func (s *InboxStore) GetAllMessages() ([]InboxMessage, error) {
+	rows, err := s.db.Query(`
+		SELECT id, from_agent_id, from_agent_name, to_agent_id, message, priority, timestamp, read
+		FROM messages
+		ORDER BY timestamp ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var messages []InboxMessage
+	for rows.Next() {
+		var msg InboxMessage
+		var readInt int
+		var timestampRaw any
+		if err := rows.Scan(&msg.ID, &msg.FromAgentID, &msg.FromAgentName, &msg.ToAgentID, &msg.Message, &msg.Priority, &timestampRaw, &readInt); err != nil {
+			return nil, err
+		}
+		msg.Read = readInt != 0
+		msg.Timestamp = parseTimestamp(timestampRaw)
+		messages = append(messages, msg)
+	}
+
+	if messages == nil {
+		return []InboxMessage{}, nil
+	}
+	return messages, rows.Err()
+}
+
 func boolToInt(b bool) int {
 	if b {
 		return 1

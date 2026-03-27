@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -135,13 +134,21 @@ func (a *App) SwitchWorkspace(workspaceID string) (*workspace.Workspace, error) 
 	// Step 9: Restart MCP server and load inbox/backlog for new workspace
 	if a.mcpServer != nil {
 		a.mcpServer.Restart()
-		if err := a.mcpServer.LoadInbox(ws.ID); err != nil {
-			wailsrt.LogWarning(a.ctx, fmt.Sprintf("Failed to load inbox for workspace: %v", err))
+
+		agentIDs := make([]string, len(ws.Agents))
+		for i, agent := range ws.Agents {
+			agentIDs[i] = agent.ID
 		}
 
-		// Migrate inbox agent IDs if reconciliation changed any
-		if len(a.reconciledIDs) > 0 {
-			a.mcpServer.MigrateInboxAgentIDs(a.reconciledIDs)
+		// Migrate old per-workspace inbox DB to per-agent DBs (one-time)
+		inboxPath := filepath.Join(a.settings.GetConfigPath(), "inbox")
+		if err := mcpserver.MigrateInboxFromWorkspaceDB(inboxPath, ws.ID, a.reconciledIDs); err != nil {
+			wailsrt.LogWarning(a.ctx, fmt.Sprintf("Inbox migration warning: %v", err))
+		}
+
+		// Load per-agent inbox databases
+		if err := a.mcpServer.LoadInbox(agentIDs); err != nil {
+			wailsrt.LogWarning(a.ctx, fmt.Sprintf("Failed to load inbox: %v", err))
 		}
 
 		// Migrate old per-workspace backlog DB to per-agent DBs (one-time)
@@ -151,10 +158,6 @@ func (a *App) SwitchWorkspace(workspaceID string) (*workspace.Workspace, error) 
 		}
 
 		// Load per-agent backlog databases
-		agentIDs := make([]string, len(ws.Agents))
-		for i, agent := range ws.Agents {
-			agentIDs[i] = agent.ID
-		}
 		if err := a.mcpServer.LoadBacklog(agentIDs); err != nil {
 			wailsrt.LogWarning(a.ctx, fmt.Sprintf("Failed to load backlog: %v", err))
 		}
@@ -238,11 +241,8 @@ func (a *App) DeleteWorkspace(workspaceID string) error {
 		return err
 	}
 
-	// Clean up MCP inbox database (ignore errors if doesn't exist)
-	if a.settings != nil {
-		inboxPath := filepath.Join(a.settings.GetConfigPath(), "inbox", workspaceID+".db")
-		os.Remove(inboxPath) // Ignore error if file doesn't exist
-	}
+	// Note: inbox is now per-agent (not per-workspace), so no inbox cleanup needed here.
+	// Agent inbox DBs persist at ~/.claudefu/inbox/agents/{agent_id}.db
 
 	// Clean up local workspace state file
 	a.workspace.DeleteWorkspaceState(workspaceID)

@@ -248,20 +248,14 @@ func (s *MCPService) CloseStores() {
 	}
 }
 
-// LoadInbox opens the inbox database for a workspace
-func (s *MCPService) LoadInbox(workspaceID string) error {
-	return s.inbox.LoadWorkspace(workspaceID)
+// LoadInbox opens per-agent inbox databases for the given agent IDs.
+func (s *MCPService) LoadInbox(agentIDs []string) error {
+	return s.inbox.LoadAgents(agentIDs)
 }
 
 // LoadBacklog opens per-agent backlog databases for the given agent IDs.
-// This replaces the old per-workspace approach with per-agent databases.
 func (s *MCPService) LoadBacklog(agentIDs []string) error {
 	return s.backlog.LoadAgents(agentIDs)
-}
-
-// MigrateInboxAgentIDs updates agent IDs in the inbox after reconciliation.
-func (s *MCPService) MigrateInboxAgentIDs(oldToNew map[string]string) {
-	s.inbox.MigrateAgentIDs(oldToNew)
 }
 
 // IsRunning returns whether the MCP server is currently running

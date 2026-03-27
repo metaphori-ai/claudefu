@@ -5,6 +5,11 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.23] - 2026-03-26
+
+### Changed
+- **Inbox migrated to per-agent storage** — Inbox messages now stored per-agent (`~/.claudefu/inbox/agents/{agent_id}.db`) instead of per-workspace. Messages follow the agent across workspaces. Old workspace DBs auto-migrated on first load and renamed to `.migrated`. Matches the backlog storage pattern.
+
 ## [0.5.22] - 2026-03-26
 
 ### Fixed
