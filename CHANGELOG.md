@@ -5,6 +5,11 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.24] - 2026-03-31
+
+### Fixed
+- **Reorder saves via CMD-S** — Main Save button and CMD-S shortcut now apply agent reorder alongside schema/meta changes. Previously only the "Apply Order" button in the Reorder tab worked.
+
 ## [0.5.23] - 2026-03-26
 
 ### Changed
