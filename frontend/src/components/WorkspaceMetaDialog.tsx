@@ -207,6 +207,12 @@ export function WorkspaceMetaDialog({ isOpen, onClose, onSaved }: WorkspaceMetaD
         }
       }
 
+      // Save reorder if dirty
+      if (reorderDirty) {
+        await ReorderAgents(reorderList.map(a => a.id));
+        setReorderDirty(false);
+      }
+
       setSaved(true);
       onSaved?.(); // Trigger agent refresh in parent (App.tsx)
 
@@ -224,7 +230,7 @@ export function WorkspaceMetaDialog({ isOpen, onClose, onSaved }: WorkspaceMetaD
     } finally {
       setIsSaving(false);
     }
-  }, [schema, selectedWsId, wsDraft, selectedAgentFolder, agentDraft, workspaceInfos, agentInfos]);
+  }, [schema, selectedWsId, wsDraft, selectedAgentFolder, agentDraft, workspaceInfos, agentInfos, reorderDirty, reorderList]);
 
   useSaveShortcut(isOpen, handleSave);
 
