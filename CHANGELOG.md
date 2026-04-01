@@ -5,6 +5,11 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.25] - 2026-03-31
+
+### Fixed
+- **Selected sessions preserved on reload** — `ReloadCurrentWorkspace` was missing `populateWorkspaceFromState`, causing selected sessions to disappear after agent reorder, MCP settings save, or meta dialog save.
+
 ## [0.5.24] - 2026-03-31
 
 ### Fixed
