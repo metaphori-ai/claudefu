@@ -59,6 +59,9 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
   const [claudeMDViewMode, setClaudeMDViewMode] = useState<'edit' | 'preview'>('edit');
   const [mdSaved, setMdSaved] = useState(false);
 
+  // Claude CLI command state
+  const [claudeCodeCommand, setClaudeCodeCommand] = useState('');
+
   // Sifu state
   const [sifuEnabled, setSifuEnabled] = useState(false);
   const [sifuRootFolder, setSifuRootFolder] = useState('');
@@ -112,6 +115,9 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
         }
       }
       setEnvVars(vars);
+
+      // Load Claude CLI command
+      setClaudeCodeCommand(settingsResult.claudeCodeCommand || '');
 
       // Load Sifu settings
       setSifuEnabled(settingsResult.sifuEnabled || false);
@@ -180,6 +186,7 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
         const updatedSettings = new settings.Settings({
           ...currentSettings,
           claudeEnvVars: envMap,
+          claudeCodeCommand,
           sifuEnabled,
           sifuRootFolder,
         });
@@ -195,7 +202,7 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
     } finally {
       setIsSaving(false);
     }
-  }, [activeTab, envVars, globalPermissions, globalClaudeMD, defaultTemplateMD, sifuTemplateMD, sifuAgentTemplateMD, sifuEnabled, sifuRootFolder, onClose]);
+  }, [activeTab, envVars, globalPermissions, globalClaudeMD, defaultTemplateMD, sifuTemplateMD, sifuAgentTemplateMD, claudeCodeCommand, sifuEnabled, sifuRootFolder, onClose]);
 
   // CMD-S to save
   useSaveShortcut(isOpen, handleSave);
@@ -246,6 +253,35 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
 
   const renderEnvVarsTab = () => (
     <div style={{ padding: '1rem' }}>
+
+      {/* Claude CLI Command */}
+      <div style={{ marginBottom: '1.5rem' }}>
+        <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600, color: '#ccc' }}>
+          Claude CLI Command
+        </h3>
+        <p style={{ margin: '0.25rem 0 0.5rem 0', fontSize: '0.8rem', color: '#666', lineHeight: 1.5 }}>
+          Custom command name or full path to the Claude CLI binary.
+          Leave empty to use the default (<code style={{ background: '#0d0d0d', padding: '0.1rem 0.3rem', borderRadius: '3px', fontSize: '0.75rem' }}>claude</code>).
+        </p>
+        <input
+          type="text"
+          value={claudeCodeCommand}
+          onChange={(e) => setClaudeCodeCommand(e.target.value)}
+          placeholder="claude"
+          style={{
+            width: '100%',
+            boxSizing: 'border-box',
+            padding: '0.5rem 0.75rem',
+            borderRadius: '6px',
+            border: '1px solid #333',
+            background: '#0d0d0d',
+            color: '#fff',
+            fontSize: '0.85rem',
+            fontFamily: 'monospace',
+          }}
+        />
+      </div>
+
       <div style={{
         display: 'flex',
         alignItems: 'center',

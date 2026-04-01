@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"claudefu/internal/permissions"
+	"claudefu/internal/providers"
 	"claudefu/internal/settings"
 )
 
@@ -30,10 +31,11 @@ func (a *App) SaveSettings(s settings.Settings) error {
 		return err
 	}
 
-	// Apply runtime changes: update Claude CLI environment variables
+	// Apply runtime changes: update Claude CLI environment variables and command
 	if a.claude != nil {
 		a.claude.SetEnvironment(s.ClaudeEnvVars)
 	}
+	providers.SetClaudeCommand(s.ClaudeCodeCommand)
 
 	return nil
 }

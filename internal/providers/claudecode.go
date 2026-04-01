@@ -18,8 +18,12 @@ import (
 )
 
 var (
-	claudePath     string
-	claudePathOnce sync.Once
+	// Claude binary path — resettable cache (double-checked locking with RWMutex).
+	// Use SetClaudeCommand() to override the command name/path and invalidate the cache.
+	claudePathMu       sync.RWMutex
+	claudePath         string
+	claudePathResolved bool
+	claudeCommand      string // custom command from settings (empty = use "claude")
 
 	// shellPATH is the user's full PATH for spawned processes.
 	// Resolved once at startup from ~/.claudefu/bashrc (if exists) or login shell fallback.
@@ -28,11 +32,36 @@ var (
 	shellPATHOnce   sync.Once
 )
 
-// findClaudeBinary searches for the claude binary in common locations
-// macOS GUI apps have a limited PATH, so we check common install locations
-func findClaudeBinary() string {
+// SetClaudeCommand sets a custom CLI binary name or path and invalidates the cached path.
+// Empty string reverts to the default "claude" resolution.
+// Safe to call concurrently.
+func SetClaudeCommand(command string) {
+	claudePathMu.Lock()
+	defer claudePathMu.Unlock()
+	claudeCommand = command
+	claudePathResolved = false
+	claudePath = ""
+}
+
+// findClaudeBinary searches for the claude binary in common locations.
+// command is the configured binary name/path (empty = use "claude").
+// macOS GUI apps have a limited PATH, so we check common install locations.
+func findClaudeBinary(command string) string {
+	// Determine the bare name to search for
+	name := "claude"
+	if command != "" {
+		// If it contains a path separator, treat as an explicit path
+		if strings.Contains(command, "/") {
+			if info, err := os.Stat(command); err == nil && info.Mode()&0111 != 0 {
+				return command
+			}
+			return ""
+		}
+		name = command
+	}
+
 	// Try standard PATH first
-	if path, err := exec.LookPath("claude"); err == nil {
+	if path, err := exec.LookPath(name); err == nil {
 		return path
 	}
 
@@ -42,14 +71,14 @@ func findClaudeBinary() string {
 		home = os.Getenv("HOME")
 	}
 
-	// Common installation locations on macOS
+	// Common installation locations on macOS (with configurable name)
 	locations := []string{
-		filepath.Join(home, ".claude/local/claude"), // Claude Code default install location
-		"/usr/local/bin/claude",
-		"/opt/homebrew/bin/claude", // Apple Silicon Homebrew
-		filepath.Join(home, ".local/bin/claude"),
-		filepath.Join(home, ".npm-global/bin/claude"),
-		filepath.Join(home, "bin/claude"),
+		filepath.Join(home, ".claude/local", name), // Claude Code default install location
+		"/usr/local/bin/" + name,
+		"/opt/homebrew/bin/" + name, // Apple Silicon Homebrew
+		filepath.Join(home, ".local/bin", name),
+		filepath.Join(home, ".npm-global/bin", name),
+		filepath.Join(home, "bin", name),
 	}
 
 	for _, loc := range locations {
@@ -136,11 +165,24 @@ func BuildShellEnv() []string {
 	return replaceOrAppendEnv(env, "PATH", resolvedPATH)
 }
 
-// GetClaudePath returns the path to the claude binary (cached)
+// GetClaudePath returns the path to the claude binary (cached, resettable via SetClaudeCommand).
 func GetClaudePath() string {
-	claudePathOnce.Do(func() {
-		claudePath = findClaudeBinary()
-	})
+	// Fast path: already resolved
+	claudePathMu.RLock()
+	if claudePathResolved {
+		path := claudePath
+		claudePathMu.RUnlock()
+		return path
+	}
+	claudePathMu.RUnlock()
+
+	// Slow path: resolve and cache (double-checked locking)
+	claudePathMu.Lock()
+	defer claudePathMu.Unlock()
+	if !claudePathResolved {
+		claudePath = findClaudeBinary(claudeCommand)
+		claudePathResolved = true
+	}
 	return claudePath
 }
 

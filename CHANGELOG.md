@@ -5,6 +5,11 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.26] - 2026-04-01
+
+### Added
+- **Configurable Claude CLI command** — Global Settings → Environment tab now has a "Claude CLI Command" field. Set a custom binary name (e.g., `claude-patched`) or full path (e.g., `/usr/local/bin/claude-nightly`) to override the default `claude` binary. Takes effect immediately on save — no restart required. Useful for running patched or alternate Claude Code builds.
+
 ## [0.5.25] - 2026-03-31
 
 ### Fixed

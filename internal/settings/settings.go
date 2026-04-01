@@ -24,6 +24,7 @@ type Settings struct {
 	DefaultPermissionSets map[string]string `json:"defaultPermissionSets"` // setId -> risk level ("common", "common+permissive", "all")
 	SifuEnabled           bool              `json:"sifuEnabled"`           // enable Sifu workspace agent (global toggle)
 	SifuRootFolder        string            `json:"sifuRootFolder"`        // parent folder for all workspace Sifus (supports ~/)
+	ClaudeCodeCommand     string            `json:"claudeCodeCommand"`     // custom claude CLI binary name or path (default: "claude")
 }
 
 // AuthConfig holds authentication configuration

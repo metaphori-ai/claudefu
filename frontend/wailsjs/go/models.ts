@@ -756,6 +756,7 @@ export namespace settings {
 	    defaultPermissionSets: Record<string, string>;
 	    sifuEnabled: boolean;
 	    sifuRootFolder: string;
+	    claudeCodeCommand: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -771,6 +772,7 @@ export namespace settings {
 	        this.defaultPermissionSets = source["defaultPermissionSets"];
 	        this.sifuEnabled = source["sifuEnabled"];
 	        this.sifuRootFolder = source["sifuRootFolder"];
+	        this.claudeCodeCommand = source["claudeCodeCommand"];
 	    }
 	}
 

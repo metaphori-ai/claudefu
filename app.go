@@ -419,12 +419,16 @@ func (a *App) initializeClaude() {
 
 	a.claude = providers.NewClaudeCodeService(a.ctx)
 
-	// Apply custom environment variables from settings (e.g., ANTHROPIC_BASE_URL for proxies)
+	// Apply custom environment variables and command from settings
 	if a.settings != nil {
 		s := a.settings.GetSettings()
 		if len(s.ClaudeEnvVars) > 0 {
 			a.claude.SetEnvironment(s.ClaudeEnvVars)
 			wailsrt.LogInfo(a.ctx, fmt.Sprintf("Claude CLI environment configured with %d custom variable(s)", len(s.ClaudeEnvVars)))
+		}
+		if s.ClaudeCodeCommand != "" {
+			providers.SetClaudeCommand(s.ClaudeCodeCommand)
+			wailsrt.LogInfo(a.ctx, fmt.Sprintf("Claude CLI command: %s", s.ClaudeCodeCommand))
 		}
 	}
 
