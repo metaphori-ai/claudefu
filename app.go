@@ -14,6 +14,7 @@ import (
 	"claudefu/internal/defaults"
 	"claudefu/internal/mcpserver"
 	"claudefu/internal/providers"
+	"claudefu/internal/proxy"
 	"claudefu/internal/runtime"
 	"claudefu/internal/session"
 	"claudefu/internal/settings"
@@ -36,6 +37,7 @@ type App struct {
 	currentWorkspace *workspace.Workspace
 	workspaceState   *workspace.WorkspaceState // Per-machine runtime state (local/workspace-state/)
 	mcpServer        *mcpserver.MCPService
+	proxy            *proxy.Service   // Cache fix reverse proxy
 	sessionService   *session.Service // Instant session creation (no CLI wait)
 	terminalManager  *terminal.Manager
 	cliArgs          *CLIArgs         // CLI arguments (e.g., `claudefu .`)
@@ -93,7 +95,11 @@ func (a *App) startup(ctx context.Context) {
 	a.emitLoadingStatus("Initializing Claude CLI...")
 	a.initializeClaude()
 
-	// Step 7: Initialize MCP server for inter-agent communication
+	// Step 7: Initialize cache fix proxy (before MCP, after Claude CLI)
+	a.emitLoadingStatus("Starting cache fix proxy...")
+	a.initializeProxy()
+
+	// Step 8: Initialize MCP server for inter-agent communication
 	a.emitLoadingStatus("Starting MCP server...")
 	a.initializeMCPServer()
 
@@ -446,6 +452,64 @@ func (a *App) initializeClaude() {
 	}
 }
 
+// initializeProxy starts the cache fix proxy if enabled in settings.
+// When running, it auto-injects ANTHROPIC_BASE_URL into Claude CLI env vars.
+func (a *App) initializeProxy() {
+	if a.settings == nil || a.claude == nil {
+		return
+	}
+
+	s := a.settings.GetSettings()
+	if !s.ProxyEnabled {
+		return
+	}
+
+	port := s.ProxyPort
+	if port == 0 {
+		port = 9350
+	}
+
+	// Determine upstream: use user's ANTHROPIC_BASE_URL if set, otherwise Anthropic direct
+	upstream := "https://api.anthropic.com"
+	if userURL, ok := s.ClaudeEnvVars["ANTHROPIC_BASE_URL"]; ok && userURL != "" {
+		// Chain through user's proxy (e.g., corporate mTLS proxy)
+		upstream = userURL
+	}
+
+	// Determine log dir
+	logDir := s.ProxyLogDir
+	if logDir == "" {
+		logDir = filepath.Join(a.settings.GetConfigPath(), "proxy-logs")
+	}
+
+	config := proxy.Config{
+		Enabled:         true,
+		Port:            port,
+		CacheFixEnabled: s.ProxyCacheFix,
+		CacheTTL:        s.ProxyCacheTTL,
+		LoggingEnabled:  s.ProxyLogging,
+		LogDir:          logDir,
+		UpstreamURL:     upstream,
+	}
+
+	a.proxy = proxy.NewService(config)
+	if err := a.proxy.Start(); err != nil {
+		wailsrt.LogWarning(a.ctx, fmt.Sprintf("Failed to start cache fix proxy: %v", err))
+		return
+	}
+
+	wailsrt.LogInfo(a.ctx, fmt.Sprintf("Cache fix proxy started on :%d → %s (TTL: %s)", port, upstream, config.CacheTTL))
+
+	// Auto-inject ANTHROPIC_BASE_URL pointing to our proxy
+	proxyURL := fmt.Sprintf("http://localhost:%d", port)
+	envVars := make(map[string]string)
+	for k, v := range s.ClaudeEnvVars {
+		envVars[k] = v
+	}
+	envVars["ANTHROPIC_BASE_URL"] = proxyURL
+	a.claude.SetEnvironment(envVars)
+}
+
 // initializeMCPServer initializes the MCP server for inter-agent communication
 func (a *App) initializeMCPServer() {
 	// Default port 9315 for MCP server
@@ -585,6 +649,11 @@ func (a *App) shutdown(ctx context.Context) {
 	// Stop terminal sessions
 	if a.terminalManager != nil {
 		a.terminalManager.Shutdown()
+	}
+
+	// Stop cache fix proxy
+	if a.proxy != nil {
+		a.proxy.Stop()
 	}
 
 	// Stop MCP server and close databases

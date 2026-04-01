@@ -25,6 +25,14 @@ type Settings struct {
 	SifuEnabled           bool              `json:"sifuEnabled"`           // enable Sifu workspace agent (global toggle)
 	SifuRootFolder        string            `json:"sifuRootFolder"`        // parent folder for all workspace Sifus (supports ~/)
 	ClaudeCodeCommand     string            `json:"claudeCodeCommand"`     // custom claude CLI binary name or path (default: "claude")
+
+	// Cache fix proxy settings
+	ProxyEnabled  bool   `json:"proxyEnabled"`  // Enable cache fix proxy (default: false)
+	ProxyPort     int    `json:"proxyPort"`     // Proxy port (default: 9350)
+	ProxyCacheFix bool   `json:"proxyCacheFix"` // Enable cache fix mutations (default: true)
+	ProxyCacheTTL string `json:"proxyCacheTTL"` // Cache TTL: "5m" (safe) or "1h" (long sessions) (default: "5m")
+	ProxyLogging  bool   `json:"proxyLogging"`  // Enable request/response logging (default: false)
+	ProxyLogDir   string `json:"proxyLogDir"`   // Log directory (default: ~/.claudefu/proxy-logs/)
 }
 
 // AuthConfig holds authentication configuration
@@ -95,6 +103,9 @@ func defaultSettings() *Settings {
 		DefaultPermissionSets: map[string]string{
 			"git": "common", // Git Common enabled by default
 		},
+		ProxyPort:     9350,
+		ProxyCacheFix: true,
+		ProxyCacheTTL: "5m",
 	}
 }
 

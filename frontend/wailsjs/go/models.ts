@@ -706,6 +706,67 @@ export namespace permissions {
 
 }
 
+export namespace proxy {
+	
+	export class Stats {
+	    totalRequests: number;
+	    cacheFixesApplied: number;
+	    skillsMoved: number;
+	    breakpointsAdded: number;
+	    ttlsUpgraded: number;
+	    errors: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Stats(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.totalRequests = source["totalRequests"];
+	        this.cacheFixesApplied = source["cacheFixesApplied"];
+	        this.skillsMoved = source["skillsMoved"];
+	        this.breakpointsAdded = source["breakpointsAdded"];
+	        this.ttlsUpgraded = source["ttlsUpgraded"];
+	        this.errors = source["errors"];
+	    }
+	}
+	export class Status {
+	    running: boolean;
+	    port: number;
+	    stats: Stats;
+	
+	    static createFrom(source: any = {}) {
+	        return new Status(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.running = source["running"];
+	        this.port = source["port"];
+	        this.stats = this.convertValues(source["stats"], Stats);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+}
+
 export namespace scaffold {
 	
 	export class ScaffoldCheck {
@@ -757,6 +818,12 @@ export namespace settings {
 	    sifuEnabled: boolean;
 	    sifuRootFolder: string;
 	    claudeCodeCommand: string;
+	    proxyEnabled: boolean;
+	    proxyPort: number;
+	    proxyCacheFix: boolean;
+	    proxyCacheTTL: string;
+	    proxyLogging: boolean;
+	    proxyLogDir: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -773,6 +840,12 @@ export namespace settings {
 	        this.sifuEnabled = source["sifuEnabled"];
 	        this.sifuRootFolder = source["sifuRootFolder"];
 	        this.claudeCodeCommand = source["claudeCodeCommand"];
+	        this.proxyEnabled = source["proxyEnabled"];
+	        this.proxyPort = source["proxyPort"];
+	        this.proxyCacheFix = source["proxyCacheFix"];
+	        this.proxyCacheTTL = source["proxyCacheTTL"];
+	        this.proxyLogging = source["proxyLogging"];
+	        this.proxyLogDir = source["proxyLogDir"];
 	    }
 	}
 

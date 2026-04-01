@@ -9,6 +9,7 @@ import {permissions} from '../models';
 import {auth} from '../models';
 import {types} from '../models';
 import {menu} from '../models';
+import {proxy} from '../models';
 import {settings} from '../models';
 
 export function AcceptPlanReview(arg1:string,arg2:string):Promise<void>;
@@ -152,6 +153,10 @@ export function GetPendingPermissionRequests():Promise<Array<main.MCPPendingPerm
 export function GetPermissionSets():Promise<Record<string, permissions.PermissionSet>>;
 
 export function GetPlanFilePath(arg1:string,arg2:string):Promise<string>;
+
+export function GetProxyStats():Promise<proxy.Stats>;
+
+export function GetProxyStatus():Promise<proxy.Status>;
 
 export function GetSessionName(arg1:string,arg2:string):Promise<string>;
 

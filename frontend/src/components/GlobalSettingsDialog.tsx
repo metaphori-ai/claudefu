@@ -17,6 +17,7 @@ import {
   SaveSifuAgentTemplateMD,
   SelectDirectory,
   NormalizeDirPath,
+  GetProxyStatus,
 } from '../../wailsjs/go/main/App';
 import { settings } from '../../wailsjs/go/models';
 import {
@@ -38,7 +39,7 @@ interface EnvVar {
   value: string;
 }
 
-type TabId = 'env' | 'tools' | 'directories' | 'global-claude-md' | 'default-claude-md' | 'sifu' | 'sifu-md' | 'sifu-agent-md';
+type TabId = 'env' | 'tools' | 'directories' | 'global-claude-md' | 'default-claude-md' | 'sifu' | 'sifu-md' | 'sifu-agent-md' | 'proxy';
 
 export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogProps) {
   // Tab state
@@ -67,6 +68,15 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
   const [sifuRootFolder, setSifuRootFolder] = useState('');
   const [sifuTemplateMD, setSifuTemplateMD] = useState('');
   const [sifuAgentTemplateMD, setSifuAgentTemplateMD] = useState('');
+
+  // Proxy state
+  const [proxyEnabled, setProxyEnabled] = useState(false);
+  const [proxyPort, setProxyPort] = useState(9350);
+  const [proxyCacheFix, setProxyCacheFix] = useState(true);
+  const [proxyCacheTTL, setProxyCacheTTL] = useState('5m');
+  const [proxyLogging, setProxyLogging] = useState(false);
+  const [proxyLogDir, setProxyLogDir] = useState('');
+  const [proxyStatus, setProxyStatus] = useState<{ running: boolean; port: number; stats: any } | null>(null);
 
   // Shared state
   const [isSaving, setIsSaving] = useState(false);
@@ -122,6 +132,15 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
       // Load Sifu settings
       setSifuEnabled(settingsResult.sifuEnabled || false);
       setSifuRootFolder(settingsResult.sifuRootFolder || '');
+
+      // Load Proxy settings
+      setProxyEnabled(settingsResult.proxyEnabled || false);
+      setProxyPort(settingsResult.proxyPort || 9350);
+      setProxyCacheFix(settingsResult.proxyCacheFix !== false); // default true
+      setProxyCacheTTL(settingsResult.proxyCacheTTL || '5m');
+      setProxyLogging(settingsResult.proxyLogging || false);
+      setProxyLogDir(settingsResult.proxyLogDir || '');
+      try { setProxyStatus(await GetProxyStatus()); } catch { /* ok */ }
 
       // Convert permission sets to plain objects
       const plainSets: PermissionSet[] = permSetsResult.map(s => ({
@@ -189,6 +208,12 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
           claudeCodeCommand,
           sifuEnabled,
           sifuRootFolder,
+          proxyEnabled,
+          proxyPort,
+          proxyCacheFix,
+          proxyCacheTTL,
+          proxyLogging,
+          proxyLogDir,
         });
         await Promise.all([
           SaveSettings(updatedSettings),
@@ -202,7 +227,7 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
     } finally {
       setIsSaving(false);
     }
-  }, [activeTab, envVars, globalPermissions, globalClaudeMD, defaultTemplateMD, sifuTemplateMD, sifuAgentTemplateMD, claudeCodeCommand, sifuEnabled, sifuRootFolder, onClose]);
+  }, [activeTab, envVars, globalPermissions, globalClaudeMD, defaultTemplateMD, sifuTemplateMD, sifuAgentTemplateMD, claudeCodeCommand, sifuEnabled, sifuRootFolder, proxyEnabled, proxyPort, proxyCacheFix, proxyCacheTTL, proxyLogging, proxyLogDir, onClose]);
 
   // CMD-S to save
   useSaveShortcut(isOpen, handleSave);
@@ -250,6 +275,153 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
   };
 
   const isMDTab = activeTab === 'global-claude-md' || activeTab === 'default-claude-md' || activeTab === 'sifu-md' || activeTab === 'sifu-agent-md';
+
+  const renderProxyTab = () => (
+    <div style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1.25rem', textAlign: 'left', overflow: 'auto', flex: 1 }}>
+      <div style={{ fontSize: '0.8rem', color: '#666', lineHeight: 1.5 }}>
+        The cache fix proxy intercepts requests to Anthropic and stabilizes the cache layout,
+        preventing expensive cache re-creation caused by Claude Code moving system-reminder blocks.
+        This can save 30-40% on API costs.
+      </div>
+
+      {/* Status indicator */}
+      {proxyStatus && (
+        <div style={{
+          padding: '0.6rem 0.75rem',
+          background: '#151515',
+          borderRadius: '8px',
+          border: `1px solid ${proxyStatus.running ? '#16a34a33' : '#33333366'}`,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+          fontSize: '0.8rem',
+        }}>
+          <div style={{
+            width: 8, height: 8, borderRadius: '50%',
+            background: proxyStatus.running ? '#16a34a' : '#555',
+          }} />
+          <span style={{ color: proxyStatus.running ? '#16a34a' : '#666' }}>
+            {proxyStatus.running ? `Running on :${proxyStatus.port}` : 'Stopped'}
+          </span>
+          {proxyStatus.running && proxyStatus.stats && (
+            <span style={{ color: '#555', marginLeft: 'auto', fontSize: '0.75rem' }}>
+              {proxyStatus.stats.totalRequests} requests | {proxyStatus.stats.cacheFixesApplied} fixes
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Enable toggle */}
+      <label style={{
+        display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer',
+        padding: '0.75rem', background: '#151515', borderRadius: '8px', border: '1px solid #222',
+      }}>
+        <input type="checkbox" checked={proxyEnabled} onChange={(e) => setProxyEnabled(e.target.checked)}
+          style={{ width: '18px', height: '18px', accentColor: '#d97757', cursor: 'pointer' }} />
+        <div>
+          <div style={{ color: '#ccc', fontSize: '0.9rem', fontWeight: 500 }}>Enable Cache Fix Proxy</div>
+          <div style={{ color: '#666', fontSize: '0.75rem', marginTop: '0.2rem' }}>
+            Auto-injects ANTHROPIC_BASE_URL for all Claude CLI processes
+          </div>
+        </div>
+      </label>
+
+      {proxyEnabled && (
+        <>
+          {/* Port */}
+          <div>
+            <label style={{ color: '#999', fontSize: '0.8rem', fontWeight: 500 }}>Port</label>
+            <input type="number" value={proxyPort} onChange={(e) => setProxyPort(parseInt(e.target.value) || 9350)}
+              style={{
+                width: '100%', boxSizing: 'border-box', marginTop: '0.3rem',
+                padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid #333',
+                background: '#0d0d0d', color: '#fff', fontSize: '0.85rem', fontFamily: 'monospace',
+              }} />
+          </div>
+
+          {/* Cache Fix toggle */}
+          <label style={{
+            display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer',
+            padding: '0.6rem 0.75rem', background: '#151515', borderRadius: '8px', border: '1px solid #222',
+          }}>
+            <input type="checkbox" checked={proxyCacheFix} onChange={(e) => setProxyCacheFix(e.target.checked)}
+              style={{ width: '16px', height: '16px', accentColor: '#d97757', cursor: 'pointer' }} />
+            <div>
+              <div style={{ color: '#ccc', fontSize: '0.85rem' }}>Cache Fix Mutations</div>
+              <div style={{ color: '#666', fontSize: '0.72rem', marginTop: '0.15rem' }}>
+                Stabilizes system-reminder position and adds cache breakpoints
+              </div>
+            </div>
+          </label>
+
+          {/* Cache TTL selector */}
+          <div>
+            <label style={{ color: '#999', fontSize: '0.8rem', fontWeight: 500 }}>Stable Context TTL</label>
+            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.3rem' }}>
+              {(['5m', '1h'] as const).map(ttl => (
+                <button key={ttl} onClick={() => setProxyCacheTTL(ttl)}
+                  style={{
+                    flex: 1, padding: '0.5rem 0.75rem', borderRadius: '6px', cursor: 'pointer',
+                    border: proxyCacheTTL === ttl ? '1px solid #d97757' : '1px solid #333',
+                    background: proxyCacheTTL === ttl ? '#d9775720' : '#0d0d0d',
+                    color: proxyCacheTTL === ttl ? '#d97757' : '#888',
+                    fontSize: '0.85rem', fontWeight: proxyCacheTTL === ttl ? 600 : 400,
+                  }}>
+                  {ttl === '5m' ? '5 min (safe default)' : '1 hour (long sessions)'}
+                </button>
+              ))}
+            </div>
+            <div style={{ color: '#555', fontSize: '0.72rem', marginTop: '0.3rem', lineHeight: 1.4 }}>
+              {proxyCacheTTL === '1h'
+                ? 'Upgrades all cache breakpoints to 1h. Best for long coding sessions where CLAUDE.md rarely changes.'
+                : 'Matches Claude Code\'s default 5-minute cache. Adds missing breakpoints without changing existing TTLs.'}
+            </div>
+          </div>
+
+          {/* Logging toggle */}
+          <label style={{
+            display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer',
+            padding: '0.6rem 0.75rem', background: '#151515', borderRadius: '8px', border: '1px solid #222',
+          }}>
+            <input type="checkbox" checked={proxyLogging} onChange={(e) => setProxyLogging(e.target.checked)}
+              style={{ width: '16px', height: '16px', accentColor: '#d97757', cursor: 'pointer' }} />
+            <div>
+              <div style={{ color: '#ccc', fontSize: '0.85rem' }}>Request/Response Logging</div>
+              <div style={{ color: '#666', fontSize: '0.72rem', marginTop: '0.15rem' }}>
+                Dumps API requests and responses to disk for debugging
+              </div>
+            </div>
+          </label>
+
+          {/* Log directory */}
+          {proxyLogging && (
+            <div>
+              <label style={{ color: '#999', fontSize: '0.8rem', fontWeight: 500 }}>Log Directory</label>
+              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.3rem' }}>
+                <input type="text" value={proxyLogDir}
+                  onChange={(e) => setProxyLogDir(e.target.value)}
+                  placeholder="~/.claudefu/proxy-logs/"
+                  style={{
+                    flex: 1, padding: '0.5rem 0.75rem', borderRadius: '6px',
+                    border: '1px solid #333', background: '#0d0d0d', color: '#fff',
+                    fontSize: '0.85rem', fontFamily: 'monospace',
+                  }} />
+                <button onClick={async () => {
+                  const dir = await SelectDirectory('Select Proxy Log Directory');
+                  if (dir) setProxyLogDir(await NormalizeDirPath(dir));
+                }} style={{
+                  padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid #333',
+                  background: '#151515', color: '#999', cursor: 'pointer', fontSize: '0.8rem',
+                }}>
+                  Browse
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
 
   const renderEnvVarsTab = () => (
     <div style={{ padding: '1rem' }}>
@@ -587,6 +759,7 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
     { id: 'sifu', label: 'Sifu' },
     { id: 'sifu-md', label: 'SIFU.md' },
     { id: 'sifu-agent-md', label: 'SIFU_AGENT.md' },
+    { id: 'proxy', label: 'Proxy' },
   ];
 
   return (
@@ -794,6 +967,7 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
                   </div>
                 </div>
               )}
+              {activeTab === 'proxy' && renderProxyTab()}
             </>
           )}
         </div>

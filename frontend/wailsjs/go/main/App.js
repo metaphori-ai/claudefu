@@ -286,6 +286,14 @@ export function GetPlanFilePath(arg1, arg2) {
   return window['go']['main']['App']['GetPlanFilePath'](arg1, arg2);
 }
 
+export function GetProxyStats() {
+  return window['go']['main']['App']['GetProxyStats']();
+}
+
+export function GetProxyStatus() {
+  return window['go']['main']['App']['GetProxyStatus']();
+}
+
 export function GetSessionName(arg1, arg2) {
   return window['go']['main']['App']['GetSessionName'](arg1, arg2);
 }

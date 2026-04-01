@@ -2,9 +2,11 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"claudefu/internal/permissions"
 	"claudefu/internal/providers"
+	"claudefu/internal/proxy"
 	"claudefu/internal/settings"
 )
 
@@ -32,12 +34,78 @@ func (a *App) SaveSettings(s settings.Settings) error {
 	}
 
 	// Apply runtime changes: update Claude CLI environment variables and command
-	if a.claude != nil {
-		a.claude.SetEnvironment(s.ClaudeEnvVars)
-	}
 	providers.SetClaudeCommand(s.ClaudeCodeCommand)
 
+	// Apply proxy changes
+	a.applyProxySettings(s)
+
 	return nil
+}
+
+// applyProxySettings manages proxy lifecycle based on settings.
+// When proxy is enabled, it auto-injects ANTHROPIC_BASE_URL into Claude CLI env.
+func (a *App) applyProxySettings(s settings.Settings) {
+	if s.ProxyEnabled {
+		port := s.ProxyPort
+		if port == 0 {
+			port = 9350
+		}
+
+		// Determine upstream
+		upstream := "https://api.anthropic.com"
+		if userURL, ok := s.ClaudeEnvVars["ANTHROPIC_BASE_URL"]; ok && userURL != "" {
+			upstream = userURL
+		}
+
+		logDir := s.ProxyLogDir
+		if logDir == "" && a.settings != nil {
+			logDir = filepath.Join(a.settings.GetConfigPath(), "proxy-logs")
+		}
+
+		config := proxy.Config{
+			Enabled:         true,
+			Port:            port,
+			CacheFixEnabled: s.ProxyCacheFix,
+			CacheTTL:        s.ProxyCacheTTL,
+			LoggingEnabled:  s.ProxyLogging,
+			LogDir:          logDir,
+			UpstreamURL:     upstream,
+		}
+
+		if a.proxy != nil && a.proxy.IsRunning() {
+			// Restart with new config
+			if err := a.proxy.Restart(config); err != nil {
+				fmt.Printf("[proxy] Failed to restart proxy: %v\n", err)
+			}
+		} else {
+			// Start fresh
+			a.proxy = proxy.NewService(config)
+			if err := a.proxy.Start(); err != nil {
+				fmt.Printf("[proxy] Failed to start proxy: %v\n", err)
+			}
+		}
+
+		// Inject ANTHROPIC_BASE_URL pointing to our proxy
+		if a.claude != nil {
+			proxyURL := fmt.Sprintf("http://localhost:%d", port)
+			envVars := make(map[string]string)
+			for k, v := range s.ClaudeEnvVars {
+				envVars[k] = v
+			}
+			envVars["ANTHROPIC_BASE_URL"] = proxyURL
+			a.claude.SetEnvironment(envVars)
+		}
+	} else {
+		// Proxy disabled — stop if running
+		if a.proxy != nil && a.proxy.IsRunning() {
+			a.proxy.Stop()
+		}
+
+		// Apply env vars without proxy override
+		if a.claude != nil {
+			a.claude.SetEnvironment(s.ClaudeEnvVars)
+		}
+	}
 }
 
 // GetConfigPath returns the path to the config directory (~/.claudefu)
