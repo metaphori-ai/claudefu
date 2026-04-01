@@ -48,6 +48,8 @@ func (a *App) ReloadCurrentWorkspace() (*workspace.Workspace, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Re-apply runtime state (selected sessions, last opened) from workspace state file
+	populateWorkspaceFromState(ws, a.workspaceState)
 	a.currentWorkspace = ws
 	return ws, nil
 }
