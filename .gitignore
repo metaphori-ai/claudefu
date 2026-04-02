@@ -124,3 +124,4 @@ CLAUDE.md
 *.tda.svml*
 *.svml
 claudefu
+debug-jsonl-analysis/

@@ -126,6 +126,38 @@ All tools are configurable — toggle availability and customize instructions fr
 - **MCP Settings** — Server configuration, tool availability toggles, customizable tool instructions
 - **Native macOS menu** — Workspace and agent management from the menu bar
 
+### Cache Fix Proxy
+
+Claude Code's harness injects volatile `<system-reminder>` blocks into the first API message, which invalidates Anthropic's prompt cache for your entire CLAUDE.md context (~20-70K tokens) on every other turn. This causes cache hit rates to drop from 99% to ~30%, roughly doubling API costs.
+
+ClaudeFu includes a built-in reverse proxy that fixes this by stabilizing the message layout before requests reach Anthropic:
+
+- **Fix 1** — Moves the volatile skills system-reminder from `messages[0]` to the last user message, keeping CLAUDE.md hash-stable
+- **Fix 2** — Adds a cache breakpoint to `messages[0]` so CLAUDE.md is cached separately
+- **Fix 3** — Configurable TTL upgrade: "5 min" (safe default) or "1 hour" for long coding sessions
+
+**Results:** 99%+ cache hits after cold start, ~68% overall API cost savings.
+
+#### Setup
+
+**Step 1.** Click **Settings** in the sidebar
+
+<p align="center"><img src="assets/cache-fix/cache-fix-1.jpg" alt="Step 1: Open Settings" width="600"></p>
+
+**Step 2.** Click the **Proxy** tab (make sure no `ANTHROPIC_BASE_URL` env var is set on the Environment tab)
+
+<p align="center"><img src="assets/cache-fix/cache-fix-2.jpg" alt="Step 2: Select Proxy tab" width="600"></p>
+
+**Step 3.** Enable the proxy, choose your settings, and click **Save**
+
+<p align="center"><img src="assets/cache-fix/cache-fix-3.jpg" alt="Step 3: Enable proxy and configure" width="600"></p>
+
+**Step 4.** Optionally enable **Request/Response Logging** to see exactly what Claude Code sends to Anthropic
+
+<p align="center"><img src="assets/cache-fix/cache-fix-4.jpg" alt="Step 4: Enable logging" width="600"></p>
+
+The proxy auto-injects `ANTHROPIC_BASE_URL` into all Claude CLI processes — no manual configuration needed.
+
 ---
 
 ## Tech Stack
