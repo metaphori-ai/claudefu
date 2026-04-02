@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 
 	"claudefu/internal/permissions"
 	"claudefu/internal/providers"
@@ -60,6 +62,10 @@ func (a *App) applyProxySettings(s settings.Settings) {
 		logDir := s.ProxyLogDir
 		if logDir == "" && a.settings != nil {
 			logDir = filepath.Join(a.settings.GetConfigPath(), "proxy-logs")
+		} else if strings.HasPrefix(logDir, "~/") {
+			if home, err := os.UserHomeDir(); err == nil {
+				logDir = filepath.Join(home, logDir[2:])
+			}
 		}
 
 		config := proxy.Config{

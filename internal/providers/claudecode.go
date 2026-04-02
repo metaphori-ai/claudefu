@@ -276,8 +276,19 @@ func (s *ClaudeCodeService) buildEnvironment() []string {
 	}
 
 	// Append custom vars (these override existing vars with same name)
-	for key, value := range s.envVars {
-		env = replaceOrAppendEnv(env, key, value)
+	if len(s.envVars) > 0 {
+		fmt.Printf("[DEBUG] buildEnvironment: injecting %d custom env vars:\n", len(s.envVars))
+		for key, value := range s.envVars {
+			// Truncate value for security (don't log full API keys)
+			displayVal := value
+			if len(displayVal) > 60 {
+				displayVal = displayVal[:60] + "..."
+			}
+			fmt.Printf("[DEBUG]   %s=%s\n", key, displayVal)
+			env = replaceOrAppendEnv(env, key, value)
+		}
+	} else {
+		fmt.Printf("[DEBUG] buildEnvironment: no custom env vars to inject\n")
 	}
 
 	return env

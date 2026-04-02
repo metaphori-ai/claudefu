@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -476,10 +477,14 @@ func (a *App) initializeProxy() {
 		upstream = userURL
 	}
 
-	// Determine log dir
+	// Determine log dir (expand ~ since Go doesn't do it automatically)
 	logDir := s.ProxyLogDir
 	if logDir == "" {
 		logDir = filepath.Join(a.settings.GetConfigPath(), "proxy-logs")
+	} else if strings.HasPrefix(logDir, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			logDir = filepath.Join(home, logDir[2:])
+		}
 	}
 
 	config := proxy.Config{
