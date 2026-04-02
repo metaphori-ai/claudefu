@@ -87,7 +87,7 @@ const TOOL_CONFIG: Record<string, { color: string; label: string }> = {
   Grep: { color: '#f472b6', label: 'Grep' },
   WebFetch: { color: '#38bdf8', label: 'WebFetch' },
   WebSearch: { color: '#38bdf8', label: 'WebSearch' },
-  Task: { color: '#fb923c', label: 'Subagent' },
+  Task: { color: '#fb923c', label: 'Agent' },
   TodoWrite: { color: '#4ade80', label: 'TodoWrite' },
   LSP: { color: '#c084fc', label: 'LSP' },
   NotebookEdit: { color: '#fbbf24', label: 'NotebookEdit' },
@@ -96,8 +96,14 @@ const TOOL_CONFIG: Record<string, { color: string; label: string }> = {
   ExitPlanMode: { color: '#4ade80', label: 'Exit Plan' },
 };
 
-function getToolConfig(toolName: string) {
-  return TOOL_CONFIG[toolName] || { color: '#888', label: toolName };
+function getToolConfig(toolName: string, input?: any) {
+  const base = TOOL_CONFIG[toolName] || { color: '#888', label: toolName };
+  // For Task tool, append subagent_type to label
+  if (toolName === 'Task' && input?.subagent_type) {
+    const typeLabel = input.subagent_type.charAt(0).toUpperCase() + input.subagent_type.slice(1);
+    return { ...base, label: typeLabel };
+  }
+  return base;
 }
 
 function getToolSummary(toolName: string, input: any): string {
@@ -554,7 +560,7 @@ function AskUserQuestionBlock({ block, result, pendingQuestion, onAnswer, onSkip
 }
 
 export function ToolCallBlock({ block, result, onViewDetails, pendingQuestion, onAnswer, onSkip, onAddPermission }: ToolCallBlockProps) {
-  const config = getToolConfig(block.name || '');
+  const config = getToolConfig(block.name || '', block.input);
   const summary = getToolSummary(block.name || '', block.input);
   const resultStr = result ? contentToString(result.content) : undefined;
   const resultSummary = result ? getResultSummary(block.name || '', resultStr, result.is_error || false) : null;

@@ -38,7 +38,7 @@ const TOOL_CONFIG: Record<string, { color: string; label: string }> = {
   Grep: { color: '#f472b6', label: 'Grep' },
   WebFetch: { color: '#38bdf8', label: 'WebFetch' },
   WebSearch: { color: '#38bdf8', label: 'WebSearch' },
-  Task: { color: '#fb923c', label: 'Subagent' },
+  Task: { color: '#fb923c', label: 'Agent' },
   TodoWrite: { color: '#4ade80', label: 'TodoWrite' },
   LSP: { color: '#c084fc', label: 'LSP' },
   NotebookEdit: { color: '#fbbf24', label: 'NotebookEdit' },
@@ -91,10 +91,8 @@ function formatInput(toolName: string, input: any): string {
       return `query: ${input.query || 'N/A'}`;
 
     case 'Task':
-      let taskStr = `description: ${input.description || 'N/A'}`;
-      if (input.prompt) taskStr += `\n\nprompt:\n${input.prompt}`;
-      if (input.subagent_type) taskStr += `\nsubagent_type: ${input.subagent_type}`;
-      return taskStr;
+      // Task input is rendered as structured JSX via renderTaskInput(), not plain text
+      return '';
 
     case 'TodoWrite':
       const todos = input.todos;
@@ -126,6 +124,11 @@ export function ToolDetailPane({ toolCall, toolResult, isOpen, onClose, agentID,
   if (!toolCall) return null;
 
   const config = getToolConfig(toolCall.name || '');
+
+  // For Task tool, derive a better title with subagent_type
+  const paneTitle = toolCall.name === 'Task' && toolCall.input?.subagent_type
+    ? `${toolCall.input.subagent_type.charAt(0).toUpperCase() + toolCall.input.subagent_type.slice(1)} Agent`
+    : config.label;
 
   // Extract subagent ID from Task tool result
   const getSubagentId = (): string | null => {
@@ -163,39 +166,90 @@ export function ToolDetailPane({ toolCall, toolResult, isOpen, onClose, agentID,
     <SlideInPane
       isOpen={isOpen}
       onClose={onClose}
-      title={config.label}
+      title={paneTitle}
       titleColor={config.color}
       storageKey="toolDetail"
       defaultWidth={600}
     >
       {/* Input Section */}
       <div style={{ marginBottom: '1.5rem' }}>
-        <h3 style={{
-          fontSize: '0.75rem',
-          fontWeight: 600,
-          color: '#666',
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
-          marginBottom: '0.75rem'
-        }}>
-          Input
-        </h3>
-        <pre style={{
-          background: '#1a1a1a',
-          border: '1px solid #333',
-          borderRadius: '8px',
-          padding: '1rem',
-          margin: 0,
-          fontSize: '0.8rem',
-          color: '#ccc',
-          whiteSpace: 'pre-wrap',
-          wordBreak: 'break-word',
-          overflow: 'auto',
-          maxHeight: '300px',
-          textAlign: 'left'
-        }}>
-          {formatInput(toolCall.name || '', toolCall.input)}
-        </pre>
+        {toolCall.name === 'Task' && toolCall.input ? (
+          // Structured Task/Agent input display
+          <div>
+            {/* Subagent type badge + description header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+              {toolCall.input.subagent_type && (
+                <span style={{
+                  padding: '0.2rem 0.6rem',
+                  borderRadius: '4px',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  background: 'rgba(251, 146, 60, 0.15)',
+                  color: '#fb923c',
+                  border: '1px solid rgba(251, 146, 60, 0.3)',
+                  textTransform: 'capitalize',
+                }}>
+                  {toolCall.input.subagent_type}
+                </span>
+              )}
+              {toolCall.input.description && (
+                <span style={{ fontSize: '0.9rem', color: '#ccc', fontWeight: 500 }}>
+                  {toolCall.input.description}
+                </span>
+              )}
+            </div>
+
+            {/* Prompt as readable text */}
+            {toolCall.input.prompt && (
+              <div style={{
+                background: '#1a1a1a',
+                border: '1px solid #333',
+                borderRadius: '8px',
+                padding: '1rem',
+                fontSize: '0.8rem',
+                color: '#bbb',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                overflow: 'auto',
+                maxHeight: '300px',
+                lineHeight: 1.5,
+                textAlign: 'left',
+              }}>
+                {toolCall.input.prompt}
+              </div>
+            )}
+          </div>
+        ) : (
+          // Default input display for all other tools
+          <>
+            <h3 style={{
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              color: '#666',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              marginBottom: '0.75rem'
+            }}>
+              Input
+            </h3>
+            <pre style={{
+              background: '#1a1a1a',
+              border: '1px solid #333',
+              borderRadius: '8px',
+              padding: '1rem',
+              margin: 0,
+              fontSize: '0.8rem',
+              color: '#ccc',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              overflow: 'auto',
+              maxHeight: '300px',
+              textAlign: 'left'
+            }}>
+              {formatInput(toolCall.name || '', toolCall.input)}
+            </pre>
+          </>
+        )}
       </div>
 
       {/* Result Section */}
