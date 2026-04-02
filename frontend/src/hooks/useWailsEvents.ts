@@ -455,6 +455,31 @@ export function useWailsEvents() {
       }
     };
   }, [appendMessages, isMessageProcessed, getSessionMessages]);
+
+  // ---------------------------------------------------------------------------
+  // Subagent events — dispatched as DOM events for ToolDetailPane consumption
+  // ---------------------------------------------------------------------------
+
+  useEffect(() => {
+    const handleSubagentStarted = (data: any) => {
+      window.dispatchEvent(new CustomEvent('claudefu:subagent-started', { detail: data }));
+    };
+    const handleSubagentMessages = (data: any) => {
+      window.dispatchEvent(new CustomEvent('claudefu:subagent-messages', { detail: data }));
+    };
+    const handleSubagentCompleted = (data: any) => {
+      window.dispatchEvent(new CustomEvent('claudefu:subagent-completed', { detail: data }));
+    };
+
+    EventsOn('subagent:started', handleSubagentStarted);
+    EventsOn('subagent:messages', handleSubagentMessages);
+    EventsOn('subagent:completed', handleSubagentCompleted);
+    return () => {
+      EventsOff('subagent:started');
+      EventsOff('subagent:messages');
+      EventsOff('subagent:completed');
+    };
+  }, []);
 }
 
 /**

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { GetSubagentConversation } from '../../wailsjs/go/main/App';
@@ -120,6 +120,82 @@ export function ToolDetailPane({ toolCall, toolResult, isOpen, onClose, agentID,
   const [loadingSubagent, setLoadingSubagent] = useState(false);
   const [subagentExpanded, setSubagentExpanded] = useState(false);
   const [subagentError, setSubagentError] = useState<string | null>(null);
+  const [subagentStatus, setSubagentStatus] = useState<'idle' | 'running' | 'completed'>('idle');
+
+  // Extract subagent ID from Task tool result (memoize for stability)
+  const subagentId = toolCall?.name === 'Task' && toolResult?.content
+    ? (() => {
+        const content = typeof toolResult.content === 'string'
+          ? toolResult.content
+          : JSON.stringify(toolResult.content);
+        const match = content.match(/agentId:\s*([a-zA-Z0-9-]+)/);
+        if (match) {
+          const id = match[1];
+          return id.startsWith('agent-') ? id : `agent-${id}`;
+        }
+        return null;
+      })()
+    : null;
+
+  // Subscribe to live subagent messages via DOM events
+  useEffect(() => {
+    if (!isOpen || toolCall?.name !== 'Task') return;
+
+    const handleMessages = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (!detail?.messages) return;
+      // Accept messages for any subagent in this session (we may not know the ID yet)
+      setSubagentMessages(prev => [...prev, ...detail.messages]);
+      setSubagentStatus('running');
+      // Auto-expand when live messages arrive
+      setSubagentExpanded(true);
+    };
+
+    const handleStarted = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail) {
+        setSubagentStatus('running');
+        setSubagentExpanded(true);
+      }
+    };
+
+    const handleCompleted = () => {
+      setSubagentStatus('completed');
+    };
+
+    window.addEventListener('claudefu:subagent-messages', handleMessages);
+    window.addEventListener('claudefu:subagent-started', handleStarted);
+    window.addEventListener('claudefu:subagent-completed', handleCompleted);
+    return () => {
+      window.removeEventListener('claudefu:subagent-messages', handleMessages);
+      window.removeEventListener('claudefu:subagent-started', handleStarted);
+      window.removeEventListener('claudefu:subagent-completed', handleCompleted);
+    };
+  }, [isOpen, toolCall?.name]);
+
+  // Reset state when tool changes
+  useEffect(() => {
+    setSubagentMessages([]);
+    setSubagentStatus('idle');
+    setSubagentError(null);
+  }, [toolCall?.id]);
+
+  // Load subagent conversation on demand (for completed subagents)
+  const loadSubagentConversation = useCallback(async () => {
+    if (!agentID || !sessionID || !subagentId) return;
+
+    setLoadingSubagent(true);
+    setSubagentError(null);
+    try {
+      const messages = await GetSubagentConversation(agentID, sessionID, subagentId);
+      setSubagentMessages(messages || []);
+      setSubagentStatus('completed');
+    } catch (err) {
+      setSubagentError(err instanceof Error ? err.message : 'Failed to load subagent conversation');
+    } finally {
+      setLoadingSubagent(false);
+    }
+  }, [agentID, sessionID, subagentId]);
 
   if (!toolCall) return null;
 
@@ -129,38 +205,6 @@ export function ToolDetailPane({ toolCall, toolResult, isOpen, onClose, agentID,
   const paneTitle = toolCall.name === 'Task' && toolCall.input?.subagent_type
     ? `${toolCall.input.subagent_type.charAt(0).toUpperCase() + toolCall.input.subagent_type.slice(1)} Agent`
     : config.label;
-
-  // Extract subagent ID from Task tool result
-  const getSubagentId = (): string | null => {
-    if (toolCall.name !== 'Task' || !toolResult?.content) return null;
-    const content = typeof toolResult.content === 'string'
-      ? toolResult.content
-      : JSON.stringify(toolResult.content);
-    const match = content.match(/agentId:\s*([a-zA-Z0-9-]+)/);
-    if (match) {
-      const id = match[1];
-      return id.startsWith('agent-') ? id : `agent-${id}`;
-    }
-    return null;
-  };
-
-  const subagentId = getSubagentId();
-
-  // Load subagent conversation on demand
-  const loadSubagentConversation = async () => {
-    if (!agentID || !sessionID || !subagentId) return;
-
-    setLoadingSubagent(true);
-    setSubagentError(null);
-    try {
-      const messages = await GetSubagentConversation(agentID, sessionID, subagentId);
-      setSubagentMessages(messages || []);
-    } catch (err) {
-      setSubagentError(err instanceof Error ? err.message : 'Failed to load subagent conversation');
-    } finally {
-      setLoadingSubagent(false);
-    }
-  };
 
   return (
     <SlideInPane
@@ -298,11 +342,11 @@ export function ToolDetailPane({ toolCall, toolResult, isOpen, onClose, agentID,
       )}
 
       {/* Subagent Conversation Section (for Task tool) */}
-      {toolCall.name === 'Task' && subagentId && agentID && sessionID && (
+      {toolCall.name === 'Task' && (subagentId || subagentMessages.length > 0 || subagentStatus === 'running') && (
         <div style={{ marginTop: '1.5rem' }}>
           <button
             onClick={() => {
-              if (!subagentExpanded && subagentMessages.length === 0 && !loadingSubagent) {
+              if (!subagentExpanded && subagentMessages.length === 0 && !loadingSubagent && subagentId) {
                 loadSubagentConversation();
               }
               setSubagentExpanded(!subagentExpanded);
@@ -328,8 +372,22 @@ export function ToolDetailPane({ toolCall, toolResult, isOpen, onClose, agentID,
               e.currentTarget.style.borderColor = '#333';
             }}
           >
-            <span style={{ fontWeight: 500, fontSize: '0.85rem' }}>
-              Subagent Conversation
+            <span style={{ fontWeight: 500, fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              Agent Conversation
+              {subagentMessages.length > 0 && (
+                <span style={{ fontSize: '0.7rem', color: '#888', fontWeight: 400 }}>
+                  ({subagentMessages.length} messages)
+                </span>
+              )}
+              {subagentStatus === 'running' && (
+                <span style={{
+                  fontSize: '0.65rem', color: '#fb923c',
+                  background: 'rgba(251, 146, 60, 0.15)',
+                  padding: '0.1rem 0.4rem', borderRadius: '3px',
+                }}>
+                  LIVE
+                </span>
+              )}
             </span>
             <span style={{ color: '#666', fontSize: '0.7rem' }}>
               {subagentExpanded ? '▼' : '▶'}

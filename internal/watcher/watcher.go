@@ -33,9 +33,10 @@ type FileWatcher struct {
 	watchedDirs       map[string]bool        // Track watched directories
 	watchedFiles      map[string]bool        // Track watched files
 	loadedAgents      map[string]bool        // Track agents that have completed initial session load
-	agentSessionPaths map[string]string      // agentID -> watched session file path (one per agent)
-	pendingChanges    map[string]*time.Timer  // path -> debounce timer (batches rapid writes during streaming)
-	mu                sync.RWMutex
+	agentSessionPaths  map[string]string             // agentID -> watched session file path (one per agent)
+	subagentWatchers   map[string]*SubagentWatcher  // agentID -> subagent watcher (one per active session)
+	pendingChanges     map[string]*time.Timer       // path -> debounce timer (batches rapid writes during streaming)
+	mu                 sync.RWMutex
 	ctx               context.Context
 	cancel            context.CancelFunc
 }
@@ -54,8 +55,9 @@ func NewFileWatcher() (*FileWatcher, error) {
 		watchedDirs:       make(map[string]bool),
 		watchedFiles:      make(map[string]bool),
 		loadedAgents:      make(map[string]bool),
-		agentSessionPaths: make(map[string]string),
-		pendingChanges:    make(map[string]*time.Timer),
+		agentSessionPaths:  make(map[string]string),
+		subagentWatchers:   make(map[string]*SubagentWatcher),
+		pendingChanges:     make(map[string]*time.Timer),
 		ctx:               ctx,
 		cancel:            cancel,
 	}
@@ -144,6 +146,23 @@ func (fw *FileWatcher) SetActiveSessionWatch(agentID, sessionID string) {
 	} else {
 		fmt.Printf("[DEBUG] SetActiveSessionWatch: agent %s failed to watch %s: %v\n", agentID[:8], newPath, err)
 	}
+
+	// Stop previous subagent watcher for this agent (if any)
+	if old, exists := fw.subagentWatchers[agentID]; exists {
+		old.Stop()
+		delete(fw.subagentWatchers, agentID)
+	}
+
+	// Start subagent watcher for this session
+	if fw.runtime != nil {
+		sw, err := NewSubagentWatcher(fw.runtime, agentID, sessionID, folder)
+		if err == nil {
+			if err := sw.Start(); err == nil {
+				fw.subagentWatchers[agentID] = sw
+				fmt.Printf("[DEBUG] SetActiveSessionWatch: agent %s started subagent watcher for session=%s\n", agentID[:8], sessionID[:8])
+			}
+		}
+	}
 }
 
 // ClearActiveSessionWatch stops watching the session file for a specific agent.
@@ -156,6 +175,12 @@ func (fw *FileWatcher) ClearActiveSessionWatch(agentID string) {
 		delete(fw.watchedFiles, oldPath)
 		delete(fw.agentSessionPaths, agentID)
 		fmt.Printf("[DEBUG] ClearActiveSessionWatch: agent %s unwatched %s\n", agentID[:8], oldPath)
+	}
+
+	// Stop subagent watcher for this agent
+	if sw, exists := fw.subagentWatchers[agentID]; exists {
+		sw.Stop()
+		delete(fw.subagentWatchers, agentID)
 	}
 }
 
@@ -750,6 +775,12 @@ func (fw *FileWatcher) StopWatchingAgent(agentID, folder string) {
 func (fw *FileWatcher) StopAllWatchers() {
 	fw.mu.Lock()
 	defer fw.mu.Unlock()
+
+	// Stop all subagent watchers
+	for id, sw := range fw.subagentWatchers {
+		sw.Stop()
+		delete(fw.subagentWatchers, id)
+	}
 
 	// Clear all per-agent session watches
 	fw.agentSessionPaths = make(map[string]string)
