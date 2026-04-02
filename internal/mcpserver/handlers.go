@@ -840,13 +840,16 @@ func (s *MCPService) handleExitPlanMode(ctx context.Context, req mcp.CallToolReq
 			return mcp.NewToolResultError("User skipped the plan review"), nil
 		}
 
-		// Write synthetic JSONL entry before returning MCP result
-		s.writePlanReviewJSONL(fromAgent, answer)
+		// Write synthetic JSONL entry before returning MCP result.
+		// For subagent callers, this detects the subagent case and skips the parent write.
+		isSubagent := s.writePlanReviewJSONL(fromAgent, answer)
 
-		// Small delay to ensure the JSONL write is flushed to disk before Claude
-		// reads it. Without this, Claude can process the MCP response before the
-		// file write completes, causing it to miss the plan state transition.
-		time.Sleep(1500 * time.Millisecond)
+		if !isSubagent {
+			// Small delay to ensure the JSONL write is flushed to disk before Claude
+			// reads it. Without this, Claude can process the MCP response before the
+			// file write completes, causing it to miss the plan state transition.
+			time.Sleep(1500 * time.Millisecond)
+		}
 
 		if answer.Accepted {
 			fmt.Printf("[MCP:ExitPlanMode] Plan accepted for review %s\n", pr.ID[:8])
@@ -887,12 +890,12 @@ func (s *MCPService) handleExitPlanMode(ctx context.Context, req mcp.CallToolReq
 	}
 }
 
-// writePlanReviewJSONL writes a synthetic JSONL entry matching the built-in ExitPlanMode
-// format so Claude Code's plan mode tracker recognizes the state transition.
-func (s *MCPService) writePlanReviewJSONL(fromAgent string, answer *PlanReviewAnswer) {
+// writePlanReviewJSONL writes the synthetic JSONL entry for plan review.
+// Returns true if the caller was a subagent (different handling needed).
+func (s *MCPService) writePlanReviewJSONL(fromAgent string, answer *PlanReviewAnswer) bool {
 	if s.activeSessionGetter == nil {
 		fmt.Printf("[MCP:ExitPlanMode] No activeSessionGetter configured, skipping JSONL write\n")
-		return
+		return false
 	}
 
 	// Resolve agent slug to session context
@@ -900,14 +903,28 @@ func (s *MCPService) writePlanReviewJSONL(fromAgent string, answer *PlanReviewAn
 	if sessionID == "" || folder == "" {
 		fmt.Printf("[MCP:ExitPlanMode] Could not resolve active session for agent %s (agentID=%s, sessionID=%s, folder=%s)\n",
 			fromAgent, agentID, sessionID, folder)
-		return
+		return false
 	}
 
-	// Find the tool_use_id and assistant UUID from the JSONL
+	// Try to find the tool_use_id in the main session JSONL first
 	toolUseID, assistantUUID, err := workspace.FindLatestToolUseID(folder, sessionID, "mcp__claudefu__ExitPlanMode")
+	isSubagent := false
+	subagentPlanContent := ""
+
 	if err != nil {
-		fmt.Printf("[MCP:ExitPlanMode] Could not find tool_use_id: %v\n", err)
-		return
+		// Fallback: ExitPlanMode was called from a Plan subagent, not the main session.
+		// Scan subagent JSONLs for the tool_use block and any plan content.
+		fmt.Printf("[MCP:ExitPlanMode] Not found in parent JSONL, checking subagents...\n")
+		subToolID, subUUID, subPath, subPlan, subErr := workspace.FindToolUseInSubagents(folder, sessionID, "mcp__claudefu__ExitPlanMode")
+		if subErr != nil {
+			fmt.Printf("[MCP:ExitPlanMode] Could not find tool_use_id in parent or subagents: %v\n", subErr)
+			return false
+		}
+		toolUseID = subToolID
+		assistantUUID = subUUID
+		isSubagent = true
+		subagentPlanContent = subPlan
+		fmt.Printf("[MCP:ExitPlanMode] Found in subagent %s (toolUseID=%s)\n", filepath.Base(subPath), toolUseID[:12])
 	}
 
 	// Get the plan file path and content
@@ -919,16 +936,31 @@ func (s *MCPService) writePlanReviewJSONL(fromAgent string, answer *PlanReviewAn
 		data, err := os.ReadFile(planFilePath)
 		if err != nil {
 			fmt.Printf("[MCP:ExitPlanMode] Could not read plan file %s: %v\n", planFilePath, err)
-			// Not fatal - continue with empty plan content
+			// Subagent fallback: use plan content extracted from assistant message
+			if subagentPlanContent != "" {
+				planContent = subagentPlanContent
+				fmt.Printf("[MCP:ExitPlanMode] Using plan content from subagent assistant message (%d chars)\n", len(planContent))
+			}
 		} else {
 			planContent = string(data)
 		}
+	} else if subagentPlanContent != "" {
+		planContent = subagentPlanContent
 	}
 
-	// Write the synthetic JSONL entry (includes parentUuid, sessionId, etc.)
+	if isSubagent {
+		// For subagent callers, skip the synthetic JSONL write to the parent session.
+		// The subagent manages its own JSONL and plan state. Writing to the parent
+		// would create orphaned entries since the tool_use_id belongs to the subagent.
+		fmt.Printf("[MCP:ExitPlanMode] Subagent caller — skipping parent JSONL write\n")
+		return true
+	}
+
+	// Write the synthetic JSONL entry to the parent session
 	if err := workspace.WritePlanReviewResult(folder, sessionID, toolUseID, assistantUUID, slug, answer.Accepted, planContent, planFilePath, answer.Feedback); err != nil {
 		fmt.Printf("[MCP:ExitPlanMode] Failed to write synthetic JSONL: %v\n", err)
 	}
+	return false
 }
 
 // =============================================================================

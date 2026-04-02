@@ -511,6 +511,138 @@ func FindLatestToolUseID(folder, sessionID, toolName string) (toolID string, ass
 	return "", "", fmt.Errorf("no tool_use block found for %s in session %s", toolName, sessionID)
 }
 
+// FindToolUseInSubagents scans the subagents folder for the most recently modified JSONL
+// that contains a tool_use block matching toolName. Returns the tool_use_id, assistant UUID,
+// the subagent JSONL path, and any plan content extracted from the assistant's text blocks.
+// This is used as a fallback when FindLatestToolUseID fails on the parent session JSONL,
+// indicating the tool was called from a Plan/Task subagent.
+func FindToolUseInSubagents(folder, sessionID, toolName string) (toolID, assistantUUID, subagentPath, planContent string, err error) {
+	encodedName := encodeProjectPath(folder)
+	subagentsDir := filepath.Join(os.Getenv("HOME"), ".claude", "projects", encodedName, sessionID, "subagents")
+
+	entries, err := os.ReadDir(subagentsDir)
+	if err != nil {
+		return "", "", "", "", fmt.Errorf("failed to read subagents dir: %w", err)
+	}
+
+	// Sort by modification time descending (most recent first)
+	type fileEntry struct {
+		path    string
+		modTime time.Time
+	}
+	var jsonlFiles []fileEntry
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		jsonlFiles = append(jsonlFiles, fileEntry{
+			path:    filepath.Join(subagentsDir, e.Name()),
+			modTime: info.ModTime(),
+		})
+	}
+	// Sort most recent first
+	for i := 0; i < len(jsonlFiles); i++ {
+		for j := i + 1; j < len(jsonlFiles); j++ {
+			if jsonlFiles[j].modTime.After(jsonlFiles[i].modTime) {
+				jsonlFiles[i], jsonlFiles[j] = jsonlFiles[j], jsonlFiles[i]
+			}
+		}
+	}
+
+	// Check the 3 most recent subagent files (the caller is almost certainly the latest)
+	limit := 3
+	if len(jsonlFiles) < limit {
+		limit = len(jsonlFiles)
+	}
+
+	for _, fe := range jsonlFiles[:limit] {
+		tid, uuid, plan, scanErr := scanSubagentForToolUse(fe.path, toolName)
+		if scanErr == nil && tid != "" {
+			fmt.Printf("[PATCH] FindToolUseInSubagents: found %s in %s → %s\n", toolName, filepath.Base(fe.path), tid)
+			return tid, uuid, fe.path, plan, nil
+		}
+	}
+
+	return "", "", "", "", fmt.Errorf("no tool_use block found for %s in any recent subagent")
+}
+
+// scanSubagentForToolUse scans a single subagent JSONL backwards for a tool_use matching
+// toolName. Also extracts text content from the same assistant message as plan content.
+func scanSubagentForToolUse(jsonlPath, toolName string) (toolID, assistantUUID, planContent string, err error) {
+	f, err := os.Open(jsonlPath)
+	if err != nil {
+		return "", "", "", err
+	}
+	defer f.Close()
+
+	var lines []string
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 1024*1024), 10*1024*1024)
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+	if err := scanner.Err(); err != nil {
+		return "", "", "", err
+	}
+
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := lines[i]
+		if !strings.Contains(line, toolName) {
+			continue
+		}
+
+		var event map[string]any
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			continue
+		}
+		if event["type"] != "assistant" {
+			continue
+		}
+
+		msgUUID, _ := event["uuid"].(string)
+		message, ok := event["message"].(map[string]any)
+		if !ok {
+			continue
+		}
+		content, ok := message["content"].([]any)
+		if !ok {
+			continue
+		}
+
+		var foundToolID string
+		var textParts []string
+
+		for _, block := range content {
+			blockMap, ok := block.(map[string]any)
+			if !ok {
+				continue
+			}
+			switch blockMap["type"] {
+			case "tool_use":
+				if blockMap["name"] == toolName {
+					if tid, ok := blockMap["id"].(string); ok {
+						foundToolID = tid
+					}
+				}
+			case "text":
+				if text, ok := blockMap["text"].(string); ok && text != "" {
+					textParts = append(textParts, text)
+				}
+			}
+		}
+
+		if foundToolID != "" {
+			return foundToolID, msgUUID, strings.Join(textParts, "\n"), nil
+		}
+	}
+
+	return "", "", "", fmt.Errorf("not found in %s", filepath.Base(jsonlPath))
+}
+
 // DeleteFromMessage truncates a session JSONL file from the message with the given
 // UUID and everything after it. The target message and all subsequent messages are removed.
 // Always truncates downward — no parent_uuid patching needed.
