@@ -148,18 +148,17 @@ export function ToolDetailPane({ toolCall, toolResult, isOpen, onClose, agentID,
     if (!isOpen || !isAgentTool(toolCall?.name)) return;
 
     const handleMessages = (e: Event) => {
-      const detail = (e as CustomEvent).detail;
-      if (!detail?.messages) return;
-      // Accept messages for any subagent in this session (we may not know the ID yet)
-      setSubagentMessages(prev => [...prev, ...detail.messages]);
+      const envelope = (e as CustomEvent).detail;
+      const payload = envelope?.Payload || envelope?.payload;
+      if (!payload?.messages) return;
+      setSubagentMessages(prev => [...prev, ...payload.messages]);
       setSubagentStatus('running');
-      // Auto-expand when live messages arrive
       setSubagentExpanded(true);
     };
 
     const handleStarted = (e: Event) => {
-      const detail = (e as CustomEvent).detail;
-      if (detail) {
+      const envelope = (e as CustomEvent).detail;
+      if (envelope) {
         setSubagentStatus('running');
         setSubagentExpanded(true);
       }
@@ -406,7 +405,7 @@ export function ToolDetailPane({ toolCall, toolResult, isOpen, onClose, agentID,
               background: '#151515',
               border: '1px solid #333',
               borderRadius: '8px',
-              maxHeight: '400px',
+              maxHeight: '60vh',
               overflow: 'auto'
             }}>
               {loadingSubagent ? (
@@ -437,11 +436,11 @@ export function ToolDetailPane({ toolCall, toolResult, isOpen, onClose, agentID,
                       <div style={{
                         fontSize: '0.7rem',
                         fontWeight: 600,
-                        color: msg.type === 'user' ? '#34d399' : '#60a5fa',
+                        color: msg.type === 'user' ? '#34d399' : msg.type === 'tool_result_carrier' ? '#a78bfa' : '#60a5fa',
                         marginBottom: '0.25rem',
                         textTransform: 'uppercase'
                       }}>
-                        {msg.type}
+                        {msg.type === 'tool_result_carrier' ? 'tool result' : msg.type}
                       </div>
                       <div style={{
                         fontSize: '0.8rem',
@@ -449,7 +448,17 @@ export function ToolDetailPane({ toolCall, toolResult, isOpen, onClose, agentID,
                         whiteSpace: 'pre-wrap',
                         wordBreak: 'break-word'
                       }}>
-                        {msg.content || '(no content)'}
+                        {msg.content || (() => {
+                          // Extract info from contentBlocks when content is empty
+                          const blocks = msg.contentBlocks || [];
+                          const parts: string[] = [];
+                          for (const b of blocks) {
+                            if (b.type === 'text' && b.text) parts.push(b.text);
+                            else if (b.type === 'tool_use' && b.name) parts.push(`${b.name}(${b.input?.file_path || b.input?.pattern || b.input?.command?.slice(0, 60) || b.input?.description || '...'})`);
+                            else if (b.type === 'tool_result' && b.content) parts.push(typeof b.content === 'string' ? (b.content.length > 200 ? b.content.slice(0, 200) + '...' : b.content) : '(result)');
+                          }
+                          return parts.join('\n') || null;
+                        })()}
                       </div>
                     </div>
                   ))}
