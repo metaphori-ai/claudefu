@@ -5,6 +5,11 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.28] - 2026-04-01
+
+### Fixed
+- **ExitPlanMode handles Plan subagent callers** — Claude Code now delegates planning to Plan subagents that call our MCP ExitPlanMode directly. Previously this caused blank plan dialogs and hangs because the tool_use_id was in the subagent JSONL (not parent) and no plan file was written. Now falls back to scanning subagent JSONLs for the tool_use_id and extracts plan content from assistant message text. Skips synthetic parent JSONL write and 1500ms delay for subagent callers.
+
 ## [0.5.26] - 2026-04-01
 
 ### Added
