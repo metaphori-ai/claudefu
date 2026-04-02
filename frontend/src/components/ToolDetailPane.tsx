@@ -39,6 +39,7 @@ const TOOL_CONFIG: Record<string, { color: string; label: string }> = {
   WebFetch: { color: '#38bdf8', label: 'WebFetch' },
   WebSearch: { color: '#38bdf8', label: 'WebSearch' },
   Task: { color: '#fb923c', label: 'Agent' },
+  Agent: { color: '#fb923c', label: 'Agent' },  // Claude Code 2.1.90+ renamed Task to Agent
   TodoWrite: { color: '#4ade80', label: 'TodoWrite' },
   LSP: { color: '#c084fc', label: 'LSP' },
   NotebookEdit: { color: '#fbbf24', label: 'NotebookEdit' },
@@ -49,6 +50,10 @@ const TOOL_CONFIG: Record<string, { color: string; label: string }> = {
 
 function getToolConfig(toolName: string) {
   return TOOL_CONFIG[toolName] || { color: '#888', label: toolName };
+}
+
+function isAgentTool(name?: string) {
+  return name === 'Task' || name === 'Agent';
 }
 
 function formatInput(toolName: string, input: any): string {
@@ -91,7 +96,8 @@ function formatInput(toolName: string, input: any): string {
       return `query: ${input.query || 'N/A'}`;
 
     case 'Task':
-      // Task input is rendered as structured JSX via renderTaskInput(), not plain text
+    case 'Agent':
+      // Task/Agent input is rendered as structured JSX, not plain text
       return '';
 
     case 'TodoWrite':
@@ -123,7 +129,7 @@ export function ToolDetailPane({ toolCall, toolResult, isOpen, onClose, agentID,
   const [subagentStatus, setSubagentStatus] = useState<'idle' | 'running' | 'completed'>('idle');
 
   // Extract subagent ID from Task tool result (memoize for stability)
-  const subagentId = toolCall?.name === 'Task' && toolResult?.content
+  const subagentId = isAgentTool(toolCall?.name) && toolResult?.content
     ? (() => {
         const content = typeof toolResult.content === 'string'
           ? toolResult.content
@@ -139,7 +145,7 @@ export function ToolDetailPane({ toolCall, toolResult, isOpen, onClose, agentID,
 
   // Subscribe to live subagent messages via DOM events
   useEffect(() => {
-    if (!isOpen || toolCall?.name !== 'Task') return;
+    if (!isOpen || !isAgentTool(toolCall?.name)) return;
 
     const handleMessages = (e: Event) => {
       const detail = (e as CustomEvent).detail;
@@ -202,7 +208,7 @@ export function ToolDetailPane({ toolCall, toolResult, isOpen, onClose, agentID,
   const config = getToolConfig(toolCall.name || '');
 
   // For Task tool, derive a better title with subagent_type
-  const paneTitle = toolCall.name === 'Task' && toolCall.input?.subagent_type
+  const paneTitle = isAgentTool(toolCall.name) && toolCall.input?.subagent_type
     ? `${toolCall.input.subagent_type.charAt(0).toUpperCase() + toolCall.input.subagent_type.slice(1)} Agent`
     : config.label;
 
@@ -217,7 +223,7 @@ export function ToolDetailPane({ toolCall, toolResult, isOpen, onClose, agentID,
     >
       {/* Input Section */}
       <div style={{ marginBottom: '1.5rem' }}>
-        {toolCall.name === 'Task' && toolCall.input ? (
+        {isAgentTool(toolCall.name) && toolCall.input ? (
           // Structured Task/Agent input display
           <div>
             {/* Subagent type badge + description header */}
@@ -342,7 +348,7 @@ export function ToolDetailPane({ toolCall, toolResult, isOpen, onClose, agentID,
       )}
 
       {/* Subagent Conversation Section (for Task tool) */}
-      {toolCall.name === 'Task' && (subagentId || subagentMessages.length > 0 || subagentStatus === 'running') && (
+      {isAgentTool(toolCall.name) && (subagentId || subagentMessages.length > 0 || subagentStatus === 'running') && (
         <div style={{ marginTop: '1.5rem' }}>
           <button
             onClick={() => {
