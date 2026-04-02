@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { GetSubagentConversation } from '../../wailsjs/go/main/App';
@@ -127,6 +127,14 @@ export function ToolDetailPane({ toolCall, toolResult, isOpen, onClose, agentID,
   const [subagentExpanded, setSubagentExpanded] = useState(false);
   const [subagentError, setSubagentError] = useState<string | null>(null);
   const [subagentStatus, setSubagentStatus] = useState<'idle' | 'running' | 'completed'>('idle');
+  const subagentScrollRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll subagent conversation to bottom when new messages arrive
+  useEffect(() => {
+    if (subagentScrollRef.current && subagentExpanded) {
+      subagentScrollRef.current.scrollTop = subagentScrollRef.current.scrollHeight;
+    }
+  }, [subagentMessages, subagentExpanded]);
 
   // Extract subagent ID from Task tool result (memoize for stability)
   const subagentId = isAgentTool(toolCall?.name) && toolResult?.content
@@ -400,14 +408,17 @@ export function ToolDetailPane({ toolCall, toolResult, isOpen, onClose, agentID,
           </button>
 
           {subagentExpanded && (
-            <div style={{
-              marginTop: '0.5rem',
-              background: '#151515',
-              border: '1px solid #333',
-              borderRadius: '8px',
-              maxHeight: '60vh',
-              overflow: 'auto'
-            }}>
+            <div
+              ref={subagentScrollRef}
+              style={{
+                marginTop: '0.5rem',
+                background: '#151515',
+                border: '1px solid #333',
+                borderRadius: '8px',
+                maxHeight: '60vh',
+                overflow: 'auto'
+              }}
+            >
               {loadingSubagent ? (
                 <div style={{ padding: '1rem', color: '#888', fontSize: '0.8rem' }}>
                   Loading subagent conversation...

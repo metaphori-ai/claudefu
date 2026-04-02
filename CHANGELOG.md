@@ -5,6 +5,15 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.29] - 2026-04-01
+
+### Added
+- **Live subagent streaming** — SubagentWatcher now wired into session lifecycle. When a subagent (Task/Agent tool) is running, its JSONL messages stream live into the ToolDetailPane conversation panel with auto-scroll and LIVE badge. Falls back to on-demand disk loading for completed subagents.
+- **Improved Agent tool display** — ToolCallBlock shows subagent_type as label (Plan, Explore, etc.) instead of generic "Subagent". ToolDetailPane shows structured input with type badge, description heading, and readable prompt text.
+
+### Fixed
+- **Task → Agent tool rename** — Claude Code 2.1.90 renamed the `Task` tool to `Agent`. Added `Agent` as alias throughout ToolCallBlock and ToolDetailPane so both old and new tool names work.
+
 ## [0.5.28] - 2026-04-01
 
 ### Fixed
