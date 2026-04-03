@@ -808,6 +808,28 @@ export namespace scaffold {
 
 export namespace settings {
 	
+	export class MachineProxySettings {
+	    proxyEnabled: boolean;
+	    proxyPort: number;
+	    proxyCacheFix: boolean;
+	    proxyCacheTTL: string;
+	    proxyLogging: boolean;
+	    proxyLogDir: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new MachineProxySettings(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.proxyEnabled = source["proxyEnabled"];
+	        this.proxyPort = source["proxyPort"];
+	        this.proxyCacheFix = source["proxyCacheFix"];
+	        this.proxyCacheTTL = source["proxyCacheTTL"];
+	        this.proxyLogging = source["proxyLogging"];
+	        this.proxyLogDir = source["proxyLogDir"];
+	    }
+	}
 	export class Settings {
 	    theme: string;
 	    enterBehavior: string;
@@ -824,6 +846,7 @@ export namespace settings {
 	    proxyCacheTTL: string;
 	    proxyLogging: boolean;
 	    proxyLogDir: string;
+	    machineSettings?: Record<string, MachineProxySettings>;
 	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -846,7 +869,26 @@ export namespace settings {
 	        this.proxyCacheTTL = source["proxyCacheTTL"];
 	        this.proxyLogging = source["proxyLogging"];
 	        this.proxyLogDir = source["proxyLogDir"];
+	        this.machineSettings = this.convertValues(source["machineSettings"], MachineProxySettings, true);
 	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 
 }

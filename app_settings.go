@@ -24,7 +24,8 @@ func (a *App) GetSettings() settings.Settings {
 	return a.settings.GetSettings()
 }
 
-// SaveSettings saves application settings and applies runtime changes
+// SaveSettings saves application settings and applies runtime changes.
+// NOTE: Proxy settings are saved separately via SaveMachineProxySettings.
 func (a *App) SaveSettings(s settings.Settings) error {
 	if a.settings == nil {
 		return fmt.Errorf("settings manager not initialized")
@@ -38,17 +39,46 @@ func (a *App) SaveSettings(s settings.Settings) error {
 	// Apply runtime changes: update Claude CLI environment variables and command
 	providers.SetClaudeCommand(s.ClaudeCodeCommand)
 
-	// Apply proxy changes
-	a.applyProxySettings(s)
+	// Apply proxy changes (reads machine-specific settings)
+	mps := a.settings.GetMachineProxySettings()
+	a.applyMachineProxySettings(mps)
 
 	return nil
 }
 
-// applyProxySettings manages proxy lifecycle based on settings.
+// GetHostname returns the current machine's hostname.
+func (a *App) GetHostname() string {
+	hostname, _ := os.Hostname()
+	return hostname
+}
+
+// GetMachineProxySettings returns the resolved proxy settings for this machine.
+func (a *App) GetMachineProxySettings() settings.MachineProxySettings {
+	if a.settings == nil {
+		return settings.MachineProxySettings{ProxyPort: 9350, ProxyCacheFix: true, ProxyCacheTTL: "5m"}
+	}
+	return a.settings.GetMachineProxySettings()
+}
+
+// SaveMachineProxySettings saves proxy settings for this machine and applies them.
+func (a *App) SaveMachineProxySettings(mps settings.MachineProxySettings) error {
+	if a.settings == nil {
+		return fmt.Errorf("settings manager not initialized")
+	}
+	if err := a.settings.SaveMachineProxySettings(mps); err != nil {
+		return err
+	}
+	a.applyMachineProxySettings(mps)
+	return nil
+}
+
+// applyMachineProxySettings manages proxy lifecycle based on machine-specific settings.
 // When proxy is enabled, it auto-injects ANTHROPIC_BASE_URL into Claude CLI env.
-func (a *App) applyProxySettings(s settings.Settings) {
-	if s.ProxyEnabled {
-		port := s.ProxyPort
+func (a *App) applyMachineProxySettings(mps settings.MachineProxySettings) {
+	s := a.settings.GetSettings() // Need ClaudeEnvVars for upstream detection
+
+	if mps.ProxyEnabled {
+		port := mps.ProxyPort
 		if port == 0 {
 			port = 9350
 		}
@@ -59,7 +89,7 @@ func (a *App) applyProxySettings(s settings.Settings) {
 			upstream = userURL
 		}
 
-		logDir := s.ProxyLogDir
+		logDir := mps.ProxyLogDir
 		if logDir == "" && a.settings != nil {
 			logDir = filepath.Join(a.settings.GetConfigPath(), "proxy-logs")
 		} else if strings.HasPrefix(logDir, "~/") {
@@ -71,20 +101,18 @@ func (a *App) applyProxySettings(s settings.Settings) {
 		config := proxy.Config{
 			Enabled:         true,
 			Port:            port,
-			CacheFixEnabled: s.ProxyCacheFix,
-			CacheTTL:        s.ProxyCacheTTL,
-			LoggingEnabled:  s.ProxyLogging,
+			CacheFixEnabled: mps.ProxyCacheFix,
+			CacheTTL:        mps.ProxyCacheTTL,
+			LoggingEnabled:  mps.ProxyLogging,
 			LogDir:          logDir,
 			UpstreamURL:     upstream,
 		}
 
 		if a.proxy != nil && a.proxy.IsRunning() {
-			// Restart with new config
 			if err := a.proxy.Restart(config); err != nil {
 				fmt.Printf("[proxy] Failed to restart proxy: %v\n", err)
 			}
 		} else {
-			// Start fresh
 			a.proxy = proxy.NewService(config)
 			if err := a.proxy.Start(); err != nil {
 				fmt.Printf("[proxy] Failed to start proxy: %v\n", err)

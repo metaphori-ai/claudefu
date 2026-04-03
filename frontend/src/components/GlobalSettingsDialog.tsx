@@ -18,6 +18,9 @@ import {
   SelectDirectory,
   NormalizeDirPath,
   GetProxyStatus,
+  GetHostname,
+  GetMachineProxySettings,
+  SaveMachineProxySettings,
 } from '../../wailsjs/go/main/App';
 import { settings } from '../../wailsjs/go/models';
 import {
@@ -70,6 +73,7 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
   const [sifuAgentTemplateMD, setSifuAgentTemplateMD] = useState('');
 
   // Proxy state
+  const [hostname, setHostname] = useState('');
   const [proxyEnabled, setProxyEnabled] = useState(false);
   const [proxyPort, setProxyPort] = useState(9350);
   const [proxyCacheFix, setProxyCacheFix] = useState(true);
@@ -133,13 +137,20 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
       setSifuEnabled(settingsResult.sifuEnabled || false);
       setSifuRootFolder(settingsResult.sifuRootFolder || '');
 
-      // Load Proxy settings
-      setProxyEnabled(settingsResult.proxyEnabled || false);
-      setProxyPort(settingsResult.proxyPort || 9350);
-      setProxyCacheFix(settingsResult.proxyCacheFix !== false); // default true
-      setProxyCacheTTL(settingsResult.proxyCacheTTL || '5m');
-      setProxyLogging(settingsResult.proxyLogging || false);
-      setProxyLogDir(settingsResult.proxyLogDir || '');
+      // Load Proxy settings from machine-specific resolver
+      try {
+        const [machineProxy, hn] = await Promise.all([
+          GetMachineProxySettings(),
+          GetHostname(),
+        ]);
+        setHostname(hn);
+        setProxyEnabled(machineProxy.proxyEnabled || false);
+        setProxyPort(machineProxy.proxyPort || 9350);
+        setProxyCacheFix(machineProxy.proxyCacheFix !== false); // default true
+        setProxyCacheTTL(machineProxy.proxyCacheTTL || '5m');
+        setProxyLogging(machineProxy.proxyLogging || false);
+        setProxyLogDir(machineProxy.proxyLogDir || '');
+      } catch { /* ok */ }
       try { setProxyStatus(await GetProxyStatus()); } catch { /* ok */ }
 
       // Convert permission sets to plain objects
@@ -193,8 +204,20 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
       } else if (activeTab === 'sifu-agent-md') {
         await SaveSifuAgentTemplateMD(sifuAgentTemplateMD);
         setMdSaved(true);
+      } else if (activeTab === 'proxy') {
+        // Proxy settings saved per-machine (keyed by hostname)
+        await SaveMachineProxySettings({
+          proxyEnabled,
+          proxyPort,
+          proxyCacheFix,
+          proxyCacheTTL,
+          proxyLogging,
+          proxyLogDir,
+        } as any);
+        try { setProxyStatus(await GetProxyStatus()); } catch { /* ok */ }
+        onClose();
       } else {
-        // Save env + permissions for non-MD tabs
+        // Save env + permissions for non-MD, non-proxy tabs
         const currentSettings = await GetSettings();
         const envMap: Record<string, string> = {};
         for (const { key, value } of envVars) {
@@ -208,12 +231,6 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
           claudeCodeCommand,
           sifuEnabled,
           sifuRootFolder,
-          proxyEnabled,
-          proxyPort,
-          proxyCacheFix,
-          proxyCacheTTL,
-          proxyLogging,
-          proxyLogDir,
         });
         await Promise.all([
           SaveSettings(updatedSettings),
@@ -278,6 +295,13 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
 
   const renderProxyTab = () => (
     <div style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1.25rem', textAlign: 'left', overflow: 'auto', flex: 1 }}>
+      {/* Machine identifier */}
+      {hostname && (
+        <div style={{ fontSize: '0.8rem', color: '#666' }}>
+          Configuring proxy for: <strong style={{ color: '#ccc' }}>{hostname}</strong>
+        </div>
+      )}
+
       <div style={{ fontSize: '0.8rem', color: '#666', lineHeight: 1.5 }}>
         The cache fix proxy intercepts requests to Anthropic and stabilizes the cache layout,
         preventing expensive cache re-creation caused by Claude Code moving system-reminder blocks.

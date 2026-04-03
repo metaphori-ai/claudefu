@@ -8,9 +8,9 @@ import {terminal} from '../models';
 import {permissions} from '../models';
 import {auth} from '../models';
 import {types} from '../models';
+import {settings} from '../models';
 import {menu} from '../models';
 import {proxy} from '../models';
-import {settings} from '../models';
 
 export function AcceptPlanReview(arg1:string,arg2:string):Promise<void>;
 
@@ -128,6 +128,8 @@ export function GetGlobalDirectories():Promise<Array<string>>;
 
 export function GetGlobalPermissions():Promise<permissions.ClaudeFuPermissions>;
 
+export function GetHostname():Promise<string>;
+
 export function GetInboxMessages(arg1:string):Promise<Array<mcpserver.InboxMessage>>;
 
 export function GetInboxTotalCount(arg1:string):Promise<number>;
@@ -139,6 +141,8 @@ export function GetMCPServerPort():Promise<number>;
 export function GetMCPToolAvailability():Promise<mcpserver.ToolAvailability>;
 
 export function GetMCPToolInstructions():Promise<mcpserver.ToolInstructions>;
+
+export function GetMachineProxySettings():Promise<settings.MachineProxySettings>;
 
 export function GetMenu():Promise<menu.Menu>;
 
@@ -269,6 +273,8 @@ export function SaveGlobalPermissions(arg1:permissions.ClaudeFuPermissions):Prom
 export function SaveMCPToolAvailability(arg1:mcpserver.ToolAvailability):Promise<void>;
 
 export function SaveMCPToolInstructions(arg1:mcpserver.ToolInstructions):Promise<void>;
+
+export function SaveMachineProxySettings(arg1:settings.MachineProxySettings):Promise<void>;
 
 export function SaveMetaSchema(arg1:workspace.MetaSchema):Promise<void>;
 

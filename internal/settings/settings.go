@@ -26,13 +26,27 @@ type Settings struct {
 	SifuRootFolder        string            `json:"sifuRootFolder"`        // parent folder for all workspace Sifus (supports ~/)
 	ClaudeCodeCommand     string            `json:"claudeCodeCommand"`     // custom claude CLI binary name or path (default: "claude")
 
-	// Cache fix proxy settings
+	// Cache fix proxy settings (top-level = fallback for machines without a MachineSettings entry)
 	ProxyEnabled  bool   `json:"proxyEnabled"`  // Enable cache fix proxy (default: false)
 	ProxyPort     int    `json:"proxyPort"`     // Proxy port (default: 9350)
 	ProxyCacheFix bool   `json:"proxyCacheFix"` // Enable cache fix mutations (default: true)
 	ProxyCacheTTL string `json:"proxyCacheTTL"` // Cache TTL: "5m" (safe) or "1h" (long sessions) (default: "5m")
 	ProxyLogging  bool   `json:"proxyLogging"`  // Enable request/response logging (default: false)
 	ProxyLogDir   string `json:"proxyLogDir"`   // Log directory (default: ~/.claudefu/proxy-logs/)
+
+	// Per-machine proxy settings, keyed by os.Hostname()
+	MachineSettings map[string]MachineProxySettings `json:"machineSettings,omitempty"`
+}
+
+// MachineProxySettings holds proxy settings specific to a single machine.
+// Keyed by os.Hostname() in Settings.MachineSettings.
+type MachineProxySettings struct {
+	ProxyEnabled  bool   `json:"proxyEnabled"`
+	ProxyPort     int    `json:"proxyPort"`
+	ProxyCacheFix bool   `json:"proxyCacheFix"`
+	ProxyCacheTTL string `json:"proxyCacheTTL"`
+	ProxyLogging  bool   `json:"proxyLogging"`
+	ProxyLogDir   string `json:"proxyLogDir"`
 }
 
 // AuthConfig holds authentication configuration
@@ -130,6 +144,44 @@ func (m *Manager) SaveSettings(s Settings) error {
 
 	m.settings = &s
 	return m.writeJSON(SettingsFile, s)
+}
+
+// GetMachineProxySettings returns the proxy settings for the current machine.
+// If a machine-specific entry exists in MachineSettings, it is returned.
+// Otherwise, falls back to the top-level proxy fields.
+func (m *Manager) GetMachineProxySettings() MachineProxySettings {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	hostname, _ := os.Hostname()
+	if m.settings.MachineSettings != nil {
+		if ms, ok := m.settings.MachineSettings[hostname]; ok {
+			return ms
+		}
+	}
+
+	// Fallback to top-level proxy fields
+	return MachineProxySettings{
+		ProxyEnabled:  m.settings.ProxyEnabled,
+		ProxyPort:     m.settings.ProxyPort,
+		ProxyCacheFix: m.settings.ProxyCacheFix,
+		ProxyCacheTTL: m.settings.ProxyCacheTTL,
+		ProxyLogging:  m.settings.ProxyLogging,
+		ProxyLogDir:   m.settings.ProxyLogDir,
+	}
+}
+
+// SaveMachineProxySettings saves proxy settings for the current machine.
+func (m *Manager) SaveMachineProxySettings(mps MachineProxySettings) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	hostname, _ := os.Hostname()
+	if m.settings.MachineSettings == nil {
+		m.settings.MachineSettings = make(map[string]MachineProxySettings)
+	}
+	m.settings.MachineSettings[hostname] = mps
+	return m.writeJSON(SettingsFile, m.settings)
 }
 
 // GetAuth returns current auth config

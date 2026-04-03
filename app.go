@@ -453,19 +453,21 @@ func (a *App) initializeClaude() {
 	}
 }
 
-// initializeProxy starts the cache fix proxy if enabled in settings.
+// initializeProxy starts the cache fix proxy if enabled in machine-specific settings.
 // When running, it auto-injects ANTHROPIC_BASE_URL into Claude CLI env vars.
 func (a *App) initializeProxy() {
 	if a.settings == nil || a.claude == nil {
 		return
 	}
 
-	s := a.settings.GetSettings()
-	if !s.ProxyEnabled {
+	mps := a.settings.GetMachineProxySettings()
+	if !mps.ProxyEnabled {
 		return
 	}
 
-	port := s.ProxyPort
+	s := a.settings.GetSettings() // Need ClaudeEnvVars for upstream detection
+
+	port := mps.ProxyPort
 	if port == 0 {
 		port = 9350
 	}
@@ -478,7 +480,7 @@ func (a *App) initializeProxy() {
 	}
 
 	// Determine log dir (expand ~ since Go doesn't do it automatically)
-	logDir := s.ProxyLogDir
+	logDir := mps.ProxyLogDir
 	if logDir == "" {
 		logDir = filepath.Join(a.settings.GetConfigPath(), "proxy-logs")
 	} else if strings.HasPrefix(logDir, "~/") {
@@ -490,9 +492,9 @@ func (a *App) initializeProxy() {
 	config := proxy.Config{
 		Enabled:         true,
 		Port:            port,
-		CacheFixEnabled: s.ProxyCacheFix,
-		CacheTTL:        s.ProxyCacheTTL,
-		LoggingEnabled:  s.ProxyLogging,
+		CacheFixEnabled: mps.ProxyCacheFix,
+		CacheTTL:        mps.ProxyCacheTTL,
+		LoggingEnabled:  mps.ProxyLogging,
 		LogDir:          logDir,
 		UpstreamURL:     upstream,
 	}

@@ -234,6 +234,10 @@ export function GetGlobalPermissions() {
   return window['go']['main']['App']['GetGlobalPermissions']();
 }
 
+export function GetHostname() {
+  return window['go']['main']['App']['GetHostname']();
+}
+
 export function GetInboxMessages(arg1) {
   return window['go']['main']['App']['GetInboxMessages'](arg1);
 }
@@ -256,6 +260,10 @@ export function GetMCPToolAvailability() {
 
 export function GetMCPToolInstructions() {
   return window['go']['main']['App']['GetMCPToolInstructions']();
+}
+
+export function GetMachineProxySettings() {
+  return window['go']['main']['App']['GetMachineProxySettings']();
 }
 
 export function GetMenu() {
@@ -516,6 +524,10 @@ export function SaveMCPToolAvailability(arg1) {
 
 export function SaveMCPToolInstructions(arg1) {
   return window['go']['main']['App']['SaveMCPToolInstructions'](arg1);
+}
+
+export function SaveMachineProxySettings(arg1) {
+  return window['go']['main']['App']['SaveMachineProxySettings'](arg1);
 }
 
 export function SaveMetaSchema(arg1) {
