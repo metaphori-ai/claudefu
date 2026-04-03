@@ -4,6 +4,7 @@ import { workspace, mcpserver } from '../../wailsjs/go/models';
 import {
   GetMCPToolInstructions, SaveMCPToolInstructions, GetDefaultMCPToolInstructions,
   GetMCPToolAvailability, SaveMCPToolAvailability, GetDefaultMCPToolAvailability,
+  GetAllAgentMeta,
 } from '../../wailsjs/go/main/App';
 import { useSaveShortcut } from '../hooks';
 
@@ -57,6 +58,9 @@ export function MCPSettingsPane({
   // Tab state
   const [activeTab, setActiveTab] = useState<'config' | 'availability' | 'instructions'>('config');
 
+  // Cross-workspace agents (from global registry, not in current workspace)
+  const [crossWorkspaceAgents, setCrossWorkspaceAgents] = useState<{ slug: string; description: string }[]>([]);
+
   // Initialize agent settings when pane opens or agents change
   useEffect(() => {
     const settings = new Map<string, { mcpEnabled: boolean; description: string }>();
@@ -75,7 +79,7 @@ export function MCPSettingsPane({
     setPort(mcpConfig?.port || 9315);
   }, [mcpConfig, isOpen]);
 
-  // Load tool instructions when pane opens
+  // Load tool instructions and cross-workspace agents when pane opens
   useEffect(() => {
     if (isOpen) {
       setInstructionsLoading(true);
@@ -91,6 +95,26 @@ export function MCPSettingsPane({
         });
     }
   }, [isOpen]);
+
+  // Load cross-workspace agents when pane opens
+  useEffect(() => {
+    if (isOpen) {
+      const workspaceSlugs = new Set(agents.map(a => (a.slug || '').toLowerCase()));
+      GetAllAgentMeta()
+        .then((allAgents) => {
+          const cwAgents: { slug: string; description: string }[] = [];
+          for (const [, info] of Object.entries(allAgents)) {
+            const slug = info.meta?.['AGENT_SLUG'] || '';
+            if (!slug || workspaceSlugs.has(slug.toLowerCase())) continue;
+            if ((info.meta?.['AGENT_CROSS_WORKSPACE'] || '').toLowerCase() !== 'true') continue;
+            cwAgents.push({ slug, description: info.meta?.['AGENT_DESCRIPTION'] || '' });
+          }
+          cwAgents.sort((a, b) => a.slug.localeCompare(b.slug));
+          setCrossWorkspaceAgents(cwAgents);
+        })
+        .catch(() => setCrossWorkspaceAgents([]));
+    }
+  }, [isOpen, agents]);
 
   // Load tool availability when pane opens
   useEffect(() => {
@@ -452,6 +476,16 @@ export function MCPSettingsPane({
                     </div>
                   );
                 })}
+              {crossWorkspaceAgents.length > 0 && (
+                <>
+                  <div style={{ color: '#666', marginBottom: '0.5rem', marginTop: '0.75rem' }}>Cross-workspace agents:</div>
+                  {crossWorkspaceAgents.map(cw => (
+                    <div key={cw.slug} style={{ color: '#d97757' }}>
+                      - {cw.slug}{cw.description ? `: ${cw.description}` : ''}
+                    </div>
+                  ))}
+                </>
+              )}
             </div>
           </section>
         )}

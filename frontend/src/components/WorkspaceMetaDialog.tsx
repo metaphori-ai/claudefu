@@ -16,7 +16,7 @@ import { workspace } from '../../wailsjs/go/models';
 // Types & Constants
 // ---------------------------------------------------------------------------
 
-type TabId = 'ws-schema' | 'agent-schema' | 'workspaces' | 'agents' | 'reorder';
+type TabId = 'ws-schema' | 'agent-schema' | 'workspaces' | 'agents' | 'reorder' | 'cross-workspace';
 
 interface WorkspaceMetaDialogProps {
   isOpen: boolean;
@@ -91,6 +91,9 @@ export function WorkspaceMetaDialog({ isOpen, onClose, onSaved }: WorkspaceMetaD
   // Reorder tab: local ordered copy of agents (committed on save)
   const [reorderList, setReorderList] = useState<{ id: string; slug: string; type: string }[]>([]);
   const [reorderDirty, setReorderDirty] = useState(false);
+
+  // Cross-workspace tab: tracks toggled changes (folder → true/false)
+  const [crossWsDraft, setCrossWsDraft] = useState<Record<string, boolean>>({});
 
   const { workspaceId, agents } = useWorkspace();
 
@@ -180,8 +183,8 @@ export function WorkspaceMetaDialog({ isOpen, onClose, onSaved }: WorkspaceMetaD
     setIsSaving(true);
     setError(null);
     try {
-      // Save schema (always — covers both schema tabs)
-      if (schema) {
+      // Save schema (only on schema/workspace/agent tabs — not cross-workspace or reorder)
+      if (schema && activeTab !== 'cross-workspace' && activeTab !== 'reorder') {
         await SaveMetaSchema(schema);
       }
 
@@ -207,6 +210,21 @@ export function WorkspaceMetaDialog({ isOpen, onClose, onSaved }: WorkspaceMetaD
         }
       }
 
+      // Save cross-workspace toggles
+      if (Object.keys(crossWsDraft).length > 0) {
+        for (const [folder, enabled] of Object.entries(crossWsDraft)) {
+          const existing = agentInfos[folder];
+          if (existing) {
+            const meta: Record<string, string> = { ...(existing.meta || {}) };
+            meta['AGENT_CROSS_WORKSPACE'] = enabled ? 'true' : '';
+            delete meta['AGENT_ID'];
+            delete meta['AGENT_FOLDER'];
+            delete meta['AGENT_CLAUDE_PROJECT_FOLDER'];
+            await UpdateAgentMeta(folder, meta);
+          }
+        }
+      }
+
       // Save reorder if dirty
       if (reorderDirty) {
         await ReorderAgents(reorderList.map(a => a.id));
@@ -225,12 +243,14 @@ export function WorkspaceMetaDialog({ isOpen, onClose, onSaved }: WorkspaceMetaD
       setAgentInfos(agResult);
       setWsDraft({});
       setAgentDraft({});
+      setCrossWsDraft({});
     } catch (err: any) {
+      console.error('WorkspaceMetaDialog save failed:', err);
       setError(err?.message || 'Failed to save');
     } finally {
       setIsSaving(false);
     }
-  }, [schema, selectedWsId, wsDraft, selectedAgentFolder, agentDraft, workspaceInfos, agentInfos, reorderDirty, reorderList]);
+  }, [schema, selectedWsId, wsDraft, selectedAgentFolder, agentDraft, workspaceInfos, agentInfos, reorderDirty, reorderList, crossWsDraft]);
 
   useSaveShortcut(isOpen, handleSave);
 
@@ -726,6 +746,89 @@ export function WorkspaceMetaDialog({ isOpen, onClose, onSaved }: WorkspaceMetaD
     }
   }, [reorderList, onSaved]);
 
+  // ---------------------------------------------------------------------------
+  // Cross-Workspace Tab
+  // ---------------------------------------------------------------------------
+
+  const renderCrossWorkspaceTab = () => {
+    // Sort agents alphabetically by slug
+    const sortedAgents = Object.entries(agentInfos)
+      .filter(([, info]) => info.meta?.['AGENT_TYPE'] !== 'sifu') // Exclude sifu agents
+      .sort(([, a], [, b]) => (a.meta?.['AGENT_SLUG'] || '').localeCompare(b.meta?.['AGENT_SLUG'] || ''));
+
+    return (
+      <div style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <div style={{ fontSize: '0.8rem', color: '#666', lineHeight: 1.5 }}>
+          Enable agents for cross-workspace messaging. Enabled agents are visible to <code style={{ color: '#d97757', fontSize: '0.8rem' }}>AgentMessage</code> from
+          any workspace on any machine.
+        </div>
+
+        {sortedAgents.length === 0 ? (
+          <div style={{ color: '#555', fontSize: '0.85rem', padding: '1rem', textAlign: 'center' }}>
+            No agents registered.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+            {sortedAgents.map(([folder, info]) => {
+              const slug = info.meta?.['AGENT_SLUG'] || folder.split('/').pop() || folder;
+              const desc = info.meta?.['AGENT_DESCRIPTION'] || '';
+              // Draft overrides stored value
+              const isEnabled = crossWsDraft.hasOwnProperty(folder)
+                ? crossWsDraft[folder]
+                : (info.meta?.['AGENT_CROSS_WORKSPACE'] || '').toLowerCase() === 'true';
+
+              return (
+                <label
+                  key={folder}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.75rem',
+                    padding: '0.5rem 0.75rem',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    background: isEnabled ? 'rgba(217, 119, 87, 0.08)' : 'transparent',
+                    border: `1px solid ${isEnabled ? '#d9775733' : '#1a1a1a'}`,
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = isEnabled ? 'rgba(217, 119, 87, 0.12)' : '#151515'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = isEnabled ? 'rgba(217, 119, 87, 0.08)' : 'transparent'; }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isEnabled}
+                    onChange={(e) => {
+                      setCrossWsDraft(prev => ({ ...prev, [folder]: e.target.checked }));
+                    }}
+                    style={{ width: '16px', height: '16px', accentColor: '#d97757', cursor: 'pointer', flexShrink: 0 }}
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ color: isEnabled ? '#d97757' : '#ccc', fontWeight: 500, fontSize: '0.85rem' }}>
+                      {slug}
+                    </span>
+                    {desc && (
+                      <span style={{ color: '#555', fontSize: '0.8rem', marginLeft: '0.5rem' }}>
+                        — {desc}
+                      </span>
+                    )}
+                  </div>
+                  <span style={{
+                    fontSize: '0.65rem',
+                    fontFamily: 'ui-monospace, monospace',
+                    color: '#444',
+                    flexShrink: 0,
+                  }}>
+                    {folder.split('/').slice(-2).join('/')}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderReorderTab = () => {
     // Find where non-sifu agents start
     const sifuCount = reorderList.filter(a => a.type === 'sifu').length;
@@ -848,6 +951,7 @@ export function WorkspaceMetaDialog({ isOpen, onClose, onSaved }: WorkspaceMetaD
     { id: 'agent-schema', label: 'Agent Schema' },
     { id: 'workspaces', label: 'Workspaces' },
     { id: 'agents', label: 'Agents' },
+    { id: 'cross-workspace', label: 'Cross-Workspace' },
     { id: 'reorder', label: 'Reorder' },
   ];
 
@@ -904,6 +1008,7 @@ export function WorkspaceMetaDialog({ isOpen, onClose, onSaved }: WorkspaceMetaD
               {activeTab === 'agent-schema' && schema && renderSchemaList('agent', schema.agentAttributes)}
               {activeTab === 'workspaces' && renderWorkspacesTab()}
               {activeTab === 'agents' && renderAgentsTab()}
+              {activeTab === 'cross-workspace' && renderCrossWorkspaceTab()}
               {activeTab === 'reorder' && renderReorderTab()}
             </>
           )}

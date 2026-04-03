@@ -5,6 +5,15 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.34] - 2026-04-03
+
+### Added
+- **Cross-Workspace toggle UI** — New "Cross-Workspace" tab in Workspaces & Agents dialog with per-agent toggle to enable cross-workspace messaging. Writes `AGENT_CROSS_WORKSPACE` flag to global agent registry.
+- **MCP Settings preview** — Tool Description Preview now shows cross-workspace agents in orange below workspace agents, matching what Claude sees in the tool description.
+
+### Fixed
+- **Schema save on cross-workspace tab** — `SaveMetaSchema` was running on every tab save, rejecting the stale schema that didn't have the new `AGENT_CROSS_WORKSPACE` system attribute. Now only saves schema on schema/workspace/agent tabs.
+
 ## [0.5.33] - 2026-04-03
 
 ### Added
