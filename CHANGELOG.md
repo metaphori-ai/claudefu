@@ -5,6 +5,24 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.32] - 2026-04-03
+
+### Added
+- **Per-machine proxy settings** — Proxy configuration (enabled, port, cache fix, TTL, logging) now scoped per hostname via `machineSettings` map in settings.json. Each machine reads its own entry, falling back to top-level defaults. Prevents Syncthing from overwriting proxy config across machines.
+- **Build script** — `./scripts/build-claudefu.sh` for one-command production builds (generates Wails bindings + builds macOS universal .app).
+
+## [0.5.31] - 2026-04-02
+
+### Added
+- **Per-turn token usage stats** — Small grey monospace line after each Claude turn in ChatView showing output tokens, cache read/write counts, and TTL breakdown (1h vs 5m). Only shown on the last assistant message per turn to avoid noise from intermediate tool calls.
+- **CacheCreation type** — Frontend TypeScript types now include `cache_creation` with `ephemeral_1h_input_tokens` and `ephemeral_5m_input_tokens` fields, matching the Go backend.
+
+## [0.5.30] - 2026-04-02
+
+### Fixed
+- **Proxy log dir tilde expansion** — Settings with `~/` paths (e.g., `~/.claudefu/proxy_logs`) now correctly expand to the real home directory. Previously Go's stdlib treated `~` as a literal character, causing log writes to silently fail.
+- **Debug env var logging** — `buildEnvironment()` now logs all custom environment variables being injected into Claude CLI processes (values truncated for security). Helps diagnose proxy and ANTHROPIC_BASE_URL issues.
+
 ## [0.5.29] - 2026-04-01
 
 ### Added
