@@ -63,7 +63,7 @@ function TokenStats({ usage }: { usage: import('./types').TokenUsage }) {
   parts.push(`out ${formatTokenCount(out)}`);
 
   if (cacheRead > 0) {
-    parts.push(`read ${formatTokenCount(cacheRead)}`);
+    parts.push(`cache-read ${formatTokenCount(cacheRead)}`);
   }
   if (cacheWrite > 0) {
     // Show TTL breakdown if available
@@ -71,7 +71,7 @@ function TokenStats({ usage }: { usage: import('./types').TokenUsage }) {
     if (h1 > 0) ttlParts.push(`${formatTokenCount(h1)} 1h`);
     if (m5 > 0) ttlParts.push(`${formatTokenCount(m5)} 5m`);
     const ttlSuffix = ttlParts.length > 0 ? ` (${ttlParts.join(', ')})` : '';
-    parts.push(`write ${formatTokenCount(cacheWrite)}${ttlSuffix}`);
+    parts.push(`cache-write ${formatTokenCount(cacheWrite)}${ttlSuffix}`);
   }
   if (input > 0) {
     parts.push(`uncached ${formatTokenCount(input)}`);

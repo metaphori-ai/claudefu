@@ -329,6 +329,27 @@ func (r *AgentRegistry) GetAllSlugs() []string {
 	return slugs
 }
 
+// GetCrossWorkspaceAgents returns all agents with AGENT_CROSS_WORKSPACE=true,
+// excluding agents whose slugs are in the excludeSlugs set (current workspace).
+func (r *AgentRegistry) GetCrossWorkspaceAgents(excludeSlugs map[string]bool) []AgentInfo {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	var result []AgentInfo
+	for _, info := range r.data.Agents {
+		if strings.ToLower(info.Meta["AGENT_CROSS_WORKSPACE"]) != "true" {
+			continue
+		}
+		slug := strings.ToLower(info.GetSlug())
+		if slug == "" || excludeSlugs[slug] {
+			continue
+		}
+		cp := info
+		result = append(result, cp)
+	}
+	return result
+}
+
 // SyncAgentIDsFromRegistry checks each agent in a workspace against the registry.
 // If an agent's folder is already registered with a different ID, the agent's
 // ID is updated to the canonical one. Slug/name are only set if the registry

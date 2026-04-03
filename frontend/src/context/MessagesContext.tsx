@@ -23,9 +23,9 @@ export interface MessagesState {
 }
 
 export type MessagesAction =
-  | { type: 'SET_MESSAGES'; payload: { agentId: string; sessionId: string; messages: Message[]; totalCount: number; hasMore: boolean } }
+  | { type: 'SET_MESSAGES'; payload: { agentId: string; sessionId: string; messages: Message[]; totalCount: number; hasMore: boolean; displayCount: number } }
   | { type: 'APPEND_MESSAGES'; payload: { agentId: string; sessionId: string; messages: Message[] } }
-  | { type: 'PREPEND_MESSAGES'; payload: { agentId: string; sessionId: string; messages: Message[]; hasMore: boolean } }
+  | { type: 'PREPEND_MESSAGES'; payload: { agentId: string; sessionId: string; messages: Message[]; hasMore: boolean; displayCount: number } }
   | { type: 'SET_LOADING'; payload: { agentId: string; sessionId: string; isLoading: boolean } }
   | { type: 'MARK_INITIAL_LOAD_DONE'; payload: { agentId: string; sessionId: string } }
   | { type: 'ADD_PENDING_MESSAGE'; payload: { agentId: string; sessionId: string; content: string; message: Message } }
@@ -136,13 +136,13 @@ function setPendingMessages(
 function messagesReducer(state: MessagesState, action: MessagesAction): MessagesState {
   switch (action.type) {
     case 'SET_MESSAGES': {
-      const { agentId, sessionId, messages, totalCount, hasMore } = action.payload;
+      const { agentId, sessionId, messages, totalCount, hasMore, displayCount } = action.payload;
 
       // Create new session messages
       const sessionMsgs: SessionMessages = {
         messages,
         hasMore,
-        offset: 0,
+        offset: displayCount,  // Track how many display messages loaded from end
         totalCount,
         isLoading: false,
         initialLoadDone: true,
@@ -241,7 +241,7 @@ function messagesReducer(state: MessagesState, action: MessagesAction): Messages
     }
 
     case 'PREPEND_MESSAGES': {
-      const { agentId, sessionId, messages, hasMore } = action.payload;
+      const { agentId, sessionId, messages, hasMore, displayCount } = action.payload;
       if (messages.length === 0) return state;
 
       const current = getOrCreateSessionMessages(state, agentId, sessionId);
@@ -263,7 +263,7 @@ function messagesReducer(state: MessagesState, action: MessagesAction): Messages
         ...current,
         messages: [...newMessages, ...current.messages],
         hasMore,
-        offset: current.offset + newMessages.length,
+        offset: current.offset + displayCount,  // Track by display count, not total including carriers
       };
 
       return {

@@ -14,19 +14,32 @@ type AgentInfo struct {
 	Description string
 }
 
-// buildAgentListDescription builds a formatted list of available agents for tool descriptions
-func buildAgentListDescription(agents []AgentInfo) string {
-	if len(agents) == 0 {
+// buildAgentListDescription builds a formatted list of available agents for tool descriptions.
+// crossWorkspaceAgents (optional) are shown in a separate section.
+func buildAgentListDescription(agents []AgentInfo, crossWorkspaceAgents []AgentInfo) string {
+	if len(agents) == 0 && len(crossWorkspaceAgents) == 0 {
 		return "\n\nNo agents currently configured with MCP enabled."
 	}
 
 	var sb strings.Builder
-	sb.WriteString("\n\nAvailable agents:")
-	for _, agent := range agents {
-		if agent.Description != "" {
-			sb.WriteString(fmt.Sprintf("\n- %s: %s", agent.Slug, agent.Description))
-		} else {
-			sb.WriteString(fmt.Sprintf("\n- %s", agent.Slug))
+	if len(agents) > 0 {
+		sb.WriteString("\n\nAvailable agents:")
+		for _, agent := range agents {
+			if agent.Description != "" {
+				sb.WriteString(fmt.Sprintf("\n- %s: %s", agent.Slug, agent.Description))
+			} else {
+				sb.WriteString(fmt.Sprintf("\n- %s", agent.Slug))
+			}
+		}
+	}
+	if len(crossWorkspaceAgents) > 0 {
+		sb.WriteString("\n\nCross-workspace agents:")
+		for _, agent := range crossWorkspaceAgents {
+			if agent.Description != "" {
+				sb.WriteString(fmt.Sprintf("\n- %s: %s", agent.Slug, agent.Description))
+			} else {
+				sb.WriteString(fmt.Sprintf("\n- %s", agent.Slug))
+			}
 		}
 	}
 	return sb.String()
@@ -35,7 +48,7 @@ func buildAgentListDescription(agents []AgentInfo) string {
 // CreateAgentQueryTool creates the AgentQuery tool definition with dynamic agent list
 func CreateAgentQueryTool(instruction string, agents []AgentInfo) mcp.Tool {
 	description := instruction
-	description += buildAgentListDescription(agents)
+	description += buildAgentListDescription(agents, nil)
 
 	return mcp.NewTool("AgentQuery",
 		mcp.WithDescription(description),
@@ -54,9 +67,9 @@ func CreateAgentQueryTool(instruction string, agents []AgentInfo) mcp.Tool {
 }
 
 // CreateAgentMessageTool creates the AgentMessage tool definition with dynamic agent list
-func CreateAgentMessageTool(instruction string, agents []AgentInfo) mcp.Tool {
+func CreateAgentMessageTool(instruction string, agents []AgentInfo, crossWorkspaceAgents []AgentInfo) mcp.Tool {
 	description := instruction
-	description += buildAgentListDescription(agents)
+	description += buildAgentListDescription(agents, crossWorkspaceAgents)
 
 	return mcp.NewTool("AgentMessage",
 		mcp.WithDescription(description),
@@ -81,7 +94,7 @@ func CreateAgentMessageTool(instruction string, agents []AgentInfo) mcp.Tool {
 // CreateAgentBroadcastTool creates the AgentBroadcast tool definition
 func CreateAgentBroadcastTool(instruction string, agents []AgentInfo) mcp.Tool {
 	description := instruction
-	description += buildAgentListDescription(agents)
+	description += buildAgentListDescription(agents, nil)
 
 	return mcp.NewTool("AgentBroadcast",
 		mcp.WithDescription(description),

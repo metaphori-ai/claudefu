@@ -316,6 +316,14 @@ func (m *Manager) FindAgentByID(id string) (*AgentInfo, string) {
 	return m.agentRegistry.FindByID(id)
 }
 
+// GetCrossWorkspaceAgents returns agents with AGENT_CROSS_WORKSPACE=true, excluding current workspace slugs.
+func (m *Manager) GetCrossWorkspaceAgents(excludeSlugs map[string]bool) []AgentInfo {
+	if m.agentRegistry == nil {
+		return nil
+	}
+	return m.agentRegistry.GetCrossWorkspaceAgents(excludeSlugs)
+}
+
 // GetAllAgentInfo returns a copy of all agent registry entries.
 func (m *Manager) GetAllAgentInfo() map[string]AgentInfo {
 	if m.agentRegistry == nil {
@@ -998,10 +1006,11 @@ func sanitizeFilename(name string) string {
 
 // Conversation represents a chat conversation with pagination info
 type Conversation struct {
-	SessionID  string          `json:"sessionId"`
-	Messages   []types.Message `json:"messages"`
-	TotalCount int             `json:"totalCount"` // Total messages available
-	HasMore    bool            `json:"hasMore"`    // More messages available to load
+	SessionID    string          `json:"sessionId"`
+	Messages     []types.Message `json:"messages"`
+	TotalCount   int             `json:"totalCount"`   // Total display messages available
+	HasMore      bool            `json:"hasMore"`      // More messages available to load
+	DisplayCount int             `json:"displayCount"` // Display messages in this page (excludes carrier messages)
 }
 
 // GetConversation reads conversation with optional limit (0 = all, returns last N messages)
@@ -1074,15 +1083,19 @@ func (m *Manager) GetConversationPaged(folder, sessionID string, limit, offset i
 		hasMore = startIdx > 0
 	}
 
+	// Track display count before appending carriers
+	displayCount := len(messages)
+
 	// Append carrier messages so frontend can match tool results
 	// (they're filtered out of display but needed for tool result lookup)
 	messages = append(messages, carrierMessages...)
 
 	return &Conversation{
-		SessionID:  sessionID,
-		Messages:   messages,
-		TotalCount: totalCount,
-		HasMore:    hasMore,
+		SessionID:    sessionID,
+		Messages:     messages,
+		TotalCount:   totalCount,
+		HasMore:      hasMore,
+		DisplayCount: displayCount,
 	}, nil
 }
 

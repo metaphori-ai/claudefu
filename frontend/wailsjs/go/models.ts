@@ -85,6 +85,7 @@ export namespace main {
 	    messages: types.Message[];
 	    totalCount: number;
 	    hasMore: boolean;
+	    displayCount: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new ConversationResult(source);
@@ -96,6 +97,7 @@ export namespace main {
 	        this.messages = this.convertValues(source["messages"], types.Message);
 	        this.totalCount = source["totalCount"];
 	        this.hasMore = source["hasMore"];
+	        this.displayCount = source["displayCount"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

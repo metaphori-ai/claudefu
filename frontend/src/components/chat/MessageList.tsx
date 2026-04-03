@@ -11,8 +11,9 @@ interface MessageListProps {
   messagesEndRef: React.RefObject<HTMLDivElement>;
   showScrollButton: boolean;
   hasMore: boolean;
+  totalCount: number;
   isLoadingMore: boolean;
-  onLoadMore: () => void;
+  onLoadCount: (count: number) => void;
   onScrollToBottom: () => void;
   onCompactionClick: (content: string) => void;
   onViewToolDetails: (toolCall: ContentBlock, result?: ContentBlock) => void;
@@ -21,6 +22,8 @@ interface MessageListProps {
   onAddPermission?: (toolName: string, command?: string) => void;
   onDeleteFromMessage?: (messageUUID: string) => void;
 }
+
+const LOAD_COUNTS = [100, 200, 300, 400, 500];
 
 export function MessageList({
   messages,
@@ -31,8 +34,9 @@ export function MessageList({
   messagesEndRef,
   showScrollButton,
   hasMore,
+  totalCount,
   isLoadingMore,
-  onLoadMore,
+  onLoadCount,
   onScrollToBottom,
   onCompactionClick,
   onViewToolDetails,
@@ -64,64 +68,90 @@ export function MessageList({
           textAlign: 'left'
         }}
       >
-        {/* Load More button (at top) */}
+        {/* Load Recent buttons (at top) */}
         {hasMore && (
           <div style={{
             display: 'flex',
             justifyContent: 'center',
+            alignItems: 'center',
+            gap: '0.4rem',
             padding: '0.75rem 0 1.5rem 0'
           }}>
-            <button
-              onClick={onLoadMore}
-              disabled={isLoadingMore}
-              style={{
-                background: '#2a2a2a',
-                border: '1px solid #444',
-                borderRadius: '6px',
-                padding: '0.5rem 1.25rem',
-                color: isLoadingMore ? '#666' : '#aaa',
-                cursor: isLoadingMore ? 'default' : 'pointer',
-                fontSize: '0.85rem',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-                transition: 'all 0.15s ease'
-              }}
-              onMouseEnter={(e) => {
-                if (!isLoadingMore) {
-                  e.currentTarget.style.background = '#333';
-                  e.currentTarget.style.borderColor = '#555';
-                  e.currentTarget.style.color = '#ccc';
-                }
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = '#2a2a2a';
-                e.currentTarget.style.borderColor = '#444';
-                e.currentTarget.style.color = isLoadingMore ? '#666' : '#aaa';
-              }}
-            >
-              {isLoadingMore ? (
-                <>
-                  <span style={{
-                    display: 'inline-block',
-                    width: '14px',
-                    height: '14px',
-                    border: '2px solid #444',
-                    borderTopColor: '#d97757',
-                    borderRadius: '50%',
-                    animation: 'spin 1s linear infinite'
-                  }} />
-                  Loading...
-                </>
-              ) : (
-                <>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 19V5M5 12l7-7 7 7"/>
-                  </svg>
-                  Load older messages
-                </>
-              )}
-            </button>
+            <span style={{ color: '#555', fontSize: '0.75rem', marginRight: '0.25rem' }}>
+              Load recent:
+            </span>
+            {LOAD_COUNTS.filter(c => c <= totalCount).map(count => (
+              <button
+                key={count}
+                onClick={() => onLoadCount(count)}
+                disabled={isLoadingMore}
+                style={{
+                  background: '#1a1a1a',
+                  border: '1px solid #333',
+                  borderRadius: '4px',
+                  padding: '0.25rem 0.5rem',
+                  color: isLoadingMore ? '#555' : '#888',
+                  cursor: isLoadingMore ? 'default' : 'pointer',
+                  fontSize: '0.75rem',
+                  fontFamily: 'ui-monospace, monospace',
+                  transition: 'all 0.15s ease',
+                  minWidth: '36px',
+                }}
+                onMouseEnter={(e) => {
+                  if (!isLoadingMore) {
+                    e.currentTarget.style.borderColor = '#d97757';
+                    e.currentTarget.style.color = '#d97757';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = '#333';
+                  e.currentTarget.style.color = isLoadingMore ? '#555' : '#888';
+                }}
+              >
+                {count}
+              </button>
+            ))}
+            {totalCount > 500 && (
+              <button
+                onClick={() => onLoadCount(0)}
+                disabled={isLoadingMore}
+                style={{
+                  background: '#1a1a1a',
+                  border: '1px solid #333',
+                  borderRadius: '4px',
+                  padding: '0.25rem 0.5rem',
+                  color: isLoadingMore ? '#555' : '#888',
+                  cursor: isLoadingMore ? 'default' : 'pointer',
+                  fontSize: '0.75rem',
+                  fontFamily: 'ui-monospace, monospace',
+                  transition: 'all 0.15s ease',
+                }}
+                onMouseEnter={(e) => {
+                  if (!isLoadingMore) {
+                    e.currentTarget.style.borderColor = '#d97757';
+                    e.currentTarget.style.color = '#d97757';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = '#333';
+                  e.currentTarget.style.color = isLoadingMore ? '#555' : '#888';
+                }}
+              >
+                All
+              </button>
+            )}
+            {isLoadingMore && (
+              <span style={{
+                display: 'inline-block',
+                width: '12px',
+                height: '12px',
+                border: '2px solid #333',
+                borderTopColor: '#d97757',
+                borderRadius: '50%',
+                animation: 'spin 1s linear infinite',
+                marginLeft: '0.25rem',
+              }} />
+            )}
           </div>
         )}
 

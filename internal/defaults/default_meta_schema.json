@@ -14,6 +14,7 @@
     { "name": "AGENT_ID", "type": "text", "description": "Unique agent UUID", "system": true },
     { "name": "AGENT_FOLDER", "type": "folder", "description": "Project root folder", "system": true },
     { "name": "AGENT_CLAUDE_PROJECT_FOLDER", "type": "folder", "description": "Claude Code project folder (~/.claude/projects/...)", "system": true },
+    { "name": "AGENT_CROSS_WORKSPACE", "type": "text", "description": "Enable cross-workspace messaging (true/false)", "system": true },
     { "name": "AGENT_DESCRIPTION", "type": "text", "description": "What this agent does" }
   ]
 }

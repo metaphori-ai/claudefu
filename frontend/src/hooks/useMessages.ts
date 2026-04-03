@@ -23,11 +23,12 @@ export function useMessages() {
     sessionId: string,
     messages: Message[],
     totalCount: number,
-    hasMore: boolean
+    hasMore: boolean,
+    displayCount: number
   ) => {
     dispatch({
       type: 'SET_MESSAGES',
-      payload: { agentId, sessionId, messages, totalCount, hasMore }
+      payload: { agentId, sessionId, messages, totalCount, hasMore, displayCount }
     });
   }, [dispatch]);
 
@@ -44,11 +45,12 @@ export function useMessages() {
     agentId: string,
     sessionId: string,
     messages: Message[],
-    hasMore: boolean
+    hasMore: boolean,
+    displayCount: number
   ) => {
     dispatch({
       type: 'PREPEND_MESSAGES',
-      payload: { agentId, sessionId, messages, hasMore }
+      payload: { agentId, sessionId, messages, hasMore, displayCount }
     });
   }, [dispatch]);
 

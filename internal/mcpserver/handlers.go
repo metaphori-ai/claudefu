@@ -56,7 +56,7 @@ func (s *MCPService) findMCPEnabledAgent(identifier string) *workspace.Agent {
 	return nil
 }
 
-// getAvailableAgentSlugs returns slugs of all MCP-enabled agents
+// getAvailableAgentSlugs returns slugs of all MCP-enabled agents, plus cross-workspace agents
 func (s *MCPService) getAvailableAgentSlugs() []string {
 	ws := s.workspace()
 	if ws == nil {
@@ -67,6 +67,17 @@ func (s *MCPService) getAvailableAgentSlugs() []string {
 	for _, agent := range ws.Agents {
 		if agent.GetMCPEnabled() {
 			slugs = append(slugs, agent.GetSlug())
+		}
+	}
+
+	// Append cross-workspace agents
+	if s.manager != nil {
+		excludeSlugs := make(map[string]bool)
+		for _, slug := range slugs {
+			excludeSlugs[strings.ToLower(slug)] = true
+		}
+		for _, ra := range s.manager.GetCrossWorkspaceAgents(excludeSlugs) {
+			slugs = append(slugs, ra.GetSlug()+" (cross-workspace)")
 		}
 	}
 	return slugs
@@ -307,9 +318,22 @@ func (s *MCPService) handleAgentMessage(ctx context.Context, req mcp.CallToolReq
 			continue
 		}
 
-		// Find specific agent (must be MCP-enabled)
+		// Find specific agent (must be MCP-enabled in current workspace)
 		agent := s.findMCPEnabledAgent(identifier)
 		if agent == nil {
+			// Cross-workspace fallback: check global registry for AGENT_CROSS_WORKSPACE=true
+			if s.manager != nil {
+				if info, _ := s.manager.FindAgentBySlug(identifier); info != nil {
+					if strings.ToLower(info.Meta["AGENT_CROSS_WORKSPACE"]) == "true" {
+						fmt.Printf("[MCP:AgentMessage] Cross-workspace match: %s -> %s\n", identifier, info.ID[:8])
+						s.inbox.AddMessage(info.ID, "", fromAgent, message, priority)
+						// No emitInboxUpdate — recipient is on another machine
+						sentTo = append(sentTo, info.GetSlug())
+						continue
+					}
+					fmt.Printf("[MCP:AgentMessage] Found %s in registry but AGENT_CROSS_WORKSPACE not enabled\n", identifier)
+				}
+			}
 			fmt.Printf("[MCP:AgentMessage] Agent not found: %s\n", identifier)
 			notFound = append(notFound, identifier)
 			continue

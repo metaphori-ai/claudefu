@@ -8,6 +8,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 cd "$REPO_ROOT"
 
+# Ensure Go bin and common tool paths are available
+# GUI-launched terminals may not have the full shell PATH
+export PATH="$HOME/go/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+# Source nvm if available (for npm/node)
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh" 2>/dev/null
+
 echo "=== Building ClaudeFu ==="
 
 # Step 1: Generate Wails bindings

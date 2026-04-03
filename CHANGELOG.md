@@ -5,6 +5,18 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.33] - 2026-04-03
+
+### Added
+- **Cross-workspace AgentMessage** — Agents can now send messages to agents in other workspaces via the global registry. Gated by `AGENT_CROSS_WORKSPACE=true` meta attribute on the target agent. Messages land in the target's inbox SQLite DB for Syncthing replication to other machines. Tool descriptions show a "Cross-workspace agents:" section.
+- **Load Recent buttons** — Replaced ambiguous "Load older messages" with explicit count buttons (100, 200, 300, 400, 500, All) at the top of conversations. Each button re-fetches the last N messages — no offset tracking needed.
+
+### Fixed
+- **Load More pagination** — Fixed offset calculation that included carrier messages (tool_result-only) in the count, causing wrong pages to load. Backend now returns `displayCount` separately from total message count.
+
+### Changed
+- **Token stats labels** — Renamed `read`/`write` to `cache-read`/`cache-write` in per-turn token usage display for clarity.
+
 ## [0.5.32] - 2026-04-03
 
 ### Added

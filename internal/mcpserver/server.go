@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 
 	"claudefu/internal/providers"
@@ -132,6 +133,7 @@ func (s *MCPService) Start() error {
 
 	// Gather MCP-enabled agents for dynamic tool descriptions
 	agents := s.getMCPEnabledAgentInfo()
+	crossWorkspaceAgents := s.getCrossWorkspaceAgentInfo()
 
 	// Get tool instructions
 	instructions := s.toolInstructions.GetInstructions()
@@ -147,7 +149,7 @@ func (s *MCPService) Start() error {
 
 	// Register tools with dynamic agent list and configurable instructions
 	mcpServer.AddTool(CreateAgentQueryTool(instructions.AgentQuery, agents), s.handleAgentQuery)
-	mcpServer.AddTool(CreateAgentMessageTool(instructions.AgentMessage, agents), s.handleAgentMessage)
+	mcpServer.AddTool(CreateAgentMessageTool(instructions.AgentMessage, agents, crossWorkspaceAgents), s.handleAgentMessage)
 	mcpServer.AddTool(CreateAgentBroadcastTool(instructions.AgentBroadcast, agents), s.handleAgentBroadcast)
 	mcpServer.AddTool(CreateNotifyUserTool(instructions.NotifyUser), s.handleNotifyUser)
 	mcpServer.AddTool(CreateAskUserQuestionTool(instructions.AskUserQuestion), s.handleAskUserQuestion)
@@ -285,6 +287,35 @@ func (s *MCPService) getMCPEnabledAgentInfo() []AgentInfo {
 				Description: agent.Description,
 			})
 		}
+	}
+	return agents
+}
+
+// getCrossWorkspaceAgentInfo returns info for agents with AGENT_CROSS_WORKSPACE=true
+// that are NOT in the current workspace. Used for tool descriptions.
+func (s *MCPService) getCrossWorkspaceAgentInfo() []AgentInfo {
+	if s.manager == nil {
+		return nil
+	}
+
+	// Build exclude set from current workspace slugs
+	excludeSlugs := make(map[string]bool)
+	if s.workspace != nil {
+		if ws := s.workspace(); ws != nil {
+			for _, agent := range ws.Agents {
+				excludeSlugs[strings.ToLower(agent.GetSlug())] = true
+			}
+		}
+	}
+
+	registryAgents := s.manager.GetCrossWorkspaceAgents(excludeSlugs)
+	var agents []AgentInfo
+	for _, ra := range registryAgents {
+		agents = append(agents, AgentInfo{
+			Slug:        ra.GetSlug(),
+			Name:        ra.GetSlug(),
+			Description: ra.Meta["AGENT_DESCRIPTION"],
+		})
 	}
 	return agents
 }

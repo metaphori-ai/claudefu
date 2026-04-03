@@ -91,10 +91,11 @@ func (a *App) GetConversation(agentID, sessionID string) ([]types.Message, error
 
 // ConversationResult is the paged conversation response for frontend
 type ConversationResult struct {
-	SessionID  string          `json:"sessionId"`
-	Messages   []types.Message `json:"messages"`
-	TotalCount int             `json:"totalCount"`
-	HasMore    bool            `json:"hasMore"`
+	SessionID    string          `json:"sessionId"`
+	Messages     []types.Message `json:"messages"`
+	TotalCount   int             `json:"totalCount"`
+	HasMore      bool            `json:"hasMore"`
+	DisplayCount int             `json:"displayCount"` // Display messages in this page (excludes carriers)
 }
 
 // GetConversationPaged returns messages with pagination support
@@ -116,10 +117,11 @@ func (a *App) GetConversationPaged(agentID, sessionID string, limit, offset int)
 	}
 
 	return &ConversationResult{
-		SessionID:  conv.SessionID,
-		Messages:   conv.Messages,
-		TotalCount: conv.TotalCount,
-		HasMore:    conv.HasMore,
+		SessionID:    conv.SessionID,
+		Messages:     conv.Messages,
+		TotalCount:   conv.TotalCount,
+		HasMore:      conv.HasMore,
+		DisplayCount: conv.DisplayCount,
 	}, nil
 }
 

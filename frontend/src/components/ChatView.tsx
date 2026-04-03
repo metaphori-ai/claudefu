@@ -329,7 +329,8 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
       const messageList = result?.messages || [];
       const totalCount = result?.totalCount || messageList.length;
       const hasMoreMessages = result?.hasMore || false;
-      setContextMessages(agentId, sessionId, messageList, totalCount, hasMoreMessages);
+      const displayCount = result?.displayCount || messageList.length;
+      setContextMessages(agentId, sessionId, messageList, totalCount, hasMoreMessages, displayCount);
 
       // Scroll to bottom after initial load
       scroll.scrollToBottomRAF();
@@ -341,36 +342,25 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
     }
   };
 
-  // Load more (older) messages
+  // Load a specific number of recent messages (replaces offset-based Load More)
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const handleLoadMore = async () => {
-    if (isLoadingMore || !hasMore) return;
+  const handleLoadCount = async (count: number) => {
+    if (isLoadingMore) return;
 
     setIsLoadingMore(true);
     try {
-      // Calculate offset: skip the messages we already have
-      const currentCount = messages.length;
-      const result = await GetConversationPaged(agentId, sessionId, 50, currentCount);
-      const olderMessages = result?.messages || [];
+      // count=0 means "all messages"
+      const result = await GetConversationPaged(agentId, sessionId, count, 0);
+      const messageList = result?.messages || [];
+      const totalCount = result?.totalCount || messageList.length;
       const hasMoreMessages = result?.hasMore || false;
+      const displayCount = result?.displayCount || messageList.length;
+      setContextMessages(agentId, sessionId, messageList, totalCount, hasMoreMessages, displayCount);
 
-      if (olderMessages.length > 0) {
-        // Capture scroll position before prepending
-        const scrollContainer = scroll.scrollContainerRef.current;
-        const scrollHeightBefore = scrollContainer?.scrollHeight || 0;
-
-        prependContextMessages(agentId, sessionId, olderMessages, hasMoreMessages);
-
-        // Restore scroll position after DOM update
-        requestAnimationFrame(() => {
-          if (scrollContainer) {
-            const scrollHeightAfter = scrollContainer.scrollHeight;
-            scrollContainer.scrollTop = scrollHeightAfter - scrollHeightBefore;
-          }
-        });
-      }
+      // Scroll to bottom after reload
+      scroll.scrollToBottomRAF();
     } catch (err) {
-      console.error('Failed to load more messages:', err);
+      console.error('Failed to load messages:', err);
     } finally {
       setIsLoadingMore(false);
     }
@@ -844,8 +834,9 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
         messagesEndRef={scroll.messagesEndRef}
         showScrollButton={scroll.showScrollButton}
         hasMore={hasMore}
+        totalCount={sessionData?.totalCount || 0}
         isLoadingMore={isLoadingMore}
-        onLoadMore={handleLoadMore}
+        onLoadCount={handleLoadCount}
         onScrollToBottom={scroll.scrollToBottom}
         onCompactionClick={setCompactionContent}
         onViewToolDetails={handleViewToolDetails}
