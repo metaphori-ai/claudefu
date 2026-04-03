@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { Message, ContentBlock, PendingQuestion } from './types';
-import { formatTime, getImageUrl, getMessageText } from '../../utils/messageUtils';
+import { formatTime, getImageUrl, getMessageText, formatTokenCount } from '../../utils/messageUtils';
 import { CompactionCard } from '../CompactionCard';
 import { ImageBlock } from '../ImageBlock';
 import { ContentBlockRenderer } from './ContentBlockRenderer';
@@ -19,6 +19,7 @@ interface MessageRowProps {
   onQuestionSkip?: (toolUseId: string) => void;
   onAddPermission?: (toolName: string, command?: string) => void;
   onDeleteTurn?: () => void;
+  showTokenStats?: boolean;
 }
 
 // Styled file reference component
@@ -45,6 +46,47 @@ function FileReference({ path }: { path: string }) {
       <span style={{ color: '#ccc' }}>{fileName}</span>
       <span style={{ color: '#666' }}>]</span>
     </span>
+  );
+}
+
+// Token usage stats displayed after assistant messages
+function TokenStats({ usage }: { usage: import('./types').TokenUsage }) {
+  const out = usage.output_tokens || 0;
+  const cacheRead = usage.cache_read_input_tokens || 0;
+  const cacheWrite = usage.cache_creation_input_tokens || 0;
+  const input = usage.input_tokens || 0;
+  const cc = usage.cache_creation;
+  const h1 = cc?.ephemeral_1h_input_tokens || 0;
+  const m5 = cc?.ephemeral_5m_input_tokens || 0;
+
+  const parts: string[] = [];
+  parts.push(`out ${formatTokenCount(out)}`);
+
+  if (cacheRead > 0) {
+    parts.push(`read ${formatTokenCount(cacheRead)}`);
+  }
+  if (cacheWrite > 0) {
+    // Show TTL breakdown if available
+    const ttlParts: string[] = [];
+    if (h1 > 0) ttlParts.push(`${formatTokenCount(h1)} 1h`);
+    if (m5 > 0) ttlParts.push(`${formatTokenCount(m5)} 5m`);
+    const ttlSuffix = ttlParts.length > 0 ? ` (${ttlParts.join(', ')})` : '';
+    parts.push(`write ${formatTokenCount(cacheWrite)}${ttlSuffix}`);
+  }
+  if (input > 0) {
+    parts.push(`uncached ${formatTokenCount(input)}`);
+  }
+
+  return (
+    <div style={{
+      fontSize: '0.65rem',
+      color: '#444',
+      marginTop: '4px',
+      fontFamily: 'ui-monospace, monospace',
+      letterSpacing: '0.02em',
+    }}>
+      {parts.join('  ·  ')}
+    </div>
   );
 }
 
@@ -137,7 +179,8 @@ export function MessageRow({
   onQuestionAnswer,
   onQuestionSkip,
   onAddPermission,
-  onDeleteTurn
+  onDeleteTurn,
+  showTokenStats
 }: MessageRowProps) {
   // Expand/collapse state for long user messages
   const [isExpanded, setIsExpanded] = useState(false);
@@ -402,6 +445,10 @@ export function MessageRow({
                 <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: '4px', opacity: isHovered ? 1 : 0, transition: 'opacity 0.15s ease' }}>
                   <CopyButton text={messageText} id={message.uuid} alwaysVisible />
                 </div>
+              )}
+              {/* Token usage stats — only shown on last assistant message in a turn */}
+              {showTokenStats && message.usage && (
+                <TokenStats usage={message.usage} />
               )}
             </div>
           );

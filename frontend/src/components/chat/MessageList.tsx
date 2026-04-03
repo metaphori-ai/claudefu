@@ -154,6 +154,10 @@ export function MessageList({
             && !message.isCompaction
             && message.uuid;
 
+          // Show token stats only on the last assistant message before a user message (end of turn)
+          const isLastAssistantInTurn = message.type === 'assistant'
+            && (index === displayableMessages.length - 1 || displayableMessages[index + 1]?.type === 'user');
+
           return (
             <div key={message.uuid || index}>
               <MessageRow
@@ -166,6 +170,7 @@ export function MessageList({
                 onQuestionSkip={onQuestionSkip}
                 onAddPermission={onAddPermission}
                 onDeleteTurn={canDelete ? () => onDeleteFromMessage(message.uuid) : undefined}
+                showTokenStats={isLastAssistantInTurn}
               />
             </div>
           );

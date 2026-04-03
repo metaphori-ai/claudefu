@@ -54,12 +54,19 @@ export interface PendingQuestion {
   questions: any[];
 }
 
+// Cache creation breakdown by TTL (mirrors Go types.CacheCreation)
+export interface CacheCreation {
+  ephemeral_5m_input_tokens?: number;
+  ephemeral_1h_input_tokens?: number;
+}
+
 // Token usage from Claude's response (mirrors Go types.TokenUsage)
 export interface TokenUsage {
   input_tokens: number;
   output_tokens: number;
   cache_creation_input_tokens?: number;
   cache_read_input_tokens?: number;
+  cache_creation?: CacheCreation;
 }
 
 // Message type with UI-specific fields
