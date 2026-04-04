@@ -5,6 +5,22 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.35] - 2026-04-04
+
+### Added
+- **Cross-workspace messaging via spool directory** — Cross-workspace `AgentMessage` now uses append-only JSON files instead of direct SQLite writes, avoiding Syncthing conflicts on binary database files. Each message becomes a unique file at `~/.claudefu/inbox/spool/{recipient-id}/{timestamp}--{hostname}--{sender}--{uuid}.json`. Syncthing replicates the file, the receiver's `SpoolManager` imports it into local SQLite, then deletes the file.
+- **`SpoolManager`** (`internal/mcpserver/spool.go`) — New component with fsnotify watcher, 500ms debounce, startup pending-file scan, atomic tmp-file writes, and idempotent SQLite inserts (`INSERT OR IGNORE`).
+- **Hostname-stamped filenames** — Every outbound spool file includes the sending machine's hostname, providing forensic provenance and a deterministic self-write check (no time-based race windows).
+- **Dual-layer ownership enforcement** — Only the machine whose workspace contains the recipient agent imports and deletes spool files. Senders never self-import; other machines leave foreign files for Syncthing to deliver. Enforced via two independent checks: `isOwnWrite` (hostname match in filename) and `isLocalAgent` (workspace membership).
+- **Conflict file recovery** — On startup, `InboxManager.RecoverFromConflictFiles()` scans for leftover `.sync-conflict-*.db` files from the pre-spool approach, extracts any messages, imports them idempotently into the main DB, and renames the conflict file to `.recovered`.
+- **`AgentRegistry.ReloadIfChanged()`** — Stat-based mtime check reloads `agents.json` from disk when Syncthing has updated it externally. Called at the top of `handleAgentMessage` so newly-enabled `AGENT_CROSS_WORKSPACE` flags are visible without restart.
+- **Verbose MCP logging** — `handleAgentMessage` now logs registry lookup results, flag values, spool writes, and ownership decisions for easier debugging.
+
+### Fixed
+- **Cross-workspace messages silently lost** — Previous implementation had the sender write directly to a shared SQLite DB file, which Syncthing couldn't merge with the receiver's existing DB — one copy "won" and the other became a `.sync-conflict-*.db`. New spool architecture uses unique per-message JSON files that Syncthing replicates without conflict.
+- **Sender self-importing its own writes** — Without a self-write guard, the sender's fsnotify watcher would see its own spool file, import it into its own SQLite, and delete the file before Syncthing could replicate — causing the receiver to only ever see an empty directory. Fixed by the hostname check.
+- **Stale in-memory agent registry** — `AgentRegistry` was loaded once at startup and never reloaded, so `AGENT_CROSS_WORKSPACE=true` flags set on one machine and Syncthing-replicated to another weren't visible until ClaudeFu restarted.
+
 ## [0.5.34] - 2026-04-03
 
 ### Added

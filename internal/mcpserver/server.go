@@ -22,6 +22,7 @@ type MCPService struct {
 	manager            *workspace.Manager
 	emitFunc           func(types.EventEnvelope)
 	inbox              *InboxManager
+	spool              *SpoolManager
 	backlog            *BacklogManager
 	toolInstructions   *ToolInstructionsManager
 	toolAvailability   *ToolAvailabilityManager
@@ -30,6 +31,7 @@ type MCPService struct {
 	pendingPlanReviews *PendingPlanReviewManager
 	activeSessionGetter func(agentSlug string) (agentID, sessionID, folder, slug string)
 	port               int
+	inboxPath          string // e.g., ~/.claudefu/inbox
 	ctx                context.Context
 	cancel             context.CancelFunc
 	mu                 sync.RWMutex
@@ -41,9 +43,11 @@ type MCPService struct {
 // inboxConfigPath is the path to store inbox databases (e.g., ~/.claudefu/inbox)
 // backlogConfigPath is the path to store backlog databases (e.g., ~/.claudefu/backlog)
 func NewMCPService(port int, configPath string, inboxConfigPath string, backlogConfigPath string) *MCPService {
+	inbox := NewInboxManager(inboxConfigPath)
 	return &MCPService{
 		port:               port,
-		inbox:              NewInboxManager(inboxConfigPath),
+		inboxPath:          inboxConfigPath,
+		inbox:              inbox,
 		backlog:            NewBacklogManager(backlogConfigPath),
 		toolInstructions:   NewToolInstructionsManager(configPath),
 		toolAvailability:   NewToolAvailabilityManager(configPath),
@@ -66,6 +70,9 @@ func (s *MCPService) SetWorkspaceGetter(getter func() *workspace.Workspace) {
 // SetEmitFunc sets the function to emit Wails events
 func (s *MCPService) SetEmitFunc(emitFunc func(types.EventEnvelope)) {
 	s.emitFunc = emitFunc
+	if s.spool != nil {
+		s.spool.emitFunc = emitFunc
+	}
 }
 
 // SetManager sets the workspace manager for cross-workspace slug/UUID resolution
@@ -130,6 +137,26 @@ func (s *MCPService) Start() error {
 
 	// Create context for this server instance
 	s.ctx, s.cancel = context.WithCancel(context.Background())
+
+	// Initialize and start the cross-workspace spool manager.
+	// Writes outbound spool files and watches for inbound ones from Syncthing.
+	if s.spool == nil {
+		spoolPath := s.inboxPath + "/spool"
+		s.spool = NewSpoolManager(spoolPath, s.inbox, s.emitFunc)
+	}
+	// Configure ownership check: only import spool files for agents in the
+	// current workspace. This prevents the sender from importing+deleting
+	// its own writes before Syncthing replicates them.
+	s.spool.SetWorkspaceGetter(s.workspace)
+	if err := s.spool.Start(s.ctx); err != nil {
+		fmt.Printf("[MCP:Spool] Failed to start spool manager: %v\n", err)
+	}
+
+	// Also recover any messages from .sync-conflict-*.db files left over
+	// from the pre-spool SQLite+Syncthing approach.
+	if recovered := s.inbox.RecoverFromConflictFiles(); recovered > 0 {
+		fmt.Printf("[MCP:Inbox] Recovered %d messages from .sync-conflict-*.db files\n", recovered)
+	}
 
 	// Gather MCP-enabled agents for dynamic tool descriptions
 	agents := s.getMCPEnabledAgentInfo()
@@ -207,6 +234,11 @@ func (s *MCPService) Stop() {
 
 	if s.cancel != nil {
 		s.cancel()
+	}
+
+	// Stop spool manager (fsnotify watcher + debounce timers)
+	if s.spool != nil {
+		s.spool.Stop()
 	}
 
 	// Cancel all pending questions

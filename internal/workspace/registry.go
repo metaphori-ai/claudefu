@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -22,9 +23,10 @@ import (
 //
 // Persisted at: ~/.claudefu/agents.json
 type AgentRegistry struct {
-	mu       sync.RWMutex
-	filePath string
-	data     registryData
+	mu            sync.RWMutex
+	filePath      string
+	data          registryData
+	lastLoadMtime time.Time // Last observed mtime when Load() ran
 }
 
 // AgentInfo holds the full identity and metadata for a registered agent.
@@ -73,6 +75,16 @@ func NewAgentRegistry(configPath string) *AgentRegistry {
 func (r *AgentRegistry) Load() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.loadLocked()
+}
+
+// loadLocked performs the actual load. Caller must hold the write lock.
+func (r *AgentRegistry) loadLocked() error {
+	// Stat first to record mtime for ReloadIfChanged
+	stat, statErr := os.Stat(r.filePath)
+	if statErr == nil {
+		r.lastLoadMtime = stat.ModTime()
+	}
 
 	raw, err := os.ReadFile(r.filePath)
 	if err != nil {
@@ -104,6 +116,38 @@ func (r *AgentRegistry) Load() error {
 	return nil
 }
 
+// ReloadIfChanged reloads the registry from disk if the file's mtime has
+// changed since the last Load/Save. This is critical for cross-workspace
+// messaging when Syncthing updates agents.json externally — the in-memory
+// cache would otherwise be stale.
+func (r *AgentRegistry) ReloadIfChanged() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	stat, err := os.Stat(r.filePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // File gone — nothing to reload
+		}
+		return err
+	}
+
+	if !stat.ModTime().After(r.lastLoadMtime) {
+		return nil // Unchanged since last load/save
+	}
+
+	log.Printf("[AgentRegistry] agents.json changed externally (mtime advanced), reloading")
+	return r.loadLocked()
+}
+
+// touchMtime updates lastLoadMtime to the current on-disk mtime. Called after
+// save() so that save doesn't trigger a self-reload in ReloadIfChanged.
+func (r *AgentRegistry) touchMtime() {
+	if stat, err := os.Stat(r.filePath); err == nil {
+		r.lastLoadMtime = stat.ModTime()
+	}
+}
+
 // Save writes the current registry to disk (public, acquires lock).
 func (r *AgentRegistry) Save() error {
 	r.mu.Lock()
@@ -118,7 +162,12 @@ func (r *AgentRegistry) save() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(r.filePath, raw, 0644)
+	if err := os.WriteFile(r.filePath, raw, 0644); err != nil {
+		return err
+	}
+	// Update mtime tracker so our own save doesn't trigger a self-reload
+	r.touchMtime()
+	return nil
 }
 
 // marshalSorted produces indented JSON with agents sorted case-insensitively

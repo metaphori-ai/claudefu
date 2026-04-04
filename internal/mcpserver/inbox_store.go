@@ -77,6 +77,17 @@ func (s *InboxStore) AddMessage(msg InboxMessage) error {
 	return err
 }
 
+// AddMessageIdempotent inserts a message but silently ignores duplicates
+// (by primary key). Used when importing spool files where the same message
+// might be processed twice due to Syncthing re-delivery or restart-scan overlap.
+func (s *InboxStore) AddMessageIdempotent(msg InboxMessage) error {
+	_, err := s.db.Exec(`
+		INSERT OR IGNORE INTO messages (id, from_agent_id, from_agent_name, to_agent_id, message, priority, timestamp, read)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`, msg.ID, msg.FromAgentID, msg.FromAgentName, msg.ToAgentID, msg.Message, msg.Priority, msg.Timestamp.Unix(), boolToInt(msg.Read))
+	return err
+}
+
 // GetMessages returns all messages for an agent, ordered by timestamp descending
 func (s *InboxStore) GetMessages(agentID string) ([]InboxMessage, error) {
 	rows, err := s.db.Query(`

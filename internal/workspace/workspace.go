@@ -324,6 +324,15 @@ func (m *Manager) GetCrossWorkspaceAgents(excludeSlugs map[string]bool) []AgentI
 	return m.agentRegistry.GetCrossWorkspaceAgents(excludeSlugs)
 }
 
+// ReloadAgentRegistryIfChanged reloads agents.json if mtime has advanced.
+// Used before cross-workspace operations so Syncthing-propagated updates are visible.
+func (m *Manager) ReloadAgentRegistryIfChanged() error {
+	if m.agentRegistry == nil {
+		return nil
+	}
+	return m.agentRegistry.ReloadIfChanged()
+}
+
 // GetAllAgentInfo returns a copy of all agent registry entries.
 func (m *Manager) GetAllAgentInfo() map[string]AgentInfo {
 	if m.agentRegistry == nil {

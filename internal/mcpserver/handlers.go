@@ -307,6 +307,15 @@ func (s *MCPService) handleAgentMessage(ctx context.Context, req mcp.CallToolReq
 
 	fmt.Printf("[MCP:AgentMessage] From: %s, To: %s, Priority: %s\n", fromAgent, targetAgents, priority)
 
+	// Reload agent registry from disk in case Syncthing updated it externally.
+	// Without this, newly-enabled AGENT_CROSS_WORKSPACE flags won't be visible
+	// until ClaudeFu restarts.
+	if s.manager != nil {
+		if err := s.manager.ReloadAgentRegistryIfChanged(); err != nil {
+			fmt.Printf("[MCP:AgentMessage] Warning: failed to reload agents.json: %v\n", err)
+		}
+	}
+
 	// Parse comma-separated agent list
 	agentIdentifiers := strings.Split(targetAgents, ",")
 	var sentTo []string
@@ -323,15 +332,41 @@ func (s *MCPService) handleAgentMessage(ctx context.Context, req mcp.CallToolReq
 		if agent == nil {
 			// Cross-workspace fallback: check global registry for AGENT_CROSS_WORKSPACE=true
 			if s.manager != nil {
-				if info, _ := s.manager.FindAgentBySlug(identifier); info != nil {
-					if strings.ToLower(info.Meta["AGENT_CROSS_WORKSPACE"]) == "true" {
-						fmt.Printf("[MCP:AgentMessage] Cross-workspace match: %s -> %s\n", identifier, info.ID[:8])
-						s.inbox.AddMessage(info.ID, "", fromAgent, message, priority)
-						// No emitInboxUpdate — recipient is on another machine
+				if info, folder := s.manager.FindAgentBySlug(identifier); info != nil {
+					flagVal := info.Meta["AGENT_CROSS_WORKSPACE"]
+					fmt.Printf("[MCP:AgentMessage] Registry lookup '%s': id=%s folder=%s AGENT_CROSS_WORKSPACE=%q\n",
+						identifier, info.ID[:8], folder, flagVal)
+					if strings.ToLower(flagVal) == "true" {
+						// Cross-workspace message: write to spool (JSON file)
+						// instead of direct SQLite. Syncthing replicates the
+						// spool file, the receiver's SpoolManager imports it.
+						if s.spool == nil {
+							fmt.Printf("[MCP:AgentMessage] ERROR: spool manager not initialized\n")
+							notFound = append(notFound, identifier)
+							continue
+						}
+						spoolMsg := InboxMessage{
+							ID:            uuid.New().String(),
+							FromAgentID:   "",
+							FromAgentName: fromAgent,
+							ToAgentID:     info.ID,
+							Message:       message,
+							Priority:      priority,
+							Timestamp:     time.Now(),
+							Read:          false,
+						}
+						if err := s.spool.WriteMessage(info.ID, spoolMsg); err != nil {
+							fmt.Printf("[MCP:AgentMessage] Failed to write spool file: %v\n", err)
+							notFound = append(notFound, identifier)
+							continue
+						}
+						fmt.Printf("[MCP:AgentMessage] Cross-workspace spool write: %s -> %s\n", identifier, info.ID[:8])
 						sentTo = append(sentTo, info.GetSlug())
 						continue
 					}
-					fmt.Printf("[MCP:AgentMessage] Found %s in registry but AGENT_CROSS_WORKSPACE not enabled\n", identifier)
+					fmt.Printf("[MCP:AgentMessage] AGENT_CROSS_WORKSPACE not enabled for '%s' — enable in Workspaces & Agents > Cross-Workspace tab\n", identifier)
+				} else {
+					fmt.Printf("[MCP:AgentMessage] Registry lookup '%s': NOT FOUND in agents.json\n", identifier)
 				}
 			}
 			fmt.Printf("[MCP:AgentMessage] Agent not found: %s\n", identifier)
