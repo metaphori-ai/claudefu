@@ -5,6 +5,11 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.36] - 2026-04-09
+
+### Changed
+- **Subtle cache health tinting on token stats** — The `cr` (cache read) value now shows a slight green-grey tint when cache reads exceed writes (healthy caching), and the `cw` (cache write) value shows a slight red-grey tint when writes exceed reads (cache miss/invalidation). Colors are deliberately muted for glance-ability without distraction.
+
 ## [0.5.35] - 2026-04-04
 
 ### Added

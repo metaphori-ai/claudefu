@@ -825,18 +825,18 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
               <span style={{ color: '#888' }}>{formatTokenCount(tokenMetrics.inputTokens)}</span>
             </span>
           )}
-          {/* Cache read */}
+          {/* Cache read — subtle green tint when read > write (good caching) */}
           {tokenMetrics.cacheRead > 0 && (
             <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }} title="Tokens read from cache">
               <span style={{ color: '#555' }}>cr</span>
-              <span style={{ color: '#888' }}>{formatTokenCount(tokenMetrics.cacheRead)}</span>
+              <span style={{ color: tokenMetrics.cacheRead > tokenMetrics.cacheWrite ? '#6a7a6a' : '#888' }}>{formatTokenCount(tokenMetrics.cacheRead)}</span>
             </span>
           )}
-          {/* Cache write */}
+          {/* Cache write — subtle red tint when write > read (cache miss) */}
           {tokenMetrics.cacheWrite > 0 && (
             <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }} title="Tokens written to cache">
               <span style={{ color: '#555' }}>cw</span>
-              <span style={{ color: '#888' }}>{formatTokenCount(tokenMetrics.cacheWrite)}</span>
+              <span style={{ color: tokenMetrics.cacheWrite > tokenMetrics.cacheRead ? '#7a6a6a' : '#888' }}>{formatTokenCount(tokenMetrics.cacheWrite)}</span>
             </span>
           )}
           {/* Context size with percentage and "left until compact" */}

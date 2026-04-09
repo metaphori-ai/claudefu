@@ -125,3 +125,6 @@ CLAUDE.md
 *.svml
 claudefu
 debug-jsonl-analysis/
+check_cache_stability.py
+check_cache_jsonl.py
+more-cache-fixes.txt
