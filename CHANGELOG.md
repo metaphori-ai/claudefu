@@ -5,6 +5,15 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.37] - 2026-04-12
+
+### Fixed
+- **Workspace rename not saving** — `SaveMetaSchema` rejected saves when the on-disk `meta-schema.json` was missing system attributes added in newer versions (e.g., `AGENT_CROSS_WORKSPACE`). Now auto-adds missing system attributes instead of rejecting.
+- **Workspace name not updating after rename** — Display name came from `ws-{id}.json` which wasn't synced with the canonical `workspaces.json` registry. `LoadWorkspace` and `GetAllWorkspaces` now overlay names from the registry, and `LoadWorkspace` writes the corrected name back to heal discrepancies.
+- **Workspace name comparison bug** — Name-change detection compared name against slug (always different), causing spurious `RenameWorkspace` calls on every save.
+- **Frontend not refreshing after rename** — `refreshAgentsFromBackend` now also updates `workspaceName` in context and refreshes the workspace dropdown list.
+- **Silent save errors** — Error dialog now shows the actual Go error message instead of generic "Failed to save".
+
 ## [0.5.36] - 2026-04-09
 
 ### Changed

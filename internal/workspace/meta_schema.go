@@ -148,33 +148,41 @@ func (m *MetaSchemaManager) SaveSchema(schema MetaSchema) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Validate: all system workspace attrs must be present
-	sysWsNames := systemWorkspaceAttrNames()
-	for name := range sysWsNames {
+	// Ensure all system workspace attrs are present — auto-add any missing ones
+	// (handles schema upgrades where new system attrs were added in newer versions)
+	defaults := DefaultSchema()
+	for _, sysAttr := range defaults.WorkspaceAttributes {
+		if !sysAttr.System {
+			continue
+		}
 		found := false
 		for _, a := range schema.WorkspaceAttributes {
-			if a.Name == name && a.System {
+			if a.Name == sysAttr.Name {
 				found = true
 				break
 			}
 		}
 		if !found {
-			return fmt.Errorf("cannot remove system attribute: %s", name)
+			log.Printf("Auto-adding missing system workspace attribute: %s", sysAttr.Name)
+			schema.WorkspaceAttributes = append(schema.WorkspaceAttributes, sysAttr)
 		}
 	}
 
-	// Validate: all system agent attrs must be present
-	sysAgNames := systemAgentAttrNames()
-	for name := range sysAgNames {
+	// Ensure all system agent attrs are present — auto-add any missing ones
+	for _, sysAttr := range defaults.AgentAttributes {
+		if !sysAttr.System {
+			continue
+		}
 		found := false
 		for _, a := range schema.AgentAttributes {
-			if a.Name == name && a.System {
+			if a.Name == sysAttr.Name {
 				found = true
 				break
 			}
 		}
 		if !found {
-			return fmt.Errorf("cannot remove system attribute: %s", name)
+			log.Printf("Auto-adding missing system agent attribute: %s", sysAttr.Name)
+			schema.AgentAttributes = append(schema.AgentAttributes, sysAttr)
 		}
 	}
 

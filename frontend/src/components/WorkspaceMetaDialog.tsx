@@ -245,8 +245,9 @@ export function WorkspaceMetaDialog({ isOpen, onClose, onSaved }: WorkspaceMetaD
       setAgentDraft({});
       setCrossWsDraft({});
     } catch (err: any) {
-      console.error('WorkspaceMetaDialog save failed:', err);
-      setError(err?.message || 'Failed to save');
+      const errMsg = typeof err === 'string' ? err : err?.message || JSON.stringify(err);
+      console.error('WorkspaceMetaDialog save failed:', errMsg);
+      setError(`Failed to save: ${errMsg}`);
     } finally {
       setIsSaving(false);
     }
@@ -740,7 +741,9 @@ export function WorkspaceMetaDialog({ isOpen, onClose, onSaved }: WorkspaceMetaD
       setSaved(true);
       onSaved?.();
     } catch (err: any) {
-      setError(err?.message || 'Failed to reorder');
+      const errMsg = typeof err === 'string' ? err : err?.message || JSON.stringify(err);
+      console.error('WorkspaceMetaDialog reorder failed:', errMsg);
+      setError(`Failed to reorder: ${errMsg}`);
     } finally {
       setIsSaving(false);
     }

@@ -3,6 +3,7 @@ package workspace
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -606,9 +607,19 @@ func (m *Manager) GetAllWorkspaces() ([]WorkspaceSummary, error) {
 			lastOpened = ws.LastOpened
 		}
 
+		// Overlay name from registry (canonical source) if available
+		name := ws.Name
+		if m.workspaceRegistry != nil {
+			if regInfo := m.workspaceRegistry.GetInfo(ws.ID); regInfo != nil {
+				if regName := regInfo.GetName(); regName != "" {
+					name = regName
+				}
+			}
+		}
+
 		workspaces = append(workspaces, WorkspaceSummary{
 			ID:         ws.ID,
-			Name:       ws.Name,
+			Name:       name,
 			LastOpened: lastOpened,
 		})
 	}
@@ -847,6 +858,20 @@ func (m *Manager) LoadWorkspace(id string) (*Workspace, error) {
 	// that already have Folder populated.
 	if m.agentRegistry != nil {
 		m.agentRegistry.PopulateAgentsFromRegistry(&ws)
+	}
+
+	// Overlay workspace name from registry (canonical source) if available.
+	// The ws-{id}.json file keeps a name for browsability, but the registry
+	// in workspaces.json is the single source of truth after rename.
+	if m.workspaceRegistry != nil {
+		if regInfo := m.workspaceRegistry.GetInfo(ws.ID); regInfo != nil {
+			if regName := regInfo.GetName(); regName != "" && regName != ws.Name {
+				log.Printf("Syncing workspace name from registry: %q → %q (%s)", ws.Name, regName, ws.ID)
+				ws.Name = regName
+				// Write back to ws-{id}.json to heal the discrepancy
+				_ = m.SaveWorkspace(&ws)
+			}
+		}
 	}
 
 	return &ws, nil

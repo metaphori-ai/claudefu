@@ -597,10 +597,17 @@ function AppContent() {
       if (ws?.agents) {
         setAgents(ws.agents);
       }
+      // Also refresh workspace name (may have been renamed in Workspaces & Agents dialog)
+      if (ws?.name && ws.name !== workspaceName) {
+        setWorkspaceName(ws.name);
+      }
+      // Refresh workspace list so dropdown shows updated names
+      const workspaces = await GetAllWorkspaces();
+      setAllWorkspaces(workspaces || []);
     } catch (err) {
       console.error('Failed to refresh agents from backend:', err);
     }
-  }, [workspaceId, setAgents]);
+  }, [workspaceId, setAgents, workspaceName, setWorkspaceName, setAllWorkspaces]);
 
   const handleSaveMCPSettings = async (config: workspace.MCPConfig, updatedAgents: workspace.Agent[]) => {
     // Save slug, description, and enabled changes to the right places
