@@ -134,13 +134,18 @@ func DefaultGlobalPermissions() *ClaudeFuPermissions {
 				Permissive: []string{},
 				YOLO:       []string{},
 			},
+			// Database: common + permissive ON
+			"database": {
+				Common:     s("database").Common,
+				Permissive: s("database").Permissive,
+				YOLO:       []string{},
+			},
 			// Disabled by default
-			"rust":     empty(),
-			"python":   empty(),
-			"docker":   empty(),
-			"make":     empty(),
-			"database": empty(),
-			"deploy":   empty(),
+			"rust":   empty(),
+			"python": empty(),
+			"docker": empty(),
+			"make":   empty(),
+			"deploy": empty(),
 		},
 		AdditionalDirectories: []string{},
 	}

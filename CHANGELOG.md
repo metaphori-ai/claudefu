@@ -5,6 +5,14 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.38] - 2026-04-14
+
+### Changed
+- **Permissions grid auto-layout** — Permission tiers with long entries (>= 22 chars) now render as a single column instead of the 3-column grid, preventing truncated/overlapping `Bash(...)` patterns.
+- **Database permission set defaults to ON** — New installs now have database common + permissive tiers enabled by default.
+- **Added `Bash(sqlc:*)` to database permissive tier.**
+- **Removed `./` prefix from `db-query` and `db-migrate`** — These are on PATH, so `Bash(db-query:*)` is correct.
+
 ## [0.5.37] - 2026-04-12
 
 ### Fixed

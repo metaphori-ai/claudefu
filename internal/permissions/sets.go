@@ -517,13 +517,14 @@ func databaseSet() PermissionSet {
 				"Bash(mongosh:*)",
 			},
 			Permissive: []string{
-				"Bash(./db-query:*)",
-				"Bash(./db-migrate:*)",
+				"Bash(db-query:*)",
+				"Bash(db-migrate:*)",
 				"Bash(prisma:*)",
 				"Bash(npx prisma db:*)",
 				"Bash(npx prisma migrate:*)",
 				"Bash(npx prisma generate:*)",
 				"Bash(diesel:*)",
+				"Bash(sqlc:*)",
 				"Bash(sqlx:*)",
 			},
 			YOLO: []string{

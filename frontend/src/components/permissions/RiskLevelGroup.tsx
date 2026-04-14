@@ -115,10 +115,12 @@ export function RiskLevelGroup({
         </span>
       </div>
 
-      {/* Permissions grid */}
+      {/* Permissions grid — single column if any permission is long */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+        gridTemplateColumns: permissions.some(p => p.length >= 22)
+          ? '1fr'
+          : 'repeat(auto-fill, minmax(200px, 1fr))',
         gap: '0.25rem',
         padding: '0.5rem',
       }}>
