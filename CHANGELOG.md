@@ -5,6 +5,29 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.39] - 2026-04-20
+
+### Added
+- **Per-agent model + effort defaults via registry meta** — `AGENT_MODEL` and `AGENT_EFFORT` are now system meta attributes on every agent (migration 10). Each agent can pin its own Claude model (alias or full ID) and effort level independently. ChatView loads these via `GetAgentMeta(folder)` when the agent changes and persists via `UpdateAgentMeta`.
+- **Shared model catalog** (`frontend/src/components/chat/modelCatalog.ts`) — Single source of truth for all model metadata: aliases (`default`, `best`, `opus`, `opus[1m]`, `opusplan`, `opusplan[1m]`, `sonnet`, `sonnet[1m]`, `haiku`), explicit version IDs (Opus 4.7/4.6/4.5/4.1/4, Sonnet 4.6/4.5/4, Haiku 4.5/3, plus `[1m]` variants where supported), per-model effort level profiles, and extra-usage markers.
+- **Opus 4.7 support** — New model `claude-opus-4-7` with full adaptive reasoning effort levels: `low`, `medium`, `high`, `xhigh`, `max`. `xhigh` is exclusive to Opus 4.7.
+- **`EffortSelector` component** — Compact dropdown to the right of the model selector, auto-hides when the current model doesn't support effort (e.g., Haiku, Sonnet 4.5). Options are driven by `getSupportedEffortLevels(currentModel)`.
+- **Model override UI semantics** — Model and effort selectors both display the agent default with an orange `●` indicator when the current selection deviates, plus `Reset` and `Save as default` footer actions in each dropdown.
+- **`$` pricing badge** — `sonnet[1m]` and `claude-sonnet-4-6[1m]` entries render a yellow `$` badge (extra usage on Max plans).
+- **Known Variables section in Global Settings** — Environment tab now has a curated dropdown-based section above the free-form list for 12 known env vars: `ANTHROPIC_DEFAULT_OPUS_MODEL`, `_SONNET_MODEL`, `_HAIKU_MODEL`, `CLAUDE_CODE_SUBAGENT_MODEL`, `ANTHROPIC_MODEL`, `CLAUDE_CODE_EFFORT_LEVEL`, `CLAUDE_CODE_DISABLE_1M_CONTEXT`, `CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING`, and four `DISABLE_PROMPT_CACHING_*` flags. Each has a "— None (omit) —" option that removes the var entirely, preset values sourced from the model catalog, and a `Custom…` fallback.
+- **`--effort` CLI flag support** — `SendMessage` and `NewSession` thread an `effort` parameter through `sendViaStdin` to `claude --effort <level>`.
+
+### Changed
+- **Model resolution simplified** — ClaudeFu no longer transforms model strings. Aliases (`opus[1m]`, `opusplan`, etc.) and explicit IDs (`claude-opus-4-7[1m]`) are now passed to `--model` verbatim. Empty string omits the flag entirely and defers to CLI defaults (settings.json → `ANTHROPIC_MODEL` env → account default).
+- **`ControlButtonsRow` layout** — Order is now `[New Session] [Planning] [ModelSelector] [EffortSelector?]` with the effort selector appearing only for models that support it.
+- **`SendMessage` bound method signature** — Extended to 7 args (added trailing `effort string`). All four frontend callsites (`ChatView` send / initial / question-skip, `QueueWatcher` queued send) updated.
+
+### Removed
+- **`resolveModel()` helper and `defaultModelID` constant** (`internal/providers/claudecode.go`) — The custom `opus-sonnet` split is retired. The Claude CLI now handles `opusplan` natively (plan mode → opus, execution → sonnet), so ClaudeFu doesn't need its own split.
+
+### Migrations
+- **Migration 10 — `add-agent-model-attrs-to-schema`** — Idempotently inserts `AGENT_MODEL` and `AGENT_EFFORT` system attributes into `meta-schema.json` immediately after `AGENT_CROSS_WORKSPACE`. Existing agents retain blank values (= CLI default behavior) until the user explicitly saves a choice.
+
 ## [0.5.38] - 2026-04-14
 
 ### Changed

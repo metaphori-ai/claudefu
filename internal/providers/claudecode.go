@@ -477,35 +477,14 @@ func (s *ClaudeCodeService) buildPermissionArgs(folder string) []string {
 	return args
 }
 
-// defaultModelID is the Claude model used when no --model flag is passed.
-// Claude CLI defaults to this model, so we omit the flag when it's selected.
-const defaultModelID = "claude-opus-4-6[1m]"
-
-// resolveModel returns the Claude model ID to pass via --model flag, or "" to omit the flag.
-// Returns "" for the default model (claude-opus-4-6[1m]) so we don't redundantly pass it.
-// Legacy "opus-sonnet" stored in agents is handled gracefully: maps to Sonnet [1M] for execution,
-// or "" (default Opus) for planning.
-func resolveModel(model string, isPlan bool) string {
-	if model == "" || model == defaultModelID {
-		return "" // Default model — omit --model flag entirely
-	}
-	// Legacy: "opus-sonnet" was a synthetic mode using Opus for planning, Sonnet for execution.
-	if model == "opus-sonnet" {
-		if isPlan {
-			return "" // Opus is the default — omit flag
-		}
-		return "claude-sonnet-4-6[1m]"
-	}
-	return model
-}
-
 // SendMessage sends a message to Claude Code in the specified folder/session.
 // It uses --resume to continue an existing session.
 // If attachments are provided, uses stdin with --input-format stream-json.
 // If planMode is true, adds --permission-mode plan to force planning mode.
-// The model parameter specifies which Claude model to use (empty = default Opus 4.6).
-// Returns when the command completes (Claude writes to session file, watcher picks it up).
-func (s *ClaudeCodeService) SendMessage(folder, sessionId, message string, attachments []types.Attachment, planMode bool, model string) error {
+// The model parameter (alias or full ID, including "[1m]" suffix) is passed to --model verbatim;
+// empty = omit the flag entirely and let the CLI use its configured default.
+// The effort parameter (low|medium|high|xhigh|max|auto) is passed to --effort; empty = omit.
+func (s *ClaudeCodeService) SendMessage(folder, sessionId, message string, attachments []types.Attachment, planMode bool, model, effort string) error {
 	if folder == "" {
 		return fmt.Errorf("folder is required")
 	}
@@ -530,14 +509,14 @@ func (s *ClaudeCodeService) SendMessage(folder, sessionId, message string, attac
 
 	// Always use stream-json stdin approach for robust message handling.
 	// This avoids CLI argument parsing issues with special characters (e.g., --- interpreted as option terminator).
-	return s.sendViaStdin(path, folder, sessionId, message, attachments, permissionMode, model)
+	return s.sendViaStdin(path, folder, sessionId, message, attachments, permissionMode, model, effort)
 }
 
 // sendViaStdin sends a message (with optional attachments) via stdin using stream-json format.
 // This is the primary send method — all messages go through stdin to avoid CLI argument parsing
 // issues with special characters like --- (option terminator), quotes, backticks, etc.
 // Required flags: --input-format stream-json, --output-format stream-json, --verbose
-func (s *ClaudeCodeService) sendViaStdin(claudePath, folder, sessionId, message string, attachments []types.Attachment, permissionMode string, model string) error {
+func (s *ClaudeCodeService) sendViaStdin(claudePath, folder, sessionId, message string, attachments []types.Attachment, permissionMode string, model, effort string) error {
 	fmt.Printf("[DEBUG] sendViaStdin: folder=%s sessionId=%s message=%q attachments=%d\n", folder, sessionId, message, len(attachments))
 
 	// Build content blocks array
@@ -608,18 +587,18 @@ func (s *ClaudeCodeService) sendViaStdin(claudePath, folder, sessionId, message 
 	fmt.Printf("[DEBUG] sendViaStdin: JSON payload preview: %s\n", jsonPreview)
 	fmt.Printf("[DEBUG] sendViaStdin: JSON payload total length: %d bytes\n", len(jsonBytes))
 
-	// Resolve the effective model (handles opus-sonnet split)
-	// Returns "" for the default model so we omit the flag entirely
-	isPlan := permissionMode == "plan"
-	effectiveModel := resolveModel(model, isPlan)
-
-	// Build command args - stream-json input requires these flags
+	// Build command args - stream-json input requires these flags.
+	// --model and --effort are passed verbatim; empty values are omitted so the CLI
+	// falls back to its configured default (settings.json, ANTHROPIC_MODEL, or account default).
 	args := []string{
 		"--print",
 		"--verbose",
 	}
-	if effectiveModel != "" {
-		args = append(args, "--model", effectiveModel)
+	if model != "" {
+		args = append(args, "--model", model)
+	}
+	if effort != "" {
+		args = append(args, "--effort", effort)
 	}
 	args = append(args,
 		"--input-format", "stream-json",
@@ -687,9 +666,10 @@ func (s *ClaudeCodeService) sendViaStdin(claudePath, folder, sessionId, message 
 }
 
 // NewSession creates a new Claude Code session in the specified folder.
-// The model parameter specifies which Claude model to use (empty = default Opus 4.6).
+// The model parameter (alias or full ID) is passed to --model verbatim; empty = omit the flag.
+// The effort parameter (low|medium|high|xhigh|max|auto) is passed to --effort; empty = omit.
 // Returns the session ID of the newly created session.
-func (s *ClaudeCodeService) NewSession(folder, model string) (string, error) {
+func (s *ClaudeCodeService) NewSession(folder, model, effort string) (string, error) {
 	fmt.Printf("[DEBUG] ClaudeCodeService.NewSession: folder=%s\n", folder)
 
 	if folder == "" {
@@ -703,19 +683,21 @@ func (s *ClaudeCodeService) NewSession(folder, model string) (string, error) {
 	}
 	fmt.Printf("[DEBUG] ClaudeCodeService.NewSession: claude path=%s\n", path)
 
-	// Resolve the effective model (handles opus-sonnet split; new session is never plan mode)
-	effectiveModel := resolveModel(model, false)
-
-	// Start a new session with a simple prompt
-	// Use --output-format stream-json to parse the session ID from output
-	// Use acceptEdits to auto-approve file edits in non-interactive mode
-	// Note: --print with --output-format stream-json requires --verbose
+	// Start a new session with a simple prompt.
+	// --model/--effort are passed verbatim; empty values fall through to CLI defaults
+	// (settings.json, ANTHROPIC_MODEL env var, or account default).
+	// Use --output-format stream-json to parse the session ID from output.
+	// Use acceptEdits to auto-approve file edits in non-interactive mode.
+	// Note: --print with --output-format stream-json requires --verbose.
 	args := []string{
 		"--print",
 		"--verbose",
 	}
-	if effectiveModel != "" {
-		args = append(args, "--model", effectiveModel)
+	if model != "" {
+		args = append(args, "--model", model)
+	}
+	if effort != "" {
+		args = append(args, "--effort", effort)
 	}
 	args = append(args,
 		"--permission-mode", "acceptEdits",

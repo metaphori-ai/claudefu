@@ -34,6 +34,7 @@ var allMigrations = []Migration{
 	{7, "remove-agent-name-from-meta", migrateRemoveAgentName},
 	{8, "fix-agent-slug-description", migrateFixAgentSlugDescription},
 	{9, "add-agent-type-to-schema", migrateAddAgentTypeToSchema},
+	{10, "add-agent-model-attrs-to-schema", migrateAddAgentModelAttrs},
 }
 
 // RunMigrations runs all pending migrations in order.
@@ -637,5 +638,60 @@ func migrateAddAgentTypeToSchema(configPath string, m *Manager) error {
 		return err
 	}
 	log.Printf("Migration 9: added AGENT_TYPE system attribute to meta-schema")
+	return nil
+}
+
+// =============================================================================
+// Migration 10: Add AGENT_MODEL and AGENT_EFFORT system attributes to meta-schema
+// =============================================================================
+
+func migrateAddAgentModelAttrs(configPath string, m *Manager) error {
+	schema := m.metaSchema.GetSchema()
+
+	// Build a set of existing attribute names for idempotency.
+	existing := make(map[string]bool, len(schema.AgentAttributes))
+	for _, attr := range schema.AgentAttributes {
+		existing[attr.Name] = true
+	}
+
+	// Attributes to ensure, in insertion order.
+	required := []MetaAttribute{
+		{Name: "AGENT_MODEL", Type: "text", Description: "Default Claude model (alias or full ID; blank = CLI default)", System: true},
+		{Name: "AGENT_EFFORT", Type: "text", Description: "Default effort level (low|medium|high|xhigh|max; blank = model default)", System: true},
+	}
+
+	var toAdd []MetaAttribute
+	for _, req := range required {
+		if !existing[req.Name] {
+			toAdd = append(toAdd, req)
+		}
+	}
+	if len(toAdd) == 0 {
+		return nil // Already present
+	}
+
+	// Insert after AGENT_CROSS_WORKSPACE if present, else append.
+	var updated []MetaAttribute
+	inserted := false
+	for _, attr := range schema.AgentAttributes {
+		updated = append(updated, attr)
+		if !inserted && attr.Name == "AGENT_CROSS_WORKSPACE" {
+			updated = append(updated, toAdd...)
+			inserted = true
+		}
+	}
+	if !inserted {
+		updated = append(updated, toAdd...)
+	}
+
+	schema.AgentAttributes = updated
+	m.metaSchema.mu.Lock()
+	m.metaSchema.schema = schema
+	err := m.metaSchema.save()
+	m.metaSchema.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	log.Printf("Migration 10: added %d agent model attributes to meta-schema", len(toAdd))
 	return nil
 }

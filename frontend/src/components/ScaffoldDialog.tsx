@@ -37,7 +37,7 @@ export function ScaffoldDialog({
     {
       key: 'projectsDir',
       label: 'Claude Projects Directory',
-      description: '~/.claude/projects/ with sessions-index.json',
+      description: '~/.claude/projects/{encoded-folder}/',
       exists: check.hasProjectsDir,
     },
     {

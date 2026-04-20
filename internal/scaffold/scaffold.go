@@ -4,7 +4,6 @@ package scaffold
 
 import (
 	"claudefu/internal/workspace"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -53,7 +52,7 @@ func CheckAgentSetup(folder string) (*ScaffoldCheck, error) {
 		return nil, err
 	}
 
-	// Projects dir — exists if directory is present (sessions-index.json may be absent in older Claude Code versions)
+	// Projects dir — exists if directory is present
 	encoded := encodeProjectPath(folder)
 	projectDir := filepath.Join(home, ".claude", "projects", encoded)
 	if info, err := os.Stat(projectDir); err == nil && info.IsDir() {
@@ -115,8 +114,7 @@ func EnsureAgentSetup(folder, configPath string, identity AgentIdentity, opts Sc
 	return nil
 }
 
-// ensureClaudeProjectsDir creates ~/.claude/projects/{encoded-folder}/ and
-// an empty sessions-index.json if they don't exist.
+// ensureClaudeProjectsDir creates ~/.claude/projects/{encoded-folder}/ if missing.
 func ensureClaudeProjectsDir(folder string) error {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -126,23 +124,7 @@ func ensureClaudeProjectsDir(folder string) error {
 	encoded := encodeProjectPath(folder)
 	projectDir := filepath.Join(home, ".claude", "projects", encoded)
 
-	if err := os.MkdirAll(projectDir, 0755); err != nil {
-		return err
-	}
-
-	indexPath := filepath.Join(projectDir, "sessions-index.json")
-	if _, err := os.Stat(indexPath); os.IsNotExist(err) {
-		idx := map[string]any{
-			"version": "1",
-			"entries": []any{},
-		}
-		data, _ := json.MarshalIndent(idx, "", "  ")
-		if err := os.WriteFile(indexPath, data, 0644); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return os.MkdirAll(projectDir, 0755)
 }
 
 // ensureClaudeMD copies the CLAUDE.md template to the agent folder if missing.

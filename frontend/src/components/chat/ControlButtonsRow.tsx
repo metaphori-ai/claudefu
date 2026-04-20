@@ -2,6 +2,7 @@ import React from 'react';
 import { Tooltip } from '../Tooltip';
 import { AttachmentPreviewRow } from './AttachmentPreviewRow';
 import { ModelSelector } from './ModelSelector';
+import { EffortSelector } from './EffortSelector';
 import type { Attachment } from './types';
 
 // CSS for button hover effects - avoids issues with Tooltip's FloatingUI handlers
@@ -59,9 +60,17 @@ interface ControlButtonsRowProps {
   onOpenReferences: () => void;
   onOpenPermissions: () => void;
   onOpenClaudeSettings: () => void;
-  // Model selection
+  // Model selection (per-message)
   selectedModel: string;
   onModelChange: (modelId: string) => void;
+  // Effort selection (per-message)
+  selectedEffort: string;
+  onEffortChange: (level: string) => void;
+  // Agent defaults (from AGENT_MODEL / AGENT_EFFORT meta)
+  agentDefaultModel: string;
+  agentDefaultEffort: string;
+  onSaveModelAsAgentDefault?: (modelId: string) => void | Promise<void>;
+  onSaveEffortAsAgentDefault?: (level: string) => void | Promise<void>;
   // Attachments to show in the spacer area
   attachments?: Attachment[];
   onAttachmentRemove?: (id: string) => void;
@@ -81,6 +90,12 @@ export function ControlButtonsRow({
   onOpenClaudeSettings,
   selectedModel,
   onModelChange,
+  selectedEffort,
+  onEffortChange,
+  agentDefaultModel,
+  agentDefaultEffort,
+  onSaveModelAsAgentDefault,
+  onSaveEffortAsAgentDefault,
   attachments = [],
   onAttachmentRemove,
   isSending = false
@@ -127,7 +142,21 @@ export function ControlButtonsRow({
       </Tooltip>
 
       {/* Model Selector */}
-      <ModelSelector selectedModel={selectedModel} onModelChange={onModelChange} />
+      <ModelSelector
+        selectedModel={selectedModel}
+        agentDefaultModel={agentDefaultModel}
+        onModelChange={onModelChange}
+        onSaveAsAgentDefault={onSaveModelAsAgentDefault}
+      />
+
+      {/* Effort Selector — auto-hides when current model doesn't support effort */}
+      <EffortSelector
+        currentModel={selectedModel}
+        selectedEffort={selectedEffort}
+        agentDefaultEffort={agentDefaultEffort}
+        onEffortChange={onEffortChange}
+        onSaveAsAgentDefault={onSaveEffortAsAgentDefault}
+      />
 
       {/* Spacer area - also shows attachments if any */}
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', marginLeft: '8px' }}>

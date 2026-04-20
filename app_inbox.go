@@ -88,8 +88,8 @@ func (a *App) InjectInboxMessage(agentID, sessionID, messageID string) error {
 	// Format the injected message with context
 	formattedMsg := fmt.Sprintf("[Message from %s]\n\n%s", msg.FromAgentName, msg.Message)
 
-	// Send to Claude session
-	if err := a.claude.SendMessage(agent.Folder, sessionID, formattedMsg, nil, false, ""); err != nil {
+	// Send to Claude session — no model/effort override, use the agent's configured default.
+	if err := a.claude.SendMessage(agent.Folder, sessionID, formattedMsg, nil, false, "", ""); err != nil {
 		return err
 	}
 

@@ -56,9 +56,11 @@ func (a *App) emitResponseComplete(agentID, sessionID string, err error) {
 // SendMessage sends a message to Claude Code, optionally with image attachments.
 // If attachments are provided, uses stdin with stream-json format.
 // If planMode is true, forces Claude into planning mode.
-// The model parameter specifies the Claude model for this prompt (e.g., "claude-sonnet-4-6[1m]"). Empty = default.
+// The model parameter (alias or full ID, e.g. "opus[1m]" or "claude-sonnet-4-6[1m]") is passed
+// to --model verbatim; empty = omit the flag (use CLI default).
+// The effort parameter (low|medium|high|xhigh|max|auto) is passed to --effort; empty = omit.
 // Emits "response_complete" event when the Claude CLI process exits.
-func (a *App) SendMessage(agentID, sessionID, message string, attachments []types.Attachment, planMode bool, model string) error {
+func (a *App) SendMessage(agentID, sessionID, message string, attachments []types.Attachment, planMode bool, model, effort string) error {
 	if a.claude == nil {
 		return fmt.Errorf("claude service not initialized")
 	}
@@ -78,7 +80,7 @@ func (a *App) SendMessage(agentID, sessionID, message string, attachments []type
 	}
 
 	// Call Claude - BLOCKS until CLI process exits
-	err := a.claude.SendMessage(agent.Folder, sessionID, message, attachments, planMode, model)
+	err := a.claude.SendMessage(agent.Folder, sessionID, message, attachments, planMode, model, effort)
 
 	// Emit response_complete event AFTER Claude finishes
 	// This is the authoritative signal that the response is complete
@@ -98,7 +100,7 @@ func (a *App) NewSession(agentID string) (string, error) {
 	}
 
 	// Use instant session creation - no Claude CLI wait!
-	// Creates empty JSONL + updates sessions-index.json
+	// Writes a JSONL starter exchange that --resume picks up.
 	if a.sessionService == nil {
 		return "", fmt.Errorf("session service not initialized")
 	}
@@ -198,8 +200,9 @@ func (a *App) AnswerQuestion(agentID, sessionID, toolUseID string, questions []m
 		a.rt.SetLastSendTime(agentID, sessionID, time.Now())
 	}
 
-	// Step 4: Resume the session with "question answered" to trigger Claude continuation
-	err := a.claude.SendMessage(agent.Folder, sessionID, "question answered", nil, false, "")
+	// Step 4: Resume the session with "question answered" to trigger Claude continuation.
+	// No model/effort override — the agent's configured default (if any) applies via the CLI.
+	err := a.claude.SendMessage(agent.Folder, sessionID, "question answered", nil, false, "", "")
 
 	// Emit response_complete event AFTER Claude finishes
 	a.emitResponseComplete(agentID, sessionID, err)

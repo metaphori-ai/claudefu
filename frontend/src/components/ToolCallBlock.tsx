@@ -198,7 +198,9 @@ function AskUserQuestionBlock({ block, result, pendingQuestion, onAnswer, onSkip
   }, []);
 
   // Use questions from pendingQuestion if available (already parsed by Go backend)
-  const questions = pendingQuestion?.questions || block.input?.questions || [];
+  // Guard: questions may be a string or object in older JSONL entries — ensure array
+  const rawQuestions = pendingQuestion?.questions || block.input?.questions;
+  const questions = Array.isArray(rawQuestions) ? rawQuestions : [];
   const isPending = !!pendingQuestion;
 
   // Determine status: pending (waiting), skipped (is_error but conversation continued), or answered

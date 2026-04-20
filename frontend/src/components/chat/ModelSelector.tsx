@@ -1,38 +1,48 @@
 import React, { useState, useRef, useEffect } from 'react';
+import {
+  MODEL_CATALOG,
+  type ModelEntry,
+  getModelEntry,
+} from './modelCatalog';
 
-export interface ModelOption {
-  id: string;
-  label: string;
-  shortLabel: string;
-  separator?: boolean; // Show divider above this item
-}
+// Re-export catalog-derived pieces so existing imports continue to work.
+export type { ModelEntry };
 
-export const MODELS: ModelOption[] = [
-  // 1M context window variants
-  { id: 'claude-opus-4-6[1m]', label: 'Opus 4.6 [1M]', shortLabel: 'Opus [1M]' },
-  { id: 'opusplan[1m]', label: 'Opus Plan [1M]', shortLabel: 'OpusPlan [1M]' },
-  { id: 'claude-sonnet-4-6[1m]', label: 'Sonnet 4.6 [1M]', shortLabel: 'Sonnet [1M]' },
-  // 200K context window variants
-  { id: 'claude-opus-4-6', label: 'Opus 4.6', shortLabel: 'Opus 4.6', separator: true },
-  { id: 'opusplan', label: 'Opus Plan', shortLabel: 'OpusPlan' },
-  { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6', shortLabel: 'Sonnet 4.6' },
-  { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5', shortLabel: 'Haiku 4.5' },
-];
-
-export const DEFAULT_MODEL_ID = 'claude-opus-4-6[1m]';
+// Legacy shim: some older callers may still import these names.
+// Prefer importing from modelCatalog directly.
+export const MODELS = MODEL_CATALOG;
+export const DEFAULT_MODEL_ID = ''; // empty = CLI default
 
 interface ModelSelectorProps {
   selectedModel: string;
+  agentDefaultModel: string;
   onModelChange: (modelId: string) => void;
+  onSaveAsAgentDefault?: (modelId: string) => void | Promise<void>;
 }
 
-export function ModelSelector({ selectedModel, onModelChange }: ModelSelectorProps) {
+/**
+ * ModelSelector — dropdown picker for Claude model selection.
+ *
+ * Semantics:
+ *   - `agentDefaultModel` is the saved default from AGENT_MODEL meta.
+ *   - `selectedModel` is the current choice (initialized to agentDefaultModel;
+ *     may diverge as a per-message override).
+ *   - "● override" indicator + Reset appear when selectedModel ≠ agentDefaultModel.
+ *   - "Save as agent default" button persists the current selection to AGENT_MODEL.
+ */
+export function ModelSelector({
+  selectedModel,
+  agentDefaultModel,
+  onModelChange,
+  onSaveAsAgentDefault,
+}: ModelSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const current = MODELS.find(m => m.id === selectedModel) || MODELS[0];
+  const current = getModelEntry(selectedModel) ?? MODEL_CATALOG[0];
+  const isOverridden = selectedModel !== agentDefaultModel;
 
-  // Close on outside click
+  // Close on outside click / ESC.
   useEffect(() => {
     if (!isOpen) return;
     const handleClick = (e: MouseEvent) => {
@@ -40,19 +50,70 @@ export function ModelSelector({ selectedModel, onModelChange }: ModelSelectorPro
         setIsOpen(false);
       }
     };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [isOpen]);
-
-  // Close on ESC
-  useEffect(() => {
-    if (!isOpen) return;
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setIsOpen(false);
     };
+    document.addEventListener('mousedown', handleClick);
     document.addEventListener('keydown', handleKey);
-    return () => document.removeEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      document.removeEventListener('keydown', handleKey);
+    };
   }, [isOpen]);
+
+  // Group entries by alias vs explicit.
+  const aliases = MODEL_CATALOG.filter(m => m.group === 'alias');
+  const explicit = MODEL_CATALOG.filter(m => m.group === 'explicit');
+
+  const renderRow = (model: ModelEntry) => {
+    const isSelected = model.id === selectedModel;
+    const isDefault = model.id === agentDefaultModel;
+    return (
+      <button
+        key={model.id || 'cli-default'}
+        onClick={() => {
+          onModelChange(model.id);
+          setIsOpen(false);
+        }}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          width: '100%',
+          padding: '6px 12px',
+          background: isSelected ? '#2a2a2a' : 'transparent',
+          border: 'none',
+          color: isSelected ? '#d97757' : '#ccc',
+          cursor: 'pointer',
+          fontSize: '0.75rem',
+          fontFamily: 'monospace',
+          textAlign: 'left',
+          transition: 'background 0.1s ease',
+        }}
+        onMouseEnter={e => {
+          if (!isSelected) e.currentTarget.style.background = '#252525';
+        }}
+        onMouseLeave={e => {
+          if (!isSelected) e.currentTarget.style.background = 'transparent';
+        }}
+        title={model.description}
+      >
+        <span>
+          {model.label}
+          {isDefault && (
+            <span style={{ color: '#666', fontSize: '0.6rem', marginLeft: '6px' }}>
+              (agent default)
+            </span>
+          )}
+        </span>
+        {model.extraUsage && (
+          <span style={{ color: '#f0ad4e', fontSize: '0.7rem', marginLeft: '8px' }} title="Extra usage — not included on Max plans">
+            $
+          </span>
+        )}
+      </button>
+    );
+  };
 
   return (
     <div ref={dropdownRef} style={{ position: 'relative' }}>
@@ -60,7 +121,7 @@ export function ModelSelector({ selectedModel, onModelChange }: ModelSelectorPro
         onClick={() => setIsOpen(!isOpen)}
         style={{
           background: 'transparent',
-          border: '1px solid #333',
+          border: `1px solid ${isOverridden ? '#d97757' : '#333'}`,
           borderRadius: '4px',
           color: '#999',
           cursor: 'pointer',
@@ -75,14 +136,17 @@ export function ModelSelector({ selectedModel, onModelChange }: ModelSelectorPro
         }}
         onMouseEnter={e => {
           e.currentTarget.style.color = '#d97757';
-          e.currentTarget.style.borderColor = '#555';
+          if (!isOverridden) e.currentTarget.style.borderColor = '#555';
         }}
         onMouseLeave={e => {
           e.currentTarget.style.color = '#999';
-          e.currentTarget.style.borderColor = '#333';
+          if (!isOverridden) e.currentTarget.style.borderColor = '#333';
         }}
+        title={isOverridden ? 'Per-message override — differs from agent default' : 'Agent default'}
       >
-        {current.shortLabel}
+        {isOverridden && <span style={{ color: '#d97757' }}>●</span>}
+        {current.label || 'CLI Default'}
+        {current.extraUsage && <span style={{ color: '#f0ad4e' }}>$</span>}
         <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
           <polyline points="6 9 12 15 18 9" />
         </svg>
@@ -99,47 +163,67 @@ export function ModelSelector({ selectedModel, onModelChange }: ModelSelectorPro
           borderRadius: '6px',
           boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
           zIndex: 100,
-          minWidth: '160px',
-          overflow: 'hidden',
+          minWidth: '220px',
+          maxHeight: '400px',
+          overflowY: 'auto',
+          overflowX: 'hidden',
         }}>
-          {MODELS.map(model => (
-            <React.Fragment key={model.id}>
-              {model.separator && (
-                <div style={{ borderTop: '1px solid #2a2a2a', margin: '2px 0' }} />
-              )}
+          <div style={{ padding: '4px 12px', fontSize: '0.6rem', color: '#666', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            Aliases
+          </div>
+          {aliases.map(renderRow)}
+
+          <div style={{ borderTop: '1px solid #2a2a2a', margin: '4px 0' }} />
+          <div style={{ padding: '4px 12px', fontSize: '0.6rem', color: '#666', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            Specific Versions
+          </div>
+          {explicit.map(renderRow)}
+
+          {/* Footer actions */}
+          <div style={{ borderTop: '1px solid #2a2a2a', padding: '6px 12px', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+            {isOverridden && (
               <button
                 onClick={() => {
-                  onModelChange(model.id);
+                  onModelChange(agentDefaultModel);
                   setIsOpen(false);
                 }}
                 style={{
-                  display: 'block',
-                  width: '100%',
-                  padding: '6px 12px',
-                  background: model.id === selectedModel ? '#2a2a2a' : 'transparent',
-                  border: 'none',
-                  color: model.id === selectedModel ? '#d97757' : '#ccc',
+                  background: 'transparent',
+                  border: '1px solid #444',
+                  borderRadius: '3px',
+                  color: '#999',
                   cursor: 'pointer',
-                  fontSize: '0.75rem',
+                  fontSize: '0.65rem',
+                  padding: '3px 8px',
                   fontFamily: 'monospace',
-                  textAlign: 'left',
-                  transition: 'background 0.1s ease',
                 }}
-                onMouseEnter={e => {
-                  if (model.id !== selectedModel) {
-                    e.currentTarget.style.background = '#252525';
-                  }
-                }}
-                onMouseLeave={e => {
-                  if (model.id !== selectedModel) {
-                    e.currentTarget.style.background = 'transparent';
-                  }
-                }}
+                title="Revert to agent default"
               >
-                {model.label}
+                Reset
               </button>
-            </React.Fragment>
-          ))}
+            )}
+            {onSaveAsAgentDefault && selectedModel !== agentDefaultModel && (
+              <button
+                onClick={async () => {
+                  await onSaveAsAgentDefault(selectedModel);
+                  setIsOpen(false);
+                }}
+                style={{
+                  background: '#d97757',
+                  border: 'none',
+                  borderRadius: '3px',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  fontSize: '0.65rem',
+                  padding: '3px 8px',
+                  fontFamily: 'monospace',
+                }}
+                title="Save as agent default (writes AGENT_MODEL in agents.json)"
+              >
+                Save as default
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>

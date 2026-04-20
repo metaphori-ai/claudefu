@@ -35,8 +35,7 @@ const (
 )
 
 // CreateSession creates a session instantly without invoking Claude CLI.
-// Creates JSONL file with a starter exchange AND updates sessions-index.json.
-// Claude CLI's --resume will pick up from this conversation.
+// Writes a JSONL file with a starter exchange. Claude CLI's --resume picks it up.
 func (s *Service) CreateSession(folder string) (string, error) {
 	sessionID := uuid.New().String()
 	userMsgID := uuid.New().String()
@@ -147,12 +146,6 @@ func (s *Service) CreateSession(folder string) (string, error) {
 		return "", fmt.Errorf("write assistant message: %w", err)
 	}
 
-	// Update sessions-index.json (Claude Code's session registry)
-	if err := s.addToIndex(projectDir, sessionID, jsonlPath, folder); err != nil {
-		// Log warning but don't fail - JSONL exists, Claude will work
-		fmt.Printf("[WARN] Failed to update sessions-index.json: %v\n", err)
-	}
-
 	return sessionID, nil
 }
 
@@ -258,47 +251,7 @@ func encodeFolder(folder string) string {
 	return nonAlphanumeric.ReplaceAllString(folder, "-")
 }
 
-// addToIndex adds a session entry to sessions-index.json.
-func (s *Service) addToIndex(projectDir, sessionID, jsonlPath, folder string) error {
-	indexPath := filepath.Join(projectDir, "sessions-index.json")
-	now := time.Now().UTC()
-	nowMillis := now.UnixMilli() // Claude uses milliseconds for fileMtime
-
-	// Read existing index or create new
-	var index SessionIndex
-	if data, err := os.ReadFile(indexPath); err == nil {
-		if err := json.Unmarshal(data, &index); err != nil {
-			// Corrupted index - start fresh
-			index = SessionIndex{Version: 1, Entries: []IndexEntry{}}
-		}
-	} else {
-		index = SessionIndex{Version: 1, Entries: []IndexEntry{}}
-	}
-
-	// Add new entry (we write 2 messages: user + assistant)
-	entry := IndexEntry{
-		SessionID:    sessionID,
-		FullPath:     jsonlPath,
-		FileMtime:    nowMillis,             // Milliseconds timestamp
-		FirstPrompt:  starterUserMessage,    // The starter message we wrote
-		MessageCount: 2,                     // user + assistant
-		Created:      now,
-		Modified:     now,
-		ProjectPath:  folder,
-		IsSidechain:  false,
-	}
-	index.Entries = append(index.Entries, entry)
-
-	// Write back
-	data, err := json.MarshalIndent(index, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(indexPath, data, 0644)
-}
-
 // DuplicateSession copies an existing session JSONL to a new UUID file.
-// Updates sessions-index.json with the new entry.
 // Returns the new session ID.
 func (s *Service) DuplicateSession(folder, sourceSessionID string) (string, error) {
 	encodedFolder := encodeFolder(folder)
@@ -319,9 +272,8 @@ func (s *Service) DuplicateSession(folder, sourceSessionID string) (string, erro
 		return "", fmt.Errorf("write duplicated session: %w", err)
 	}
 
-	// Count messages for index entry
+	// Count messages for log output
 	messageCount := 0
-	firstPrompt := ""
 	for _, line := range strings.Split(string(data), "\n") {
 		if line == "" {
 			continue
@@ -334,78 +286,8 @@ func (s *Service) DuplicateSession(folder, sourceSessionID string) (string, erro
 		if eventType == "user" || eventType == "assistant" {
 			messageCount++
 		}
-		// Grab first user message as preview
-		if eventType == "user" && firstPrompt == "" {
-			if msg, ok := event["message"].(map[string]any); ok {
-				if content, ok := msg["content"].(string); ok {
-					firstPrompt = content
-					if len(firstPrompt) > 100 {
-						firstPrompt = firstPrompt[:100]
-					}
-				}
-			}
-		}
-	}
-
-	// Update sessions-index.json
-	if err := s.addDuplicateToIndex(projectDir, newSessionID, newPath, folder, firstPrompt, messageCount); err != nil {
-		fmt.Printf("[WARN] Failed to update sessions-index.json for duplicate: %v\n", err)
 	}
 
 	fmt.Printf("[SESSION] Duplicated %s → %s (%d messages)\n", sourceSessionID, newSessionID, messageCount)
 	return newSessionID, nil
-}
-
-// addDuplicateToIndex adds a duplicated session entry to sessions-index.json.
-func (s *Service) addDuplicateToIndex(projectDir, sessionID, jsonlPath, folder, firstPrompt string, messageCount int) error {
-	indexPath := filepath.Join(projectDir, "sessions-index.json")
-	now := time.Now().UTC()
-
-	var index SessionIndex
-	if data, err := os.ReadFile(indexPath); err == nil {
-		if err := json.Unmarshal(data, &index); err != nil {
-			index = SessionIndex{Version: 1, Entries: []IndexEntry{}}
-		}
-	} else {
-		index = SessionIndex{Version: 1, Entries: []IndexEntry{}}
-	}
-
-	entry := IndexEntry{
-		SessionID:    sessionID,
-		FullPath:     jsonlPath,
-		FileMtime:    now.UnixMilli(),
-		FirstPrompt:  firstPrompt,
-		MessageCount: messageCount,
-		Created:      now,
-		Modified:     now,
-		ProjectPath:  folder,
-		IsSidechain:  false,
-	}
-	index.Entries = append(index.Entries, entry)
-
-	data, err := json.MarshalIndent(index, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(indexPath, data, 0644)
-}
-
-// SessionIndex matches Claude Code's sessions-index.json structure.
-type SessionIndex struct {
-	Version int          `json:"version"` // Number, not string
-	Entries []IndexEntry `json:"entries"`
-}
-
-// IndexEntry matches Claude Code's session entry format.
-type IndexEntry struct {
-	SessionID    string    `json:"sessionId"`
-	FullPath     string    `json:"fullPath"`
-	FileMtime    int64     `json:"fileMtime"` // Milliseconds timestamp
-	FirstPrompt  string    `json:"firstPrompt"`
-	MessageCount int       `json:"messageCount"`
-	Created      time.Time `json:"created"`  // ISO string
-	Modified     time.Time `json:"modified"` // ISO string
-	GitBranch    string    `json:"gitBranch,omitempty"`
-	ProjectPath  string    `json:"projectPath"`
-	IsSidechain  bool      `json:"isSidechain"`
 }

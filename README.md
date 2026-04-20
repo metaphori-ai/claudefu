@@ -218,7 +218,6 @@ Workspace (top-level container)
 ```
 ~/.claude/projects/
 └── {encoded-folder}/              # Folder path with / → -
-    ├── sessions-index.json        # Session registry
     ├── {session-id}.jsonl         # Main conversation
     └── {session-id}/
         └── subagents/

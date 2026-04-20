@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { GetConversationPaged, SetActiveSession, ClearActiveSession, SendMessage, MarkSessionViewed, NewSession, ReadPlanFile, TouchPlanFile, AnswerQuestion, CancelSession, AcceptPlanReview, RejectPlanReview, RunSlashCommand, DeleteFromMessage } from '../../wailsjs/go/main/App';
+import { GetConversationPaged, SetActiveSession, ClearActiveSession, SendMessage, MarkSessionViewed, NewSession, ReadPlanFile, TouchPlanFile, AnswerQuestion, CancelSession, AcceptPlanReview, RejectPlanReview, RunSlashCommand, DeleteFromMessage, GetAgentMeta, UpdateAgentMeta } from '../../wailsjs/go/main/App';
 import { types } from '../../wailsjs/go/models';
 
 // Extracted components
@@ -10,7 +10,8 @@ import { DebugStatsOverlay } from './chat/DebugStatsOverlay';
 import { InputArea, InputAreaHandle } from './chat/InputArea';
 import { ControlButtonsRow } from './chat/ControlButtonsRow';
 import type { Message, ContentBlock, PendingQuestion, ChatViewProps, Attachment } from './chat/types';
-import { DEFAULT_MODEL_ID } from './chat/ModelSelector';
+// Model/effort state is per-agent via AGENT_MODEL / AGENT_EFFORT meta, not per-ChatView.
+// Empty strings fall through to CLI defaults (no --model / --effort flags).
 
 // Existing components
 import { ReferencesPane } from './ReferencesPane';
@@ -45,8 +46,60 @@ const spinnerStyles = `
 `;
 
 export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreated, initialMessage, isExternallyCreatingSession, draftsRef }: ChatViewProps) {
-  // Model selection — per-prompt, local to this ChatView instance
-  const [selectedModel, setSelectedModel] = useState(DEFAULT_MODEL_ID);
+  // Model & effort selection:
+  //   agentDefault* = value from AGENT_MODEL / AGENT_EFFORT meta (persisted per agent).
+  //   selected*     = current per-message choice; initialized to agent default, may diverge.
+  //   "" means "use CLI default" (omit --model / --effort flags).
+  const [selectedModel, setSelectedModel] = useState('');
+  const [selectedEffort, setSelectedEffort] = useState('');
+  const [agentDefaultModel, setAgentDefaultModel] = useState('');
+  const [agentDefaultEffort, setAgentDefaultEffort] = useState('');
+
+  // Load the agent's persisted model/effort defaults when the folder changes.
+  useEffect(() => {
+    if (!folder) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const info = await GetAgentMeta(folder);
+        if (cancelled) return;
+        const meta = info?.meta ?? {};
+        const m = (meta['AGENT_MODEL'] as string) ?? '';
+        const e = (meta['AGENT_EFFORT'] as string) ?? '';
+        setAgentDefaultModel(m);
+        setAgentDefaultEffort(e);
+        // Initialize current selections to the agent default (per-message override starts unset).
+        setSelectedModel(m);
+        setSelectedEffort(e);
+      } catch (err) {
+        console.warn('[ChatView] Failed to load AGENT_MODEL/AGENT_EFFORT meta:', err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [folder]);
+
+  // Persist a model or effort choice to the agent's registry meta.
+  const saveAgentMetaField = async (key: 'AGENT_MODEL' | 'AGENT_EFFORT', value: string) => {
+    if (!folder) return;
+    try {
+      const info = await GetAgentMeta(folder);
+      const meta = { ...(info?.meta ?? {}) } as Record<string, string>;
+      // Empty string = explicitly "CLI default"; persist it so intent is preserved.
+      meta[key] = value;
+      await UpdateAgentMeta(folder, meta);
+      if (key === 'AGENT_MODEL') setAgentDefaultModel(value);
+      else setAgentDefaultEffort(value);
+    } catch (err) {
+      console.error(`[ChatView] Failed to save ${key}:`, err);
+    }
+  };
+
+  const handleSaveModelAsAgentDefault = async (modelId: string) => {
+    await saveAgentMetaField('AGENT_MODEL', modelId);
+  };
+  const handleSaveEffortAsAgentDefault = async (level: string) => {
+    await saveAgentMetaField('AGENT_EFFORT', level);
+  };
   // Inject spinner animation styles
   useEffect(() => {
     const styleId = 'chatview-spinner-styles';
@@ -469,7 +522,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
         scroll.scrollToBottomRAF();
 
         try {
-          await SendMessage(agentId, sessionId, initialMessage, [], planningMode, selectedModel);
+          await SendMessage(agentId, sessionId, initialMessage, [], planningMode, selectedModel, selectedEffort);
         } catch (err) {
           // On failure, the message stays in pending state
           // Context will handle cleanup when confirmed message arrives
@@ -510,7 +563,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
   // Handle skipping a pending question
   const handleQuestionSkip = async (toolUseId: string) => {
     try {
-      await SendMessage(agentId, sessionId, "I'm skipping this question. Please continue.", [], planningMode, selectedModel);
+      await SendMessage(agentId, sessionId, "I'm skipping this question. Please continue.", [], planningMode, selectedModel, selectedEffort);
       // Clear and reload from context
       clearContextSession(agentId, sessionId);
       await loadConversation(true); // Force reload
@@ -678,7 +731,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
     setIsWaitingForResponse(true);
 
     try {
-      await SendMessage(agentId, sessionId, message, backendAttachments, planningMode, selectedModel);
+      await SendMessage(agentId, sessionId, message, backendAttachments, planningMode, selectedModel, selectedEffort);
       logDebug('ChatView', 'SEND_COMPLETE', { success: true });
       // Clear attachments, planning mode, and persisted draft on successful send
       setAttachments([]);
@@ -864,6 +917,12 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
           onOpenClaudeSettings={() => setClaudeSettingsOpen(true)}
           selectedModel={selectedModel}
           onModelChange={setSelectedModel}
+          selectedEffort={selectedEffort}
+          onEffortChange={setSelectedEffort}
+          agentDefaultModel={agentDefaultModel}
+          agentDefaultEffort={agentDefaultEffort}
+          onSaveModelAsAgentDefault={handleSaveModelAsAgentDefault}
+          onSaveEffortAsAgentDefault={handleSaveEffortAsAgentDefault}
           attachments={attachments}
           onAttachmentRemove={(id) => setAttachments(prev => prev.filter(att => att.id !== id))}
           isSending={isSending}

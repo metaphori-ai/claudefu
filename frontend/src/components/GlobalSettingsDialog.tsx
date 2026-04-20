@@ -31,6 +31,38 @@ import {
 } from './permissions';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import {
+  ENV_OPUS_MODEL_OPTIONS,
+  ENV_SONNET_MODEL_OPTIONS,
+  ENV_HAIKU_MODEL_OPTIONS,
+  ENV_ANY_MODEL_OPTIONS,
+  ENV_EFFORT_OPTIONS,
+} from './chat/modelCatalog';
+
+// Known Claude CLI environment variables with curated option sets.
+// None = omit the var entirely; any other value (including "Custom…") = keep it.
+interface KnownEnvVar {
+  key: string;
+  description: string;
+  options: string[];  // values that appear in the dropdown besides None + Custom
+}
+
+const KNOWN_ENV_VARS: KnownEnvVar[] = [
+  { key: 'ANTHROPIC_DEFAULT_OPUS_MODEL',           description: 'Model that the "opus" (and opusplan plan-mode) alias resolves to', options: ENV_OPUS_MODEL_OPTIONS },
+  { key: 'ANTHROPIC_DEFAULT_SONNET_MODEL',         description: 'Model that the "sonnet" (and opusplan execution) alias resolves to', options: ENV_SONNET_MODEL_OPTIONS },
+  { key: 'ANTHROPIC_DEFAULT_HAIKU_MODEL',          description: 'Model that the "haiku" alias resolves to (also used for background tasks)', options: ENV_HAIKU_MODEL_OPTIONS },
+  { key: 'CLAUDE_CODE_SUBAGENT_MODEL',             description: 'Model used for Task-tool subagents', options: ENV_ANY_MODEL_OPTIONS },
+  { key: 'ANTHROPIC_MODEL',                        description: 'Override the active model at startup (alias or full ID)', options: ENV_ANY_MODEL_OPTIONS },
+  { key: 'CLAUDE_CODE_EFFORT_LEVEL',               description: 'Persistent effort level (auto|low|medium|high|xhigh|max)', options: ENV_EFFORT_OPTIONS },
+  { key: 'CLAUDE_CODE_DISABLE_1M_CONTEXT',         description: 'Set to 1 to hide 1M-context variants from the picker', options: ['1'] },
+  { key: 'CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING',  description: 'Set to 1 to revert to fixed thinking budget (4.6 models only)', options: ['1'] },
+  { key: 'DISABLE_PROMPT_CACHING',                 description: 'Set to 1 to disable prompt caching globally', options: ['1'] },
+  { key: 'DISABLE_PROMPT_CACHING_OPUS',            description: 'Set to 1 to disable prompt caching for Opus models', options: ['1'] },
+  { key: 'DISABLE_PROMPT_CACHING_SONNET',          description: 'Set to 1 to disable prompt caching for Sonnet models', options: ['1'] },
+  { key: 'DISABLE_PROMPT_CACHING_HAIKU',           description: 'Set to 1 to disable prompt caching for Haiku models', options: ['1'] },
+];
+
+const CUSTOM_SENTINEL = '__CUSTOM__';
 
 interface GlobalSettingsDialogProps {
   isOpen: boolean;
@@ -272,6 +304,27 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
     setEnvVars(updated);
   };
 
+  // Upsert/remove a Known Variable by key.
+  // value === "" removes the var entirely; any other string upserts it.
+  const setKnownEnvVar = (key: string, value: string) => {
+    const idx = envVars.findIndex(v => v.key === key);
+    if (value === '') {
+      if (idx >= 0) setEnvVars(envVars.filter((_, i) => i !== idx));
+      return;
+    }
+    if (idx >= 0) {
+      const updated = [...envVars];
+      updated[idx] = { ...updated[idx], value };
+      setEnvVars(updated);
+    } else {
+      setEnvVars([...envVars, { key, value }]);
+    }
+  };
+
+  const getKnownEnvVarValue = (key: string): string => {
+    return envVars.find(v => v.key === key)?.value ?? '';
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && newKey.trim()) {
       e.preventDefault();
@@ -448,7 +501,7 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
   );
 
   const renderEnvVarsTab = () => (
-    <div style={{ padding: '1rem' }}>
+    <div style={{ padding: '1rem', overflow: 'auto', flex: 1 }}>
 
       {/* Claude CLI Command */}
       <div style={{ marginBottom: '1.5rem' }}>
@@ -509,10 +562,116 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
         }}>ANTHROPIC_BASE_URL</code>).
       </p>
 
-      {/* Existing Variables */}
-      {envVars.length > 0 && (
+      {/* Known Variables — curated list with dropdown + custom fallback.
+          None = omit the var from ClaudeEnvVars; anything else = include on CLI. */}
+      <div style={{ marginBottom: '1.25rem' }}>
+        <h4 style={{
+          margin: '0 0 0.5rem 0',
+          fontSize: '0.8rem',
+          fontWeight: 600,
+          color: '#aaa',
+          textTransform: 'uppercase',
+          letterSpacing: '0.05em',
+        }}>
+          Known Variables
+        </h4>
+        <p style={{ margin: '0 0 0.75rem 0', fontSize: '0.75rem', color: '#666', lineHeight: 1.4 }}>
+          Curated set of Claude CLI env vars. <strong style={{ color: '#888' }}>None (omit)</strong> removes the var entirely; any other value is injected into every Claude CLI invocation.
+        </p>
+        {KNOWN_ENV_VARS.map(kev => {
+          const currentValue = getKnownEnvVarValue(kev.key);
+          const isCustom = currentValue !== '' && !kev.options.includes(currentValue);
+          return (
+            <div key={kev.key} style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.4rem', alignItems: 'center' }}>
+              <code
+                title={kev.description}
+                style={{
+                  width: '35%',
+                  padding: '0.4rem 0.6rem',
+                  borderRadius: '4px',
+                  border: '1px solid #222',
+                  background: '#0a0a0a',
+                  color: '#bbb',
+                  fontSize: '0.72rem',
+                  fontFamily: 'monospace',
+                  cursor: 'help',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                {kev.key}
+              </code>
+              <span style={{ color: '#444' }}>=</span>
+              <select
+                value={isCustom ? CUSTOM_SENTINEL : currentValue}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === CUSTOM_SENTINEL) {
+                    // Switch to custom mode: seed with a single space so the text input renders and user can edit.
+                    setKnownEnvVar(kev.key, currentValue || ' ');
+                  } else {
+                    setKnownEnvVar(kev.key, v);
+                  }
+                }}
+                style={{
+                  flex: isCustom ? 0 : 1,
+                  minWidth: '140px',
+                  padding: '0.4rem 0.6rem',
+                  borderRadius: '4px',
+                  border: '1px solid #333',
+                  background: '#0d0d0d',
+                  color: '#fff',
+                  fontSize: '0.8rem',
+                  fontFamily: 'monospace',
+                }}
+              >
+                <option value="">— None (omit) —</option>
+                {kev.options.map(opt => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+                <option value={CUSTOM_SENTINEL}>Custom…</option>
+              </select>
+              {isCustom && (
+                <input
+                  type="text"
+                  value={currentValue.trim()}
+                  onChange={(e) => setKnownEnvVar(kev.key, e.target.value || ' ')}
+                  placeholder="custom value"
+                  style={{
+                    flex: 1,
+                    padding: '0.4rem 0.6rem',
+                    borderRadius: '4px',
+                    border: '1px solid #444',
+                    background: '#0d0d0d',
+                    color: '#fff',
+                    fontSize: '0.8rem',
+                    fontFamily: 'monospace',
+                  }}
+                />
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <h4 style={{
+        margin: '0 0 0.5rem 0',
+        fontSize: '0.8rem',
+        fontWeight: 600,
+        color: '#aaa',
+        textTransform: 'uppercase',
+        letterSpacing: '0.05em',
+      }}>
+        Custom Variables
+      </h4>
+
+      {/* Existing Variables — only those not covered by the Known Variables section */}
+      {envVars.filter(v => !KNOWN_ENV_VARS.some(k => k.key === v.key)).length > 0 && (
         <div style={{ marginBottom: '1rem' }}>
-          {envVars.map((envVar, index) => (
+          {envVars.map((envVar, index) => {
+            if (KNOWN_ENV_VARS.some(k => k.key === envVar.key)) return null;
+            return (
             <div
               key={index}
               style={{
@@ -584,7 +743,8 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
                 </svg>
               </button>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
