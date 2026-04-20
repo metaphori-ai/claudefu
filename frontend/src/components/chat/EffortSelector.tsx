@@ -6,24 +6,25 @@ interface EffortSelectorProps {
   selectedEffort: string;      // current effort ("" = auto/default)
   agentDefaultEffort: string;  // saved default from AGENT_EFFORT meta
   onEffortChange: (level: string) => void;
-  onSaveAsAgentDefault?: (level: string) => void | Promise<void>;
 }
 
 /**
  * EffortSelector — compact dropdown for adaptive-reasoning effort level.
  *
  * Renders nothing when the current model doesn't support effort (e.g. Haiku,
- * older 4.5 models). Same agent-default + override pattern as ModelSelector.
+ * older 4.5 models).
  *
  * The empty string ("") represents "auto / model default" and causes --effort
  * to be omitted from the CLI invocation.
+ *
+ * Save-as-default action lives externally in ControlButtonsRow (disk icon).
+ * To revert to the agent default, pick the row labeled "(agent default)".
  */
 export function EffortSelector({
   currentModel,
   selectedEffort,
   agentDefaultEffort,
   onEffortChange,
-  onSaveAsAgentDefault,
 }: EffortSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -150,50 +151,6 @@ export function EffortSelector({
               </button>
             );
           })}
-
-          {/* Footer actions */}
-          <div style={{ borderTop: '1px solid #2a2a2a', padding: '6px 12px', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-            {isOverridden && (
-              <button
-                onClick={() => {
-                  onEffortChange(agentDefaultEffort);
-                  setIsOpen(false);
-                }}
-                style={{
-                  background: 'transparent',
-                  border: '1px solid #444',
-                  borderRadius: '3px',
-                  color: '#999',
-                  cursor: 'pointer',
-                  fontSize: '0.65rem',
-                  padding: '3px 8px',
-                  fontFamily: 'monospace',
-                }}
-              >
-                Reset
-              </button>
-            )}
-            {onSaveAsAgentDefault && selectedEffort !== agentDefaultEffort && (
-              <button
-                onClick={async () => {
-                  await onSaveAsAgentDefault(selectedEffort);
-                  setIsOpen(false);
-                }}
-                style={{
-                  background: '#d97757',
-                  border: 'none',
-                  borderRadius: '3px',
-                  color: '#fff',
-                  cursor: 'pointer',
-                  fontSize: '0.65rem',
-                  padding: '3px 8px',
-                  fontFamily: 'monospace',
-                }}
-              >
-                Save as default
-              </button>
-            )}
-          </div>
         </div>
       )}
     </div>

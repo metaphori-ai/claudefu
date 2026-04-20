@@ -6,6 +6,7 @@ import { SplitButton } from './SplitButton';
 import { QueuedMessage } from '../../context/SessionContext';
 import { ReadFileContent } from '../../../wailsjs/go/main/App';
 import { formatTokenCount, SessionTokenMetrics } from '../../utils/messageUtils';
+import { getContextWindow } from './modelCatalog';
 
 // Fun verbs for the "Claude is thinking" placeholder
 const CLAUDE_VERBS = [
@@ -51,6 +52,8 @@ interface InputAreaProps {
   newSessionMode?: boolean;   // For status indicator chip
   planningMode?: boolean;     // For status indicator chip
   tokenMetrics?: SessionTokenMetrics;  // Token metrics for status chip (v0.3.21)
+  currentModel?: string;               // Current per-message model selection — drives context-window sizing
+  agentDefaultModel?: string;          // Agent default model — used to detect "model just changed" state
   // Lifted attachment state (managed by parent, displayed in ControlButtonsRow)
   attachments: Attachment[];
   onAttachmentsChange: React.Dispatch<React.SetStateAction<Attachment[]>>;
@@ -107,6 +110,8 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
   newSessionMode = false,
   planningMode = false,
   tokenMetrics,
+  currentModel = '',
+  agentDefaultModel = '',
   attachments,
   onAttachmentsChange,
   queue,
@@ -839,24 +844,40 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
               <span style={{ color: tokenMetrics.cacheWrite > tokenMetrics.cacheRead ? '#7a6a6a' : '#888' }}>{formatTokenCount(tokenMetrics.cacheWrite)}</span>
             </span>
           )}
-          {/* Context size with percentage and "left until compact" */}
+          {/* Context size with percentage and "left until compact".
+              Context window is model-aware: 1M for [1m] variants and Empty/Default,
+              200K for everything else. Exceeds-window state shifts the orange segment to
+              red with "!!" — this signals that picking a smaller-context model will force
+              Claude Code to auto-compact before the next turn can land. */}
           {tokenMetrics.contextSize > 0 && (() => {
-            const contextWindow = 1000000; // 1M context window
+            const contextWindow = getContextWindow(currentModel);
             const compactBuffer = 33000;   // ~33K autocompact buffer (fixed size)
             const compactThreshold = contextWindow - compactBuffer;
             const contextPercent = (tokenMetrics.contextSize / contextWindow) * 100;
             const tokensUntilCompact = Math.max(0, compactThreshold - tokenMetrics.contextSize);
+            const exceedsWindow = tokenMetrics.contextSize > contextWindow;
+            const windowLabelK = contextWindow >= 1_000_000 ? '1M' : `${contextWindow / 1000}K`;
+            const modelChanged = currentModel !== agentDefaultModel;
             return (
-              <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }} title="Total context window (in + cr + cw)">
+              <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }} title={`Context window: ${windowLabelK} (per selected model)`}>
                 <span style={{ color: '#555' }}>ctx</span>
-                <span style={{ color: '#888' }}>
+                <span style={{ color: exceedsWindow ? '#f87171' : '#888' }}>
                   {formatTokenCount(tokenMetrics.contextSize)}
-                  <span style={{ color: '#555', marginLeft: '2px' }}>
+                  <span style={{ color: exceedsWindow ? '#f87171' : '#555', marginLeft: '2px' }}>
                     ({Math.round(contextPercent)}%)
                   </span>
-                  <span style={{ color: '#d97757', marginLeft: '4px' }} title="Tokens remaining until auto-compact">
-                    ({Math.round((tokensUntilCompact / contextWindow) * 100)}% / {formatTokenCount(tokensUntilCompact)} left)
-                  </span>
+                  {exceedsWindow ? (
+                    <span
+                      style={{ color: '#f87171', fontWeight: 600, marginLeft: '4px' }}
+                      title={`Context exceeds ${windowLabelK} window${modelChanged ? ' after model change' : ''} — Claude Code will auto-compact before next turn`}
+                    >
+                      &nbsp;!! exceeds {windowLabelK}{modelChanged ? ' (model changed)' : ''} — will auto-compact
+                    </span>
+                  ) : (
+                    <span style={{ color: '#d97757', marginLeft: '4px' }} title={`Tokens remaining until auto-compact (${windowLabelK} window)`}>
+                      ({Math.round((tokensUntilCompact / contextWindow) * 100)}% / {formatTokenCount(tokensUntilCompact)} left)
+                    </span>
+                  )}
                 </span>
               </span>
             );

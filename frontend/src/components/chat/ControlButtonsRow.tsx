@@ -3,6 +3,7 @@ import { Tooltip } from '../Tooltip';
 import { AttachmentPreviewRow } from './AttachmentPreviewRow';
 import { ModelSelector } from './ModelSelector';
 import { EffortSelector } from './EffortSelector';
+import { getSupportedEffortLevels, getModelEntry } from './modelCatalog';
 import type { Attachment } from './types';
 
 // CSS for button hover effects - avoids issues with Tooltip's FloatingUI handlers
@@ -146,8 +147,28 @@ export function ControlButtonsRow({
         selectedModel={selectedModel}
         agentDefaultModel={agentDefaultModel}
         onModelChange={onModelChange}
-        onSaveAsAgentDefault={onSaveModelAsAgentDefault}
       />
+
+      {/* Save model as agent default — disk icon, only when overridden.
+          Matches the toggle-button style of New Session / Planning Mode above. */}
+      {selectedModel !== agentDefaultModel && onSaveModelAsAgentDefault && (
+        <Tooltip content={
+          <>Save <span style={{ color: '#d97757' }}>{getModelEntry(selectedModel)?.label || 'Empty/Default'}</span> as agent default</>
+        }>
+          <button
+            onClick={() => onSaveModelAsAgentDefault(selectedModel)}
+            className="control-toggle-btn active"
+            style={{ color: '#d97757' }}
+            aria-label="Save model as agent default"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+              <polyline points="17 21 17 13 7 13 7 21" />
+              <polyline points="7 3 7 8 15 8" />
+            </svg>
+          </button>
+        </Tooltip>
+      )}
 
       {/* Effort Selector — auto-hides when current model doesn't support effort */}
       <EffortSelector
@@ -155,8 +176,29 @@ export function ControlButtonsRow({
         selectedEffort={selectedEffort}
         agentDefaultEffort={agentDefaultEffort}
         onEffortChange={onEffortChange}
-        onSaveAsAgentDefault={onSaveEffortAsAgentDefault}
       />
+
+      {/* Save effort as agent default — disk icon, only when overridden AND model supports effort */}
+      {selectedEffort !== agentDefaultEffort
+        && getSupportedEffortLevels(selectedModel).length > 0
+        && onSaveEffortAsAgentDefault && (
+        <Tooltip content={
+          <>Save effort <span style={{ color: '#d97757' }}>{selectedEffort || 'auto'}</span> as agent default</>
+        }>
+          <button
+            onClick={() => onSaveEffortAsAgentDefault(selectedEffort)}
+            className="control-toggle-btn active"
+            style={{ color: '#d97757' }}
+            aria-label="Save effort as agent default"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+              <polyline points="17 21 17 13 7 13 7 21" />
+              <polyline points="7 3 7 8 15 8" />
+            </svg>
+          </button>
+        </Tooltip>
+      )}
 
       {/* Spacer area - also shows attachments if any */}
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', marginLeft: '8px' }}>

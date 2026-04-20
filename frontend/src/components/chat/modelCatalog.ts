@@ -33,8 +33,9 @@ const EFFORT_NONE: EffortLevel[] = [];
 // MODEL_CATALOG — displayed top-to-bottom in ModelSelector.
 export const MODEL_CATALOG: ModelEntry[] = [
   // ---------- Aliases ----------
-  { id: '',          label: 'CLI Default',      group: 'alias', effortLevels: EFFORT_OPUS_47, description: 'Account-default model (Max → Opus 4.7; Pro/API → Sonnet 4.6). No --model flag.' },
-  { id: 'default',   label: 'default (reset)',  group: 'alias', effortLevels: EFFORT_OPUS_47, description: 'Clears any override and uses account default.' },
+  // Zero-value (empty id) = no --model flag; Claude Code resolves via its own priority chain
+  // (settings.json → ANTHROPIC_MODEL env → account tier default). This is the "no opinion" state.
+  { id: '',          label: 'Empty/Default',    group: 'alias', effortLevels: EFFORT_OPUS_47, description: 'No --model flag — Claude Code decides based on settings.json, ANTHROPIC_MODEL env, or account tier default (Max → Opus 4.7; Pro/API → Sonnet 4.6).' },
   { id: 'best',      label: 'best (opus)',      group: 'alias', effortLevels: EFFORT_OPUS_47, description: 'Most capable model available, currently opus.' },
   { id: 'opus',      label: 'opus',             group: 'alias', family: 'opus',   effortLevels: EFFORT_OPUS_47 },
   { id: 'opus[1m]',  label: 'opus [1M]',        group: 'alias', family: 'opus',   effortLevels: EFFORT_OPUS_47, contextOneMillion: true },
@@ -78,6 +79,21 @@ export function requiresExtraUsage(id: string): boolean {
   return getModelEntry(id)?.extraUsage ?? false;
 }
 
+// Returns the nominal context window in tokens for a given model id.
+//   - Explicit `[1m]` variants (or contextOneMillion: true) → 1,000,000
+//   - Everything else → 200,000
+//   - Empty string (Empty/Default) → 1,000,000 assumption (Max plan is the common ClaudeFu tier;
+//     Opus auto-upgrades to 1M there; on Pro/API the assumption is pessimistic — user can
+//     explicitly pick a 200K model or alias to see accurate numbers).
+// Unknown IDs fall through to 200K — a safer default for warning purposes (false positive
+// warnings on model change are less harmful than false negatives).
+export function getContextWindow(id: string): number {
+  if (id === '') return 1_000_000;
+  const entry = getModelEntry(id);
+  if (!entry) return 200_000;
+  return entry.contextOneMillion ? 1_000_000 : 200_000;
+}
+
 // Option lists for Global Settings "Known Variables" env var dropdowns.
 // Keys must be ALL_CAPS env var names; values are the literal strings written
 // to ClaudeEnvVars. A value of "" means "None (omit)".
@@ -102,8 +118,9 @@ export const ENV_HAIKU_MODEL_OPTIONS: string[] = [
 ];
 
 export const ENV_ANY_MODEL_OPTIONS: string[] = [
+  // Skip the zero-value entry ("") and the "best" meta-alias which just tracks opus.
   ...MODEL_CATALOG
-    .filter(m => m.id !== '' && m.id !== 'default' && m.id !== 'best')
+    .filter(m => m.id !== '' && m.id !== 'best')
     .map(m => m.id),
 ];
 

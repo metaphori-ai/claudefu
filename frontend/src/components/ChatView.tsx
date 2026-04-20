@@ -940,6 +940,8 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
           newSessionMode={newSessionMode}
           planningMode={planningMode}
           tokenMetrics={tokenMetrics}
+          currentModel={selectedModel}
+          agentDefaultModel={agentDefaultModel}
           attachments={attachments}
           onAttachmentsChange={setAttachments}
           queue={queue}

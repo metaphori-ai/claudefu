@@ -17,7 +17,6 @@ interface ModelSelectorProps {
   selectedModel: string;
   agentDefaultModel: string;
   onModelChange: (modelId: string) => void;
-  onSaveAsAgentDefault?: (modelId: string) => void | Promise<void>;
 }
 
 /**
@@ -27,14 +26,15 @@ interface ModelSelectorProps {
  *   - `agentDefaultModel` is the saved default from AGENT_MODEL meta.
  *   - `selectedModel` is the current choice (initialized to agentDefaultModel;
  *     may diverge as a per-message override).
- *   - "● override" indicator + Reset appear when selectedModel ≠ agentDefaultModel.
- *   - "Save as agent default" button persists the current selection to AGENT_MODEL.
+ *   - "●" indicator on the trigger appears when selectedModel ≠ agentDefaultModel.
+ *   - The save-as-default action lives OUTSIDE this component — as a disk icon
+ *     in ControlButtonsRow — so users don't have to open the dropdown to persist.
+ *   - To revert to the agent default, pick the row labeled "(agent default)".
  */
 export function ModelSelector({
   selectedModel,
   agentDefaultModel,
   onModelChange,
-  onSaveAsAgentDefault,
 }: ModelSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -145,7 +145,7 @@ export function ModelSelector({
         title={isOverridden ? 'Per-message override — differs from agent default' : 'Agent default'}
       >
         {isOverridden && <span style={{ color: '#d97757' }}>●</span>}
-        {current.label || 'CLI Default'}
+        {current.label || 'Empty/Default'}
         {current.extraUsage && <span style={{ color: '#f0ad4e' }}>$</span>}
         <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
           <polyline points="6 9 12 15 18 9" />
@@ -178,52 +178,6 @@ export function ModelSelector({
             Specific Versions
           </div>
           {explicit.map(renderRow)}
-
-          {/* Footer actions */}
-          <div style={{ borderTop: '1px solid #2a2a2a', padding: '6px 12px', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-            {isOverridden && (
-              <button
-                onClick={() => {
-                  onModelChange(agentDefaultModel);
-                  setIsOpen(false);
-                }}
-                style={{
-                  background: 'transparent',
-                  border: '1px solid #444',
-                  borderRadius: '3px',
-                  color: '#999',
-                  cursor: 'pointer',
-                  fontSize: '0.65rem',
-                  padding: '3px 8px',
-                  fontFamily: 'monospace',
-                }}
-                title="Revert to agent default"
-              >
-                Reset
-              </button>
-            )}
-            {onSaveAsAgentDefault && selectedModel !== agentDefaultModel && (
-              <button
-                onClick={async () => {
-                  await onSaveAsAgentDefault(selectedModel);
-                  setIsOpen(false);
-                }}
-                style={{
-                  background: '#d97757',
-                  border: 'none',
-                  borderRadius: '3px',
-                  color: '#fff',
-                  cursor: 'pointer',
-                  fontSize: '0.65rem',
-                  padding: '3px 8px',
-                  fontFamily: 'monospace',
-                }}
-                title="Save as agent default (writes AGENT_MODEL in agents.json)"
-              >
-                Save as default
-              </button>
-            )}
-          </div>
         </div>
       )}
     </div>
