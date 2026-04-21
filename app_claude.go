@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,12 +13,58 @@ import (
 	"claudefu/internal/workspace"
 )
 
+// parseClaudeCLIError walks the raw stderr/stdout from Claude CLI looking for
+// the structured JSON lines the CLI emits on error. Returns the HTTP status code
+// (e.g., 429), the human-readable result message, and the resolved model from
+// the system:init event. Any field that can't be parsed returns zero value.
+//
+// Claude CLI error output looks like:
+//   {"type":"system","subtype":"init",...,"model":"claude-sonnet-4-6[1m]",...}
+//   {"type":"rate_limit_event",...}
+//   {"type":"assistant","message":{...}}
+//   {"type":"result","subtype":"success","is_error":true,"api_error_status":429,"result":"API Error: ..."}
+//
+// We scan for type=system/init (for model) and type=result with is_error=true
+// (for status + message).
+func parseClaudeCLIError(rawOutput string) (status int, result, resolvedModel string) {
+	for _, line := range strings.Split(rawOutput, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || !strings.HasPrefix(line, "{") {
+			continue
+		}
+		var probe struct {
+			Type    string `json:"type"`
+			Subtype string `json:"subtype"`
+			IsError bool   `json:"is_error"`
+			Status  int    `json:"api_error_status"`
+			Result  string `json:"result"`
+			Model   string `json:"model"`
+		}
+		if err := json.Unmarshal([]byte(line), &probe); err != nil {
+			continue
+		}
+		if probe.Type == "system" && probe.Subtype == "init" && probe.Model != "" {
+			resolvedModel = probe.Model
+		}
+		if probe.Type == "result" && probe.IsError {
+			if probe.Status != 0 {
+				status = probe.Status
+			}
+			if probe.Result != "" {
+				result = probe.Result
+			}
+		}
+	}
+	return
+}
+
 // =============================================================================
 // CLAUDE CODE METHODS (Bound to frontend)
 // =============================================================================
 
-// emitResponseComplete emits the response_complete event and checks for auth errors.
-func (a *App) emitResponseComplete(agentID, sessionID string, err error) {
+// emitResponseComplete emits the response_complete event and checks for auth/API errors.
+// userModel is what the user selected in the frontend (may be empty = Empty/Default).
+func (a *App) emitResponseComplete(agentID, sessionID, userModel string, err error) {
 	if a.rt == nil {
 		return
 	}
@@ -29,24 +76,27 @@ func (a *App) emitResponseComplete(agentID, sessionID string, err error) {
 	if err != nil && !wasCancelled {
 		errStr := err.Error()
 		payload["error"] = errStr
+
 		// Detect OAuth token expiry and emit auth:expired for frontend modal
 		if strings.Contains(errStr, "authentication_failed") || strings.Contains(errStr, "OAuth token has expired") {
 			a.rt.Emit("auth:expired", agentID, sessionID, map[string]any{
 				"error": errStr,
 			})
+			a.rt.Emit("response_complete", agentID, sessionID, payload)
+			return
 		}
-		// Detect rate limit and emit rate:limited for frontend modal
-		if strings.Contains(errStr, "hit your limit") || strings.Contains(errStr, "rate_limit") {
-			// Extract reset time from message like "resets 10am (America/Los_Angeles)"
-			resetTime := ""
-			if idx := strings.Index(errStr, "resets "); idx >= 0 {
-				resetTime = errStr[idx+7:] // everything after "resets "
-				// Trim trailing quotes/whitespace
-				resetTime = strings.TrimRight(resetTime, "\" \n\r")
-			}
-			a.rt.Emit("rate:limited", agentID, sessionID, map[string]any{
-				"error":     errStr,
-				"resetTime": resetTime,
+
+		// Parse structured CLI error from stderr JSON (status code, result, resolved model).
+		// ALL Claude CLI errors — rate limits, 1M context disabled, auth, etc. — flow
+		// through claude:api-error. The frontend dialog adapts its content based on
+		// status code and result message; one code path, one dialog.
+		status, result, resolvedModel := parseClaudeCLIError(errStr)
+		if status != 0 || result != "" {
+			a.rt.Emit("claude:api-error", agentID, sessionID, map[string]any{
+				"status":        status,
+				"result":        result,
+				"resolvedModel": resolvedModel,
+				"userModel":     userModel,
 			})
 		}
 	}
@@ -84,7 +134,7 @@ func (a *App) SendMessage(agentID, sessionID, message string, attachments []type
 
 	// Emit response_complete event AFTER Claude finishes
 	// This is the authoritative signal that the response is complete
-	a.emitResponseComplete(agentID, sessionID, err)
+	a.emitResponseComplete(agentID, sessionID, model, err)
 
 	return err
 }
@@ -204,8 +254,8 @@ func (a *App) AnswerQuestion(agentID, sessionID, toolUseID string, questions []m
 	// No model/effort override — the agent's configured default (if any) applies via the CLI.
 	err := a.claude.SendMessage(agent.Folder, sessionID, "question answered", nil, false, "", "")
 
-	// Emit response_complete event AFTER Claude finishes
-	a.emitResponseComplete(agentID, sessionID, err)
+	// Emit response_complete event AFTER Claude finishes (no user-selected model in this path)
+	a.emitResponseComplete(agentID, sessionID, "", err)
 
 	return err
 }

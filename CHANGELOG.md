@@ -5,6 +5,16 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.40] - 2026-04-21
+
+### Changed
+- **Replaced "Rate Limit Reached" dialog with generic "Claude API Error" dialog** — The old single-purpose rate-limit dialog only matched by fragile substring (`"hit your limit"`, `"rate_limit"`) and would misfire on unrelated 429s like "Extra usage required for 1M context". The new dialog is driven by structured CLI data parsed from stderr JSON: status code pill, full result message in a monospace code-block, resolved model (from `system:init` event), and a mismatch hint when the user's selected model differs from what the CLI resolved. Rate limits flow through the same dialog (reset time info lives inside the `result` text already).
+- **Consolidated error events** — `rate:limited` event, `claudefu:rate-limited` DOM event, `onRateLimited` callback, and `rateLimitResetTime` state all removed. All Claude CLI API errors now flow through the single `claude:api-error` event with structured payload `{status, result, resolvedModel, userModel}`. One code path, one dialog, strictly more information surfaced.
+
+### Added
+- **`parseClaudeCLIError(rawOutput)` helper** in `app_claude.go` — Walks stderr JSON lines to extract `api_error_status`, `result` text, and resolved `model` from the `system:init` event. Returns zero-values for any field that can't be parsed, so callers can detect "no structured data" and skip the dialog.
+- **Model mismatch hint** — When the user selected Empty/Default, the dialog explains that Claude CLI fell back to the global `/model` setting (which another terminal may have changed). When the user's explicit selection differs from the resolved model, both are shown side-by-side.
+
 ## [0.5.39] - 2026-04-20
 
 ### Added

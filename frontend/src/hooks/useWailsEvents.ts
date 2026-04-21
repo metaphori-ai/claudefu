@@ -303,22 +303,30 @@ export function useWailsEvents() {
     };
   }, []);
 
-  // Subscribe to rate:limited events (usage limit hit)
+  // Subscribe to claude:api-error events (generic Claude CLI API errors — includes rate limits)
   useEffect(() => {
-    const handleRateLimited = (envelope: {
+    const handleApiError = (envelope: {
       agentId?: string;
       sessionId?: string;
-      payload?: { error?: string; resetTime?: string };
+      payload?: { status?: number; result?: string; resolvedModel?: string; userModel?: string };
     }) => {
-      logDebug('WailsEvents', 'RATE_LIMITED', { resetTime: envelope?.payload?.resetTime });
-      window.dispatchEvent(new CustomEvent('claudefu:rate-limited', {
-        detail: { error: envelope?.payload?.error, resetTime: envelope?.payload?.resetTime }
+      logDebug('WailsEvents', 'CLAUDE_API_ERROR', {
+        status: envelope?.payload?.status,
+        resolvedModel: envelope?.payload?.resolvedModel,
+      });
+      window.dispatchEvent(new CustomEvent('claudefu:api-error', {
+        detail: {
+          status: envelope?.payload?.status,
+          result: envelope?.payload?.result,
+          resolvedModel: envelope?.payload?.resolvedModel,
+          userModel: envelope?.payload?.userModel,
+        },
       }));
     };
 
-    EventsOn('rate:limited', handleRateLimited);
+    EventsOn('claude:api-error', handleApiError);
     return () => {
-      EventsOff('rate:limited');
+      EventsOff('claude:api-error');
     };
   }, []);
 

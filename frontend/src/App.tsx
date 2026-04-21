@@ -5,6 +5,7 @@ import { ChatView } from './components/ChatView';
 import type { DraftState } from './components/chat/types';
 import { InputDialog } from './components/InputDialog';
 import { ConfirmDialog } from './components/ConfirmDialog';
+import { DialogBase } from './components/DialogBase';
 import { ManageWorkspacesDialog } from './components/ManageWorkspacesDialog';
 import { ManageAgentsDialog } from './components/ManageAgentsDialog';
 import { WorkspaceDropdown } from './components/WorkspaceDropdown';
@@ -90,7 +91,7 @@ function AppContent() {
   const [isCreatingNewSessionExternally, setIsCreatingNewSessionExternally] = useState<boolean>(false);
   const [terminalOpen, setTerminalOpen] = useState<boolean>(false);
   const [showAuthExpired, setShowAuthExpired] = useState<boolean>(false);
-  const [rateLimitResetTime, setRateLimitResetTime] = useState<string | null>(null);
+  const [apiError, setApiError] = useState<{ status?: number; result?: string; resolvedModel?: string; userModel?: string } | null>(null);
   const [workspaceMetaOpen, setWorkspaceMetaOpen] = useState(false);
   const [scaffoldDialog, setScaffoldDialog] = useState<{
     folder: string;
@@ -664,7 +665,7 @@ function AppContent() {
   // Backend error event listeners (auth expired, rate limited)
   useErrorListeners({
     onAuthExpired: () => setShowAuthExpired(true),
-    onRateLimited: (resetTime: string) => setRateLimitResetTime(resetTime),
+    onApiError: (detail) => setApiError(detail),
   });
 
   // Menu event subscriptions
@@ -1168,15 +1169,90 @@ function AppContent() {
         confirmText="OK"
       />
 
-      {/* Rate Limited Dialog */}
-      <ConfirmDialog
-        isOpen={rateLimitResetTime !== null}
-        onClose={() => setRateLimitResetTime(null)}
-        onConfirm={() => setRateLimitResetTime(null)}
-        title="Rate Limit Reached"
-        message={`You've hit your Claude usage limit.${rateLimitResetTime ? ` Resets ${rateLimitResetTime}.` : ''}`}
-        confirmText="OK"
-      />
+      {/* Claude API Error Dialog — all CLI API errors (rate limits, 1M context disabled, etc.) */}
+      <DialogBase
+        isOpen={apiError !== null}
+        onClose={() => setApiError(null)}
+        title="Claude API Error"
+        width="560px"
+        maxWidth="90vw"
+      >
+        <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          {apiError?.status !== undefined && apiError.status !== 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span style={{ fontSize: '0.75rem', color: '#888', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Status
+              </span>
+              <span style={{
+                padding: '2px 8px',
+                borderRadius: '4px',
+                background: 'rgba(239, 68, 68, 0.12)',
+                border: '1px solid rgba(239, 68, 68, 0.35)',
+                color: '#f87171',
+                fontSize: '0.8rem',
+                fontFamily: 'ui-monospace, monospace',
+                fontWeight: 600,
+              }}>
+                {apiError.status}
+              </span>
+            </div>
+          )}
+
+          {apiError?.result && (
+            <div>
+              <div style={{ fontSize: '0.75rem', color: '#888', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '0.4rem' }}>
+                Message
+              </div>
+              <div style={{
+                padding: '0.75rem 0.9rem',
+                background: '#0f0f0f',
+                border: '1px solid #2a2a2a',
+                borderRadius: '6px',
+                color: '#ddd',
+                fontSize: '0.85rem',
+                fontFamily: 'ui-monospace, monospace',
+                lineHeight: 1.5,
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+              }}>
+                {apiError.result}
+              </div>
+            </div>
+          )}
+
+          {apiError?.resolvedModel && (
+            <div style={{ fontSize: '0.8rem', color: '#999' }}>
+              <span style={{ color: '#666' }}>Model used:</span>{' '}
+              <code style={{ color: '#d97757', fontSize: '0.8rem' }}>{apiError.resolvedModel}</code>
+              {apiError.userModel !== undefined && apiError.userModel !== apiError.resolvedModel && (
+                <div style={{ marginTop: '0.4rem', fontSize: '0.75rem', color: '#888', lineHeight: 1.5 }}>
+                  {apiError.userModel
+                    ? <>Your selection: <code style={{ color: '#aaa' }}>{apiError.userModel}</code> — the CLI resolved to a different model (Empty/Default falls back to your <code>/model</code> setting in Claude CLI, which can be changed from another terminal).</>
+                    : <>You selected <strong>Empty/Default</strong>. Claude CLI fell back to your global <code>/model</code> setting. To force a specific one, pick it in the model picker.</>}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '0.25rem' }}>
+            <button
+              onClick={() => setApiError(null)}
+              style={{
+                padding: '0.5rem 1.25rem',
+                borderRadius: '6px',
+                border: 'none',
+                background: '#d97757',
+                color: '#fff',
+                fontSize: '0.85rem',
+                fontWeight: 500,
+                cursor: 'pointer',
+              }}
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      </DialogBase>
 
       {/* MCP Settings Pane */}
       <MCPSettingsPane
