@@ -187,7 +187,11 @@ func (s *MCPService) Start() error {
 	mcpServer.AddTool(CreateBacklogAddTool(instructions.BacklogAdd), s.handleBacklogAdd)
 	mcpServer.AddTool(CreateBacklogUpdateTool(instructions.BacklogUpdate), s.handleBacklogUpdate)
 	mcpServer.AddTool(CreateBacklogListTool(instructions.BacklogList), s.handleBacklogList)
-	mcpServer.AddTool(CreateMetalogsQueryTool(instructions.MetalogsQuery), s.handleMetalogsQuery)
+	mcpServer.AddTool(CreateMetaserverQueryTool(instructions.MetaserverQuery), s.handleMetaserverQuery)
+	mcpServer.AddTool(CreateMetaserverServicesTool(instructions.MetaserverServices), s.handleMetaserverServices)
+	mcpServer.AddTool(CreateMetaserverStartTool(instructions.MetaserverStart), s.handleMetaserverStart)
+	mcpServer.AddTool(CreateMetaserverStopTool(instructions.MetaserverStop), s.handleMetaserverStop)
+	mcpServer.AddTool(CreateMetaserverRestartTool(instructions.MetaserverRestart), s.handleMetaserverRestart)
 
 	s.server = mcpServer
 

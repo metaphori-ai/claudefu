@@ -276,33 +276,111 @@ func CreateBacklogUpdateTool(instruction string) mcp.Tool {
 	)
 }
 
-// CreateMetalogsQueryTool creates the MetalogsQuery tool definition
-func CreateMetalogsQueryTool(instruction string) mcp.Tool {
-	return mcp.NewTool("MetalogsQuery",
+// CreateMetaserverQueryTool creates the MetaserverQuery tool definition.
+// Replaces the retired MetalogsQuery — queries metaserver's HTTP log API on :9990.
+func CreateMetaserverQueryTool(instruction string) mcp.Tool {
+	return mcp.NewTool("MetaserverQuery",
 		mcp.WithDescription(instruction),
-		mcp.WithString("site",
-			mcp.Description("Filter by site name (e.g., 'prod', 'staging')"),
+		mcp.WithString("services",
+			mcp.Description("CSV of exact service names to filter by (e.g. 'mapi,ta-bff'). Use MetaserverServices to discover."),
 		),
-		mcp.WithString("layer",
-			mcp.Description("Filter by layer (e.g., 'api', 'worker', 'frontend')"),
-		),
-		mcp.WithString("level",
-			mcp.Description("Filter by log level (e.g., 'error', 'warn', 'info', 'debug')"),
+		mcp.WithString("collections",
+			mcp.Description("CSV of collection names — expands to UNION of services in those collections. Examples: 'tm', 'ta', 'mp', 'iapi', 'metaphori', 'cm'."),
 		),
 		mcp.WithString("collection",
-			mcp.Description("Filter by collection name"),
+			mcp.Description("Single-collection alias for collections= (kept for compat with old metalogs queries)."),
 		),
-		mcp.WithString("contains",
-			mcp.Description("Filter log lines containing this text"),
+		mcp.WithString("layers",
+			mcp.Description("CSV of layers to filter by: api, bff, fe."),
+		),
+		mcp.WithString("sites",
+			mcp.Description("CSV of site short_ids."),
+		),
+		mcp.WithString("levels",
+			mcp.Description("CSV of levels: debug,info,warn,error,fatal. Default: 'warn,error,fatal'."),
+		),
+		mcp.WithString("run",
+			mcp.Description("Run window: 'current' (default) | 'previous' | 'last_3' / 'last_5' | 'all' | specific run_id like 'mapi-r47'. Almost always leave at 'current'."),
 		),
 		mcp.WithString("since",
-			mcp.Description("Time window to query (e.g., '1h', '30m', '24h'). Default: '1h'"),
+			mcp.Description("RFC3339 timestamp, duration ('5m', '1h', '24h'), 'last_start', or 'last_restart'."),
+		),
+		mcp.WithString("until",
+			mcp.Description("RFC3339 end timestamp."),
+		),
+		mcp.WithString("contains",
+			mcp.Description("Case-insensitive substring search on message + details."),
+		),
+		mcp.WithString("field",
+			mcp.Description("Match a structured log field — 'key=value' form (e.g. 'trace_id=abc123')."),
 		),
 		mcp.WithNumber("limit",
-			mcp.Description("Maximum number of log lines to return. Default: 50"),
+			mcp.Description("Maximum lines to return. Default 200, max 10000."),
+		),
+		mcp.WithString("order",
+			mcp.Description("'asc' (oldest first) or 'desc' (newest first, default)."),
 		),
 		mcp.WithString("from_agent",
-			mcp.Description("Your agent name/slug for identification (optional)"),
+			mcp.Description("Your agent name/slug for identification (optional)."),
+		),
+	)
+}
+
+// CreateMetaserverServicesTool creates the MetaserverServices tool definition.
+// Discovery — lists all services + collections in one call.
+func CreateMetaserverServicesTool(instruction string) mcp.Tool {
+	return mcp.NewTool("MetaserverServices",
+		mcp.WithDescription(instruction),
+		mcp.WithString("from_agent",
+			mcp.Description("Your agent name/slug for identification (optional)."),
+		),
+	)
+}
+
+// CreateMetaserverStartTool creates the MetaserverStart tool definition.
+// Starts a single service. May block up to 90s if the service has start_after dependencies.
+func CreateMetaserverStartTool(instruction string) mcp.Tool {
+	return mcp.NewTool("MetaserverStart",
+		mcp.WithDescription(instruction),
+		mcp.WithString("name",
+			mcp.Required(),
+			mcp.Description("Exact service name (e.g. 'mapi', 'ta-bff'). Use MetaserverServices to discover."),
+		),
+		mcp.WithString("from_agent",
+			mcp.Description("Your agent name/slug for identification (optional)."),
+		),
+	)
+}
+
+// CreateMetaserverStopTool creates the MetaserverStop tool definition.
+// Stops a single service via SIGTERM-then-SIGKILL on its process group.
+func CreateMetaserverStopTool(instruction string) mcp.Tool {
+	return mcp.NewTool("MetaserverStop",
+		mcp.WithDescription(instruction),
+		mcp.WithString("name",
+			mcp.Required(),
+			mcp.Description("Exact service name (e.g. 'mapi', 'ta-bff'). Use MetaserverServices to discover."),
+		),
+		mcp.WithString("from_agent",
+			mcp.Description("Your agent name/slug for identification (optional)."),
+		),
+	)
+}
+
+// CreateMetaserverRestartTool creates the MetaserverRestart tool definition.
+// Soft restart by default (uses restart_command if configured); force=true does hard kill+respawn.
+func CreateMetaserverRestartTool(instruction string) mcp.Tool {
+	return mcp.NewTool("MetaserverRestart",
+		mcp.WithDescription(instruction),
+		mcp.WithString("name",
+			mcp.Required(),
+			mcp.Description("Exact service name (e.g. 'mapi', 'ta-bff'). Use MetaserverServices to discover."),
+		),
+		mcp.WithBoolean("force",
+			mcp.Description("If true, skip restart_command and do hard kill+respawn. Default false."),
+		),
+		mcp.WithString("from_agent",
+			mcp.Description("Your agent name/slug for identification (optional)."),
 		),
 	)
 }

@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1223,91 +1226,382 @@ func (s *MCPService) handleBacklogList(ctx context.Context, req mcp.CallToolRequ
 // METALOGS QUERY HANDLER
 // =============================================================================
 
-// handleMetalogsQuery handles the MetalogsQuery tool call
-func (s *MCPService) handleMetalogsQuery(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	if !s.toolAvailability.IsEnabled("MetalogsQuery") {
-		return mcp.NewToolResultText("MetalogsQuery is disabled. Enable in MCP Settings > Tool Availability."), nil
+// =============================================================================
+// METASERVER TOOLS
+// =============================================================================
+// metaserver supervises local dev services (mapi, idio, ta-bff, tm-bff, mp-bff,
+// ta-fe, tm-fe, mp-fe) and exposes an HTTP API on 127.0.0.1:9990 for log
+// queries and per-service control. See:
+//   /Users/jasdeep/svml/tda-documents/tools/metaserver/metaserver-api.tda.svml.md
+
+const (
+	metaserverBaseURL     = "http://127.0.0.1:9990"
+	metaserverHTTPTimeout = 30 * time.Second
+)
+
+// metaserverDo performs a method+path call against the local metaserver.
+// Returns the response body bytes, or a helpful error if metaserver is unreachable.
+func metaserverDo(ctx context.Context, method, path string, query url.Values) ([]byte, error) {
+	timeoutCtx, cancel := context.WithTimeout(ctx, metaserverHTTPTimeout)
+	defer cancel()
+
+	u := metaserverBaseURL + path
+	if len(query) > 0 {
+		u += "?" + query.Encode()
 	}
 
-	homeDir, err := os.UserHomeDir()
+	req, err := http.NewRequestWithContext(timeoutCtx, method, u, nil)
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to get home directory: %v", err)), nil
+		return nil, fmt.Errorf("failed to build metaserver request: %v", err)
 	}
-	binary := filepath.Join(homeDir, "go", "bin", "metalogs")
 
-	args := []string{"query", "--json"}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		if timeoutCtx.Err() == context.DeadlineExceeded {
+			return nil, fmt.Errorf("metaserver request timed out after %s", metaserverHTTPTimeout)
+		}
+		return nil, fmt.Errorf("metaserver unreachable at %s — is it running on port 9990? (%v)", metaserverBaseURL, err)
+	}
+	defer resp.Body.Close()
 
-	// Append optional filter flags
-	if v := getOptionalString(req, "site"); v != "" {
-		args = append(args, "--site="+v)
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		// Metaserver error envelope is {error, code} JSON
+		return nil, fmt.Errorf("metaserver returned %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
-	if v := getOptionalString(req, "layer"); v != "" {
-		args = append(args, "--layer="+v)
+	return body, nil
+}
+
+// formatLogLine renders a metaserver LogLine map as a single readable line:
+//
+//	{log_ts} [{service}/{run_id}] {LEVEL} {message}
+//
+// Falls back gracefully when fields are absent.
+func formatLogLine(line map[string]any) string {
+	ts, _ := line["log_ts"].(string)
+	if ts == "" {
+		ts, _ = line["captured_ts"].(string)
 	}
-	if v := getOptionalString(req, "level"); v != "" {
-		args = append(args, "--level="+v)
+	svc, _ := line["service"].(string)
+	runID, _ := line["run_id"].(string)
+	lvl, _ := line["level"].(string)
+	msg, _ := line["message"].(string)
+
+	header := svc
+	if runID != "" {
+		header = svc + "/" + runID
+	}
+	return fmt.Sprintf("%s [%s] %s %s", ts, header, strings.ToUpper(lvl), msg)
+}
+
+// handleMetaserverQuery handles the MetaserverQuery tool call.
+func (s *MCPService) handleMetaserverQuery(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if !s.toolAvailability.IsEnabled("MetaserverQuery") {
+		return mcp.NewToolResultText("MetaserverQuery is disabled. Enable in MCP Settings > Tool Availability."), nil
+	}
+
+	q := url.Values{}
+	if v := getOptionalString(req, "services"); v != "" {
+		q.Set("services", v)
+	}
+	if v := getOptionalString(req, "collections"); v != "" {
+		q.Set("collections", v)
 	}
 	if v := getOptionalString(req, "collection"); v != "" {
-		args = append(args, "--collection="+v)
+		q.Set("collection", v)
+	}
+	if v := getOptionalString(req, "layers"); v != "" {
+		q.Set("layers", v)
+	}
+	if v := getOptionalString(req, "sites"); v != "" {
+		q.Set("sites", v)
+	}
+	if v := getOptionalString(req, "levels"); v != "" {
+		q.Set("levels", v)
+	}
+	if v := getOptionalString(req, "run"); v != "" {
+		q.Set("run", v)
+	}
+	if v := getOptionalString(req, "since"); v != "" {
+		q.Set("since", v)
+	}
+	if v := getOptionalString(req, "until"); v != "" {
+		q.Set("until", v)
 	}
 	if v := getOptionalString(req, "contains"); v != "" {
-		args = append(args, "--contains="+v)
+		q.Set("contains", v)
+	}
+	if v := getOptionalString(req, "field"); v != "" {
+		q.Set("field", v)
+	}
+	if v := getOptionalString(req, "order"); v != "" {
+		q.Set("order", v)
 	}
 
-	// since defaults to "1h" if not provided
-	since := getOptionalString(req, "since")
-	if since == "" {
-		since = "1h"
+	// Smart defaults — apply ONLY if caller did not specify.
+	// run=current scopes to the most recent run of each service (kills pre-restart noise).
+	// levels=warn,error,fatal skips info/debug volume.
+	if q.Get("run") == "" {
+		q.Set("run", "current")
 	}
-	args = append(args, "--since="+since)
+	if q.Get("levels") == "" {
+		q.Set("levels", "warn,error,fatal")
+	}
 
-	// limit defaults to 50 if not provided
-	limit := 50
+	// limit defaults to 200 (max enforced server-side at 10000)
+	limit := 200
 	if reqArgs, ok := req.Params.Arguments.(map[string]any); ok {
 		if f, ok := reqArgs["limit"].(float64); ok && f > 0 {
 			limit = int(f)
 		}
 	}
-	args = append(args, fmt.Sprintf("--limit=%d", limit))
+	q.Set("limit", strconv.Itoa(limit))
 
-	timeoutCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	cmd := exec.CommandContext(timeoutCtx, binary, args...)
-	cmd.Env = providers.BuildShellEnv()
-	out, err := cmd.Output()
+	body, err := metaserverDo(ctx, http.MethodGet, "/api/logs", q)
 	if err != nil {
-		if timeoutCtx.Err() == context.DeadlineExceeded {
-			return mcp.NewToolResultError("MetalogsQuery timed out after 30 seconds"), nil
-		}
-		exitErr, ok := err.(*exec.ExitError)
-		if ok {
-			return mcp.NewToolResultError(fmt.Sprintf("metalogs exited with error: %s", string(exitErr.Stderr))), nil
-		}
-		return mcp.NewToolResultError(fmt.Sprintf("failed to run metalogs: %v", err)), nil
+		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	// Parse JSON output — metalogs --json returns an array of log entry objects
-	var entries []map[string]interface{}
-	if err := json.Unmarshal(out, &entries); err != nil {
-		// If JSON parse fails, return raw output (may be useful for debugging)
-		return mcp.NewToolResultText(string(out)), nil
+	var resp struct {
+		Lines        []map[string]any `json:"lines"`
+		TotalMatched int              `json:"total_matched"`
+		Truncated    bool             `json:"truncated"`
+		QueryTimeMS  int              `json:"query_time_ms"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		// Fall back to raw body — useful for debugging unexpected response shapes
+		return mcp.NewToolResultText(string(body)), nil
 	}
 
-	if len(entries) == 0 {
-		return mcp.NewToolResultText("No log entries found matching the query."), nil
+	if len(resp.Lines) == 0 {
+		return mcp.NewToolResultText(fmt.Sprintf(
+			"No log entries matched (run=%s, levels=%s, query_time=%dms).\n\nTo broaden: include info level (levels=info,warn,error,fatal), expand run window (run=last_3 or run=all), or remove level filter entirely.",
+			q.Get("run"), q.Get("levels"), resp.QueryTimeMS,
+		)), nil
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Found %d log entries:\n\n", len(entries)))
-	for _, entry := range entries {
-		// Format each entry as a single readable line
-		line, _ := json.Marshal(entry)
-		sb.WriteString(string(line))
+	sb.WriteString(fmt.Sprintf("Found %d log entries (total_matched=%d, truncated=%v, query_time=%dms):\n\n",
+		len(resp.Lines), resp.TotalMatched, resp.Truncated, resp.QueryTimeMS))
+	for _, line := range resp.Lines {
+		sb.WriteString(formatLogLine(line))
 		sb.WriteString("\n")
+		// Append details (stack traces, extended errors) indented for readability
+		if details, _ := line["details"].(string); strings.TrimSpace(details) != "" {
+			for _, dl := range strings.Split(strings.TrimRight(details, "\n"), "\n") {
+				sb.WriteString("    ")
+				sb.WriteString(dl)
+				sb.WriteString("\n")
+			}
+		}
+	}
+	return mcp.NewToolResultText(sb.String()), nil
+}
+
+// handleMetaserverServices handles the MetaserverServices tool call.
+// Issues GET /api/services + GET /api/collections and merges into one readable response.
+func (s *MCPService) handleMetaserverServices(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if !s.toolAvailability.IsEnabled("MetaserverServices") {
+		return mcp.NewToolResultText("MetaserverServices is disabled. Enable in MCP Settings > Tool Availability."), nil
+	}
+
+	// Services
+	servicesBody, err := metaserverDo(ctx, http.MethodGet, "/api/services", nil)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	var services []map[string]any
+	if err := json.Unmarshal(servicesBody, &services); err != nil {
+		return mcp.NewToolResultText(string(servicesBody)), nil
+	}
+
+	// Collections (best-effort — don't fail the whole call if unreachable)
+	collectionsBody, collErr := metaserverDo(ctx, http.MethodGet, "/api/collections", nil)
+	var collections []map[string]any
+	if collErr == nil {
+		_ = json.Unmarshal(collectionsBody, &collections)
+	}
+
+	var sb strings.Builder
+
+	// Services section — count running first for the header line
+	running := 0
+	for _, svc := range services {
+		if state, _ := svc["state"].(string); state == "running" {
+			running++
+		}
+	}
+	sb.WriteString(fmt.Sprintf("SERVICES (%d running, %d total):\n", running, len(services)))
+	for _, svc := range services {
+		stateRaw, _ := svc["state"].(string)
+		runID, _ := svc["run_id"].(string)
+		uptimeF, _ := svc["uptime_seconds"].(float64)
+
+		// Service name lives inside config — defensive extraction
+		name := ""
+		layer := ""
+		if cfg, ok := svc["config"].(map[string]any); ok {
+			name, _ = cfg["name"].(string)
+			layer, _ = cfg["layer"].(string)
+		}
+
+		// Status glyph maps to state for quick visual scan
+		glyph := "○"
+		switch strings.ToLower(stateRaw) {
+		case "running":
+			glyph = "●"
+		case "starting", "stopping":
+			glyph = "◐"
+		case "crashed", "failed":
+			glyph = "✕"
+		}
+
+		details := strings.ToLower(stateRaw)
+		if runID != "" {
+			details = fmt.Sprintf("%s, run=%s", details, runID)
+		}
+		if uptimeF > 0 {
+			details = fmt.Sprintf("%s, up %s", details, formatUptime(int64(uptimeF)))
+		}
+		sb.WriteString(fmt.Sprintf("  %s %-12s (%s, %s)\n", glyph, name, layer, details))
+	}
+
+	// Collections section
+	if len(collections) > 0 {
+		sb.WriteString("\nCOLLECTIONS:\n")
+		for _, c := range collections {
+			cname, _ := c["name"].(string)
+			svcsRaw, _ := c["services"].([]any)
+			svcs := make([]string, 0, len(svcsRaw))
+			for _, v := range svcsRaw {
+				if s, ok := v.(string); ok {
+					svcs = append(svcs, s)
+				}
+			}
+			sb.WriteString(fmt.Sprintf("  %-10s → %s\n", cname, strings.Join(svcs, ", ")))
+		}
+	} else if collErr != nil {
+		sb.WriteString(fmt.Sprintf("\nCOLLECTIONS: (unavailable — %v)\n", collErr))
 	}
 
 	return mcp.NewToolResultText(sb.String()), nil
+}
+
+// formatUptime renders seconds as "1h23m" / "45m" / "12s" for compact display.
+func formatUptime(seconds int64) string {
+	if seconds <= 0 {
+		return "0s"
+	}
+	h := seconds / 3600
+	m := (seconds % 3600) / 60
+	s := seconds % 60
+	switch {
+	case h > 0:
+		return fmt.Sprintf("%dh%dm", h, m)
+	case m > 0:
+		return fmt.Sprintf("%dm", m)
+	default:
+		return fmt.Sprintf("%ds", s)
+	}
+}
+
+// renderStatusResponse formats metaserver's StatusResponse JSON as readable text.
+func renderStatusResponse(body []byte, fallbackVerb string) string {
+	var sr struct {
+		Service   string `json:"service"`
+		State     string `json:"state"`
+		RunID     string `json:"run_id"`
+		PID       int    `json:"pid"`
+		StartedAt string `json:"started_at"`
+		Message   string `json:"message"`
+	}
+	if err := json.Unmarshal(body, &sr); err != nil {
+		return string(body)
+	}
+	parts := []string{fmt.Sprintf("%s: %s", fallbackVerb, sr.Service)}
+	if sr.State != "" {
+		parts = append(parts, fmt.Sprintf("state=%s", sr.State))
+	}
+	if sr.RunID != "" {
+		parts = append(parts, fmt.Sprintf("run_id=%s", sr.RunID))
+	}
+	if sr.PID > 0 {
+		parts = append(parts, fmt.Sprintf("pid=%d", sr.PID))
+	}
+	if sr.StartedAt != "" {
+		parts = append(parts, fmt.Sprintf("started_at=%s", sr.StartedAt))
+	}
+	out := strings.Join(parts, " ")
+	if sr.Message != "" {
+		out += "\n" + sr.Message
+	}
+	return out
+}
+
+// handleMetaserverStart handles the MetaserverStart tool call.
+func (s *MCPService) handleMetaserverStart(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if !s.toolAvailability.IsEnabled("MetaserverStart") {
+		return mcp.NewToolResultText("MetaserverStart is disabled. Enable in MCP Settings > Tool Availability."), nil
+	}
+	name := getOptionalString(req, "name")
+	if name == "" {
+		return mcp.NewToolResultError("'name' parameter is required"), nil
+	}
+	body, err := metaserverDo(ctx, http.MethodPost, "/api/services/"+url.PathEscape(name)+"/start", nil)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	return mcp.NewToolResultText(renderStatusResponse(body, "Started")), nil
+}
+
+// handleMetaserverStop handles the MetaserverStop tool call.
+func (s *MCPService) handleMetaserverStop(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if !s.toolAvailability.IsEnabled("MetaserverStop") {
+		return mcp.NewToolResultText("MetaserverStop is disabled. Enable in MCP Settings > Tool Availability."), nil
+	}
+	name := getOptionalString(req, "name")
+	if name == "" {
+		return mcp.NewToolResultError("'name' parameter is required"), nil
+	}
+	body, err := metaserverDo(ctx, http.MethodPost, "/api/services/"+url.PathEscape(name)+"/stop", nil)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	return mcp.NewToolResultText(renderStatusResponse(body, "Stopped")), nil
+}
+
+// handleMetaserverRestart handles the MetaserverRestart tool call.
+// Soft restart by default; force=true does hard kill+respawn.
+func (s *MCPService) handleMetaserverRestart(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if !s.toolAvailability.IsEnabled("MetaserverRestart") {
+		return mcp.NewToolResultText("MetaserverRestart is disabled. Enable in MCP Settings > Tool Availability."), nil
+	}
+	name := getOptionalString(req, "name")
+	if name == "" {
+		return mcp.NewToolResultError("'name' parameter is required"), nil
+	}
+
+	// force is an optional boolean — same extraction pattern as the limit number param
+	force := false
+	if reqArgs, ok := req.Params.Arguments.(map[string]any); ok {
+		if b, ok := reqArgs["force"].(bool); ok {
+			force = b
+		}
+	}
+
+	q := url.Values{}
+	if force {
+		q.Set("force", "true")
+	}
+	body, err := metaserverDo(ctx, http.MethodPost, "/api/services/"+url.PathEscape(name)+"/restart", q)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	verb := "Restarted (soft)"
+	if force {
+		verb = "Restarted (hard)"
+	}
+	return mcp.NewToolResultText(renderStatusResponse(body, verb)), nil
 }
 
 // resolveAgentID resolves an agent identifier (UUID, slug, or name) to an agent UUID.

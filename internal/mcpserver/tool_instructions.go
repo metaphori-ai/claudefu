@@ -31,7 +31,11 @@ type ToolInstructions struct {
 	BacklogAdd              string `json:"backlogAdd"`              // BacklogAdd tool description
 	BacklogUpdate           string `json:"backlogUpdate"`           // BacklogUpdate tool description
 	BacklogList             string `json:"backlogList"`             // BacklogList tool description
-	MetalogsQuery           string `json:"metalogsQuery"`           // MetalogsQuery tool description
+	MetaserverQuery         string `json:"metaserverQuery"`         // MetaserverQuery tool description
+	MetaserverServices      string `json:"metaserverServices"`      // MetaserverServices tool description
+	MetaserverStart         string `json:"metaserverStart"`         // MetaserverStart tool description
+	MetaserverStop          string `json:"metaserverStop"`          // MetaserverStop tool description
+	MetaserverRestart       string `json:"metaserverRestart"`       // MetaserverRestart tool description
 }
 
 // ToolInstructionsManager handles loading and saving tool instructions
@@ -180,8 +184,24 @@ func (m *ToolInstructionsManager) load() error {
 		ti.BacklogList = defaults.BacklogList
 		needsSave = true
 	}
-	if ti.MetalogsQuery == "" {
-		ti.MetalogsQuery = defaults.MetalogsQuery
+	if ti.MetaserverQuery == "" {
+		ti.MetaserverQuery = defaults.MetaserverQuery
+		needsSave = true
+	}
+	if ti.MetaserverServices == "" {
+		ti.MetaserverServices = defaults.MetaserverServices
+		needsSave = true
+	}
+	if ti.MetaserverStart == "" {
+		ti.MetaserverStart = defaults.MetaserverStart
+		needsSave = true
+	}
+	if ti.MetaserverStop == "" {
+		ti.MetaserverStop = defaults.MetaserverStop
+		needsSave = true
+	}
+	if ti.MetaserverRestart == "" {
+		ti.MetaserverRestart = defaults.MetaserverRestart
 		needsSave = true
 	}
 

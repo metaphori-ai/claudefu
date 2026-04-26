@@ -5,6 +5,32 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.41] - 2026-04-26
+
+### Removed
+- **`MetalogsQuery` MCP tool** — fully retired. The standalone `metalogs` daemon (port 9999) and `~/go/bin/metalogs` CLI are gone, replaced by **metaserver** (port 9990) which combines per-service process supervision with in-memory log ring buffers. `mcp__claudefu__MetalogsQuery` no longer exists in the MCP allow-list, the tool no longer registers, and the `metalogsQuery` keys in the availability/instructions structs are removed. Existing on-disk JSON files with `"metalogsQuery": ...` keys are silently dropped on next load — no migration code needed.
+
+### Added
+- **Five new MCP tools** wrapping the metaserver HTTP API at `127.0.0.1:9990`:
+  - **`MetaserverQuery`** — query logs from local dev services (mapi, idio, ta-bff, tm-bff, mp-bff, ta-fe, tm-fe, mp-fe). Smart defaults applied automatically when caller omits them: `run=current` (most recent run of each service), `levels=warn,error,fatal`, `limit=200`, `order=desc`. Killer feature is `run=current` — agents stop drowning in pre-restart noise. Empty results return a "broaden by including info / expanding run window / removing filters" hint instead of just "no entries". Supports `services`, `collections` (csv), `collection` (single alias), `layers`, `sites`, `levels`, `run`, `since` (RFC3339 / duration / `last_start` / `last_restart`), `until`, `contains`, `field` (`key=value` structured-field match — string values only), `limit`, `order`.
+  - **`MetaserverServices`** — discovery in one call. Hits `GET /api/services` + `GET /api/collections` and renders services grouped with status glyphs (`●` running, `○` stopped, `◐` starting/stopping, `✕` crashed/failed) plus collection→services mapping (`tm` → `mapi, tm-bff, tm-fe`).
+  - **`MetaserverStart`** — start a single service by name. Blocks up to 90s if the service has `start_after` dependencies (e.g., bff waits for mapi to be Ready).
+  - **`MetaserverStop`** — stop a single service by name. SIGTERM → 10s grace → SIGKILL on the process group.
+  - **`MetaserverRestart`** — restart a single service. Soft restart by default (uses `restart_command` if configured — e.g., IDIO's `(restart)` over its socket REPL keeps PID + run_id continuous, saving JVM warm-up). Pass `force=true` for a hard kill+respawn that advances the run_id.
+- All five tools default to **disabled** (opt-in via MCP Settings → Tool Availability → Development Utilities).
+- **Shared `metaserverDo` HTTP helper** in `internal/mcpserver/handlers.go` — single-method+path entrypoint with 30s timeout, 4xx/5xx body capture, and a friendly "metaserver unreachable at … — is it running on port 9990?" error when the local daemon isn't up.
+- **Per-tool description in MCP Settings → Tool Instructions** — each of the 5 tools has its own configurable textarea, mirroring the existing pattern for backlog/agent tools.
+
+### Changed
+- **MCP allow-list** in `internal/providers/claudecode.go` swapped `mcp__claudefu__MetalogsQuery` for the five `mcp__claudefu__Metaserver*` entries.
+- **MCPSettingsPane.tsx** — Development Utilities section now lists 5 toggles (was 1); Tool Instructions tab renders 5 textareas (was 1).
+- **`field=` doc in `MetaserverQuery` instructions** clarifies that the parameter only matches string-valued structured fields. Numeric fields like `status_code` or `duration` are not searchable this way; agents should use `contains=status_code=500` as a substring fallback.
+
+### Notes
+- Frontend `wailsjs/go/models.ts` is git-tracked in this project; the `ToolAvailability` and `ToolInstructions` type definitions were updated in lockstep with the Go struct changes so `wails dev` stays compilable without an explicit binding regeneration step.
+- Persistence migration was zero-effort by design — `tool_availability.go::load()` and `tool_instructions.go::load()` both seed structs from `Default*()` defaults before unmarshaling, so unknown JSON keys silently drop and missing keys default cleanly.
+- TDA documentation (`claudefu-mcp.tda.svml.md`, `claudefu.tda.svml.md`, `metaserver-api.tda.svml.md`) reflects the new tool surface.
+
 ## [0.5.40] - 2026-04-21
 
 ### Changed

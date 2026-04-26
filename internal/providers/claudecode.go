@@ -436,7 +436,11 @@ func (s *ClaudeCodeService) buildPermissionArgs(folder string) []string {
 			"mcp__claudefu__BacklogAdd",
 			"mcp__claudefu__BacklogUpdate",
 			"mcp__claudefu__BacklogList",
-			"mcp__claudefu__MetalogsQuery",
+			"mcp__claudefu__MetaserverQuery",
+			"mcp__claudefu__MetaserverServices",
+			"mcp__claudefu__MetaserverStart",
+			"mcp__claudefu__MetaserverStop",
+			"mcp__claudefu__MetaserverRestart",
 		}
 		allowedPatterns = append(allowedPatterns, mcpTools...)
 	}

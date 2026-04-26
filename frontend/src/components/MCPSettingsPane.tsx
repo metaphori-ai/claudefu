@@ -703,17 +703,73 @@ export function MCPSettingsPane({
                       flexDirection: 'column',
                       gap: '0.75rem',
                     }}>
-                      {/* MetalogsQuery */}
+                      {/* MetaserverQuery */}
                       <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
                         <input
                           type="checkbox"
-                          checked={toolAvailability.metalogsQuery}
-                          onChange={(e) => updateAvailability('metalogsQuery', e.target.checked)}
+                          checked={toolAvailability.metaserverQuery}
+                          onChange={(e) => updateAvailability('metaserverQuery', e.target.checked)}
                           style={{ width: '18px', height: '18px', accentColor: '#d97757' }}
                         />
                         <div>
-                          <span style={{ color: '#fff' }}>MetalogsQuery</span>
-                          <span style={{ color: '#666', marginLeft: '0.75rem', fontSize: '0.85rem' }}>Query Metalogs log aggregation (requires ~/go/bin/metalogs)</span>
+                          <span style={{ color: '#fff' }}>MetaserverQuery</span>
+                          <span style={{ color: '#666', marginLeft: '0.75rem', fontSize: '0.85rem' }}>Query logs from local dev services (requires metaserver on :9990)</span>
+                        </div>
+                      </label>
+
+                      {/* MetaserverServices */}
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={toolAvailability.metaserverServices}
+                          onChange={(e) => updateAvailability('metaserverServices', e.target.checked)}
+                          style={{ width: '18px', height: '18px', accentColor: '#d97757' }}
+                        />
+                        <div>
+                          <span style={{ color: '#fff' }}>MetaserverServices</span>
+                          <span style={{ color: '#666', marginLeft: '0.75rem', fontSize: '0.85rem' }}>List configured services + collections (discovery)</span>
+                        </div>
+                      </label>
+
+                      {/* MetaserverStart */}
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={toolAvailability.metaserverStart}
+                          onChange={(e) => updateAvailability('metaserverStart', e.target.checked)}
+                          style={{ width: '18px', height: '18px', accentColor: '#d97757' }}
+                        />
+                        <div>
+                          <span style={{ color: '#fff' }}>MetaserverStart</span>
+                          <span style={{ color: '#666', marginLeft: '0.75rem', fontSize: '0.85rem' }}>Start a single service by name</span>
+                        </div>
+                      </label>
+
+                      {/* MetaserverStop */}
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={toolAvailability.metaserverStop}
+                          onChange={(e) => updateAvailability('metaserverStop', e.target.checked)}
+                          style={{ width: '18px', height: '18px', accentColor: '#d97757' }}
+                        />
+                        <div>
+                          <span style={{ color: '#fff' }}>MetaserverStop</span>
+                          <span style={{ color: '#666', marginLeft: '0.75rem', fontSize: '0.85rem' }}>Stop a single service by name (destructive)</span>
+                        </div>
+                      </label>
+
+                      {/* MetaserverRestart */}
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={toolAvailability.metaserverRestart}
+                          onChange={(e) => updateAvailability('metaserverRestart', e.target.checked)}
+                          style={{ width: '18px', height: '18px', accentColor: '#d97757' }}
+                        />
+                        <div>
+                          <span style={{ color: '#fff' }}>MetaserverRestart</span>
+                          <span style={{ color: '#666', marginLeft: '0.75rem', fontSize: '0.85rem' }}>Restart a service (soft via restart_command, or force=true for hard)</span>
                         </div>
                       </label>
                     </div>
@@ -1221,7 +1277,7 @@ export function MCPSettingsPane({
                     />
                   </div>
 
-                  {/* MetalogsQuery */}
+                  {/* MetaserverQuery */}
                   <div>
                     <label style={{
                       display: 'block',
@@ -1230,14 +1286,146 @@ export function MCPSettingsPane({
                       fontWeight: 500,
                       marginBottom: '0.5rem',
                     }}>
-                      MetalogsQuery
+                      MetaserverQuery
                       <span style={{ color: '#666', fontWeight: 400, marginLeft: '0.5rem' }}>
-                        (query Metalogs log aggregation system)
+                        (query logs from local dev services via metaserver)
                       </span>
                     </label>
                     <textarea
-                      value={toolInstructions.metalogsQuery || ''}
-                      onChange={(e) => updateInstruction('metalogsQuery', e.target.value)}
+                      value={toolInstructions.metaserverQuery || ''}
+                      onChange={(e) => updateInstruction('metaserverQuery', e.target.value)}
+                      rows={5}
+                      style={{
+                        width: '100%',
+                        padding: '0.6rem',
+                        borderRadius: '4px',
+                        border: '1px solid #333',
+                        background: '#0a0a0a',
+                        color: '#fff',
+                        fontSize: '0.8rem',
+                        fontFamily: 'monospace',
+                        resize: 'vertical',
+                        lineHeight: '1.4',
+                      }}
+                    />
+                  </div>
+
+                  {/* MetaserverServices */}
+                  <div>
+                    <label style={{
+                      display: 'block',
+                      color: '#d97757',
+                      fontSize: '0.8rem',
+                      fontWeight: 500,
+                      marginBottom: '0.5rem',
+                    }}>
+                      MetaserverServices
+                      <span style={{ color: '#666', fontWeight: 400, marginLeft: '0.5rem' }}>
+                        (list services + collections — discovery)
+                      </span>
+                    </label>
+                    <textarea
+                      value={toolInstructions.metaserverServices || ''}
+                      onChange={(e) => updateInstruction('metaserverServices', e.target.value)}
+                      rows={5}
+                      style={{
+                        width: '100%',
+                        padding: '0.6rem',
+                        borderRadius: '4px',
+                        border: '1px solid #333',
+                        background: '#0a0a0a',
+                        color: '#fff',
+                        fontSize: '0.8rem',
+                        fontFamily: 'monospace',
+                        resize: 'vertical',
+                        lineHeight: '1.4',
+                      }}
+                    />
+                  </div>
+
+                  {/* MetaserverStart */}
+                  <div>
+                    <label style={{
+                      display: 'block',
+                      color: '#d97757',
+                      fontSize: '0.8rem',
+                      fontWeight: 500,
+                      marginBottom: '0.5rem',
+                    }}>
+                      MetaserverStart
+                      <span style={{ color: '#666', fontWeight: 400, marginLeft: '0.5rem' }}>
+                        (start a single service by name)
+                      </span>
+                    </label>
+                    <textarea
+                      value={toolInstructions.metaserverStart || ''}
+                      onChange={(e) => updateInstruction('metaserverStart', e.target.value)}
+                      rows={5}
+                      style={{
+                        width: '100%',
+                        padding: '0.6rem',
+                        borderRadius: '4px',
+                        border: '1px solid #333',
+                        background: '#0a0a0a',
+                        color: '#fff',
+                        fontSize: '0.8rem',
+                        fontFamily: 'monospace',
+                        resize: 'vertical',
+                        lineHeight: '1.4',
+                      }}
+                    />
+                  </div>
+
+                  {/* MetaserverStop */}
+                  <div>
+                    <label style={{
+                      display: 'block',
+                      color: '#d97757',
+                      fontSize: '0.8rem',
+                      fontWeight: 500,
+                      marginBottom: '0.5rem',
+                    }}>
+                      MetaserverStop
+                      <span style={{ color: '#666', fontWeight: 400, marginLeft: '0.5rem' }}>
+                        (stop a single service by name)
+                      </span>
+                    </label>
+                    <textarea
+                      value={toolInstructions.metaserverStop || ''}
+                      onChange={(e) => updateInstruction('metaserverStop', e.target.value)}
+                      rows={5}
+                      style={{
+                        width: '100%',
+                        padding: '0.6rem',
+                        borderRadius: '4px',
+                        border: '1px solid #333',
+                        background: '#0a0a0a',
+                        color: '#fff',
+                        fontSize: '0.8rem',
+                        fontFamily: 'monospace',
+                        resize: 'vertical',
+                        lineHeight: '1.4',
+                      }}
+                    />
+                  </div>
+
+                  {/* MetaserverRestart */}
+                  <div>
+                    <label style={{
+                      display: 'block',
+                      color: '#d97757',
+                      fontSize: '0.8rem',
+                      fontWeight: 500,
+                      marginBottom: '0.5rem',
+                    }}>
+                      MetaserverRestart
+                      <span style={{ color: '#666', fontWeight: 400, marginLeft: '0.5rem' }}>
+                        (restart a service — soft default, force=true for hard)
+                      </span>
+                    </label>
+                    <textarea
+                      value={toolInstructions.metaserverRestart || ''}
+                      onChange={(e) => updateInstruction('metaserverRestart', e.target.value)}
                       rows={5}
                       style={{
                         width: '100%',

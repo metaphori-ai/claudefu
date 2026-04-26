@@ -377,7 +377,11 @@ export namespace mcpserver {
 	    backlogAdd: boolean;
 	    backlogUpdate: boolean;
 	    backlogList: boolean;
-	    metalogsQuery: boolean;
+	    metaserverQuery: boolean;
+	    metaserverServices: boolean;
+	    metaserverStart: boolean;
+	    metaserverStop: boolean;
+	    metaserverRestart: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new ToolAvailability(source);
@@ -397,7 +401,11 @@ export namespace mcpserver {
 	        this.backlogAdd = source["backlogAdd"];
 	        this.backlogUpdate = source["backlogUpdate"];
 	        this.backlogList = source["backlogList"];
-	        this.metalogsQuery = source["metalogsQuery"];
+	        this.metaserverQuery = source["metaserverQuery"];
+	        this.metaserverServices = source["metaserverServices"];
+	        this.metaserverStart = source["metaserverStart"];
+	        this.metaserverStop = source["metaserverStop"];
+	        this.metaserverRestart = source["metaserverRestart"];
 	    }
 	}
 	export class ToolInstructions {
@@ -417,7 +425,11 @@ export namespace mcpserver {
 	    backlogAdd: string;
 	    backlogUpdate: string;
 	    backlogList: string;
-	    metalogsQuery: string;
+	    metaserverQuery: string;
+	    metaserverServices: string;
+	    metaserverStart: string;
+	    metaserverStop: string;
+	    metaserverRestart: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ToolInstructions(source);
@@ -441,7 +453,11 @@ export namespace mcpserver {
 	        this.backlogAdd = source["backlogAdd"];
 	        this.backlogUpdate = source["backlogUpdate"];
 	        this.backlogList = source["backlogList"];
-	        this.metalogsQuery = source["metalogsQuery"];
+	        this.metaserverQuery = source["metaserverQuery"];
+	        this.metaserverServices = source["metaserverServices"];
+	        this.metaserverStart = source["metaserverStart"];
+	        this.metaserverStop = source["metaserverStop"];
+	        this.metaserverRestart = source["metaserverRestart"];
 	    }
 	}
 

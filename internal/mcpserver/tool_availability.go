@@ -25,7 +25,11 @@ type ToolAvailability struct {
 	BacklogAdd            bool `json:"backlogAdd"`            // Enabled by default
 	BacklogUpdate         bool `json:"backlogUpdate"`         // Enabled by default
 	BacklogList           bool `json:"backlogList"`           // Enabled by default
-	MetalogsQuery         bool `json:"metalogsQuery"`         // Disabled by default - requires metalogs CLI
+	MetaserverQuery       bool `json:"metaserverQuery"`       // Disabled by default - requires metaserver on :9990
+	MetaserverServices    bool `json:"metaserverServices"`    // Disabled by default - requires metaserver on :9990
+	MetaserverStart       bool `json:"metaserverStart"`       // Disabled by default - requires metaserver on :9990
+	MetaserverStop        bool `json:"metaserverStop"`        // Disabled by default - requires metaserver on :9990
+	MetaserverRestart     bool `json:"metaserverRestart"`     // Disabled by default - requires metaserver on :9990
 }
 
 // ToolAvailabilityManager handles loading and saving tool availability settings
@@ -61,7 +65,11 @@ func DefaultToolAvailability() *ToolAvailability {
 		BacklogAdd:            true,  // Enabled by default
 		BacklogUpdate:         true,  // Enabled by default
 		BacklogList:           true,  // Enabled by default
-		MetalogsQuery:         false, // Disabled by default - requires metalogs CLI at ~/go/bin/metalogs
+		MetaserverQuery:       false, // Disabled by default - requires metaserver on :9990
+		MetaserverServices:    false, // Disabled by default - requires metaserver on :9990
+		MetaserverStart:       false, // Disabled by default - requires metaserver on :9990
+		MetaserverStop:        false, // Disabled by default - requires metaserver on :9990
+		MetaserverRestart:     false, // Disabled by default - requires metaserver on :9990
 	}
 }
 
@@ -102,8 +110,16 @@ func (m *ToolAvailabilityManager) IsEnabled(toolName string) bool {
 		return m.availability.BacklogUpdate
 	case "BacklogList":
 		return m.availability.BacklogList
-	case "MetalogsQuery":
-		return m.availability.MetalogsQuery
+	case "MetaserverQuery":
+		return m.availability.MetaserverQuery
+	case "MetaserverServices":
+		return m.availability.MetaserverServices
+	case "MetaserverStart":
+		return m.availability.MetaserverStart
+	case "MetaserverStop":
+		return m.availability.MetaserverStop
+	case "MetaserverRestart":
+		return m.availability.MetaserverRestart
 	default:
 		return false
 	}
