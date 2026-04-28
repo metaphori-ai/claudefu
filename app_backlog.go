@@ -73,7 +73,9 @@ func (a *App) MoveBacklogItem(agentID, id, newParentID, afterID string) bool {
 	return ok
 }
 
-// GetBacklogCount returns the number of non-done backlog items for an agent (for badge)
+// GetBacklogCount returns the number of non-done backlog items for an agent (for badge).
+// Returns 0 during the startup race where mcpServer is not yet wired —
+// the Sidebar listens for the "mcp:ready" event to re-poll once initialization completes.
 func (a *App) GetBacklogCount(agentID string) int {
 	if a.mcpServer == nil {
 		return 0

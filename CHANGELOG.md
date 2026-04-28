@@ -5,6 +5,11 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.42] - 2026-04-27
+
+### Fixed
+- **Sidebar inbox/backlog counts not populating on initial load** — On slower hardware (M2 Max 32GB observed; M5 Max unaffected), the Sidebar's mount-time `loadCounts` could fire while `a.mcpServer` was still `nil` on the Go side. The bound methods `GetInboxUnreadCount` / `GetInboxTotalCount` / `GetBacklogCount` would silently return 0, and React would cache those zeros until the user did something to force a reload (HMR edit, right-click reload, or workspace switch). Now Go emits a `mcp:ready` event after `LoadInbox` and `LoadBacklog` complete, and the Sidebar listens for it and re-polls. Bound methods stay no-throw on nil mcpServer (returns 0 with a doc comment explaining the race) so the new event listener is purely additive — no code path that previously worked has changed behavior.
+
 ## [0.5.41] - 2026-04-26
 
 ### Removed

@@ -21,7 +21,9 @@ func (a *App) GetInboxMessages(agentID string) []mcpserver.InboxMessage {
 	return a.mcpServer.GetInbox().GetMessages(agentID)
 }
 
-// GetInboxUnreadCount returns the number of unread inbox messages for an agent
+// GetInboxUnreadCount returns the number of unread inbox messages for an agent.
+// Returns 0 during the startup race where mcpServer is not yet wired —
+// the Sidebar listens for the "mcp:ready" event to re-poll once initialization completes.
 func (a *App) GetInboxUnreadCount(agentID string) int {
 	if a.mcpServer == nil {
 		return 0
@@ -29,7 +31,9 @@ func (a *App) GetInboxUnreadCount(agentID string) int {
 	return a.mcpServer.GetInbox().GetUnreadCount(agentID)
 }
 
-// GetInboxTotalCount returns the total number of inbox messages for an agent
+// GetInboxTotalCount returns the total number of inbox messages for an agent.
+// Returns 0 during the startup race where mcpServer is not yet wired —
+// the Sidebar listens for the "mcp:ready" event to re-poll once initialization completes.
 func (a *App) GetInboxTotalCount(agentID string) int {
 	if a.mcpServer == nil {
 		return 0

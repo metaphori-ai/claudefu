@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   SelectWorkspaceFolder,
   GetSessions,
@@ -27,6 +27,7 @@ import { GlobalSettingsDialog } from './GlobalSettingsDialog';
 import { AddAgentDialog } from './AddAgentDialog';
 import { ConfirmDialog } from './ConfirmDialog';
 import { RefreshMenu } from '../../wailsjs/go/main/App';
+import { EventsOn, EventsOff } from '../../wailsjs/runtime/runtime';
 import { workspace, types } from '../../wailsjs/go/models';
 import { useWorkspace, useSession, useSessionName, useAgentUnread } from '../hooks';
 import { BacklogItem, BacklogStatus, BacklogType } from './backlog/types';
@@ -114,29 +115,53 @@ export function Sidebar({
     initialContext?: string;
   }>({ isOpen: false, agentId: '', item: null });
 
-  // Load initial inbox counts and backlog counts for all agents
-  useEffect(() => {
-    const loadCounts = async () => {
-      for (const agent of agents) {
-        try {
-          const [unread, total] = await Promise.all([
-            GetInboxUnreadCount(agent.id),
-            GetInboxTotalCount(agent.id)
-          ]);
-          setInboxCounts(agent.id, unread, total);
-        } catch (err) {
-          // Ignore errors - MCP might not be enabled for this agent
-        }
-        try {
-          const count = await GetBacklogCount(agent.id);
-          setBacklogCount(agent.id, count);
-        } catch (err) {
-          // Ignore errors
-        }
+  // Ref-stable list of current agents for use inside the mcp:ready listener
+  // so it always sees the latest agents without re-subscribing.
+  const agentsRef = React.useRef(agents);
+  agentsRef.current = agents;
+
+  // Reusable count loader — called from the agents-changed effect AND from the
+  // mcp:ready event listener so we recover from the startup-order race where
+  // bound methods get called while a.mcpServer is still nil on the Go side.
+  const loadCountsForAgents = React.useCallback(async () => {
+    const list = agentsRef.current;
+    if (list.length === 0) return;
+    for (const agent of list) {
+      try {
+        const [unread, total] = await Promise.all([
+          GetInboxUnreadCount(agent.id),
+          GetInboxTotalCount(agent.id),
+        ]);
+        setInboxCounts(agent.id, unread, total);
+      } catch {
+        // MCP may not be enabled for this agent — leave counts at default
       }
-    };
-    loadCounts();
-  }, [agents, setInboxCounts, setBacklogCount]);
+      try {
+        const count = await GetBacklogCount(agent.id);
+        setBacklogCount(agent.id, count);
+      } catch {
+        // Backlog DB may not exist yet — leave count at default
+      }
+    }
+  }, [setInboxCounts, setBacklogCount]);
+
+  // Load counts whenever the agents array changes. Re-running on a fresh
+  // reference (e.g., after refreshAgentsFromBackend) is intentional — bound
+  // methods are cheap (SQLite COUNT queries), and over-firing keeps counts
+  // fresh after slug renames, MCP toggles, etc.
+  useEffect(() => {
+    loadCountsForAgents();
+  }, [agents, loadCountsForAgents]);
+
+  // Re-poll once the Go-side MCP server + inbox + backlog finish initializing.
+  // On slower hardware, the initial mount-time loadCounts can fire while
+  // a.mcpServer is still nil — the bound methods then silently return 0 and the
+  // 0s get cached in React state. The "mcp:ready" event tells us we're past
+  // the startup race and can fetch real values.
+  useEffect(() => {
+    EventsOn('mcp:ready', () => loadCountsForAgents());
+    return () => { EventsOff('mcp:ready'); };
+  }, [loadCountsForAgents]);
 
   // Load session names for all agents on mount and when agents change
   useEffect(() => {

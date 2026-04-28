@@ -609,6 +609,15 @@ func (a *App) initializeMCPServer() {
 			wailsrt.LogWarning(a.ctx, fmt.Sprintf("Failed to load backlog: %v", err))
 		}
 	}
+
+	// Signal frontend that MCP server + inbox + backlog are fully loaded.
+	// On slower machines (or when Wails dev re-initializes), the Sidebar's
+	// initial loadCounts may run while a.mcpServer is still nil — silently
+	// returning 0 and caching that in React state. This event lets the
+	// Sidebar re-poll once the backend is actually ready.
+	if a.ctx != nil {
+		wailsrt.EventsEmit(a.ctx, "mcp:ready")
+	}
 }
 
 // emitInitialState emits the workspace:loaded event with all initial state
