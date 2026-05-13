@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -974,7 +975,18 @@ func encodeProjectPathRegex(path string) string {
 	return nonAlphanumeric.ReplaceAllString(path, "-")
 }
 
-// getSessionPreview reads first user message from session file using the classifier.
+// getSessionPreview streams the entire JSONL file line-by-line, counting every
+// user/assistant event and grabbing the first user message as the preview.
+//
+// Why streaming: prior to this, a fixed 64KB Read() was used. A single large
+// user prompt (e.g. a 33KB initial message with injected CLAUDE.md context)
+// could consume most of that buffer, so any messages past byte 65,536 were
+// invisible to the counter and to the preview logic. Long sessions appeared
+// as "1 messages" in the UI.
+//
+// bufio.Scanner uses one line of memory at a time. We bump MaxTokenSize to
+// 8MB to handle pathological single-line content blocks (images, large file
+// attachments, big tool results — JSONL lines can legitimately get huge).
 func getSessionPreview(filePath string) (string, int) {
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -982,16 +994,16 @@ func getSessionPreview(filePath string) (string, int) {
 	}
 	defer file.Close()
 
-	// Read up to 64KB to find first user message
-	buf := make([]byte, 64*1024)
-	n, _ := file.Read(buf)
-	content := string(buf[:n])
+	scanner := bufio.NewScanner(file)
+	// Default Scanner buffer is 64KB — too small for some JSONL lines.
+	// Grow up to 8MB per line; this is read-on-demand, not pre-allocated.
+	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
 
 	preview := ""
 	count := 0
 
-	// Parse JSONL lines using classifier
-	for _, line := range strings.Split(content, "\n") {
+	for scanner.Scan() {
+		line := scanner.Text()
 		if line == "" {
 			continue
 		}
@@ -1006,7 +1018,7 @@ func getSessionPreview(filePath string) (string, int) {
 			count++
 		}
 
-		// Get first user message as preview
+		// Get first user message as preview (set once, never overwritten)
 		if preview == "" && classified.EventType == types.JSONLEventUser && classified.User != nil {
 			msg := types.ConvertToMessage(classified)
 			if msg != nil && msg.Content != "" {

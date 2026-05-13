@@ -5,6 +5,11 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.44] - 2026-05-13
+
+### Fixed
+- **Long sessions showing as "1 messages" in the Sessions Dialog** — `getSessionPreview` in `internal/workspace/workspace.go` did a single fixed-size `Read()` of 64KB and counted user/assistant events only within that window. A single large initial prompt (e.g. a 33KB user message with injected CLAUDE.md context) could consume most of the buffer, leaving every event past byte 65,536 invisible to the counter. Replaced with a streaming `bufio.Scanner` walk of the entire file — one line in memory at a time, `MaxTokenSize` bumped to 8MB so pathologically large single lines (image attachments, big tool results) don't trip the scanner. Verified empirically against a 141-line session that previously reported "1 messages" and now correctly reports 85 user+assistant events. The `sessions-index.json` dependency was retired earlier (sessions are now scanned directly), which is why this code path became the source of truth for the count — and why its 64KB ceiling silently became a bug.
+
 ## [0.5.43] - 2026-05-13
 
 ### Fixed
