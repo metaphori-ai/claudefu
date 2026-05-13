@@ -163,22 +163,39 @@ export function Sidebar({
     return () => { EventsOff('mcp:ready'); };
   }, [loadCountsForAgents]);
 
-  // Load session names for all agents on mount and when agents change
-  useEffect(() => {
-    const loadAllSessionNames = async () => {
-      for (const agent of agents) {
-        try {
-          const names = await GetAllSessionNames(agent.id);
-          if (names && Object.keys(names).length > 0) {
-            setAllSessionNames(agent.id, names);
-          }
-        } catch (err) {
-          // Ignore errors
+  // Reusable session-name loader. Called on mount, on workspace changes,
+  // and when the window regains focus so Syncthing-propagated renames from
+  // another machine become visible without restarting ClaudeFu. The Go-side
+  // GetAllSessionNames internally calls reloadIfChanged() against
+  // session-names.json's mtime, so this is cheap when nothing has changed.
+  const loadAllSessionNamesForAgents = React.useCallback(async () => {
+    const list = agentsRef.current;
+    for (const agent of list) {
+      try {
+        const names = await GetAllSessionNames(agent.id);
+        if (names && Object.keys(names).length > 0) {
+          setAllSessionNames(agent.id, names);
         }
+      } catch {
+        // Ignore — agent may not have a config dir yet, etc.
       }
-    };
-    loadAllSessionNames();
-  }, [agents, setAllSessionNames]);
+    }
+  }, [setAllSessionNames]);
+
+  // Load session names on mount and whenever the agents array changes.
+  useEffect(() => {
+    loadAllSessionNamesForAgents();
+  }, [agents, loadAllSessionNamesForAgents]);
+
+  // Re-fetch session names when the user tabs back to ClaudeFu. Catches the
+  // common case: rename a session on Machine A, switch to Machine B, see the
+  // fresh name when you click ClaudeFu's window. Stat-cheap on the Go side
+  // when nothing has changed (just an os.Stat to compare mtime).
+  useEffect(() => {
+    const handleFocus = () => loadAllSessionNamesForAgents();
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [loadAllSessionNamesForAgents]);
 
   // Reload session names when selected agent changes (in case names weren't loaded yet)
   useEffect(() => {

@@ -5,6 +5,14 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.43] - 2026-05-13
+
+### Fixed
+- **Session renames from another machine now appear without app restart** — `session-names.json` is at the root of `~/.claudefu/` and is Syncthing-synced, so renames on Machine A reach Machine B's disk just fine. But ClaudeFu loaded the file once at startup and held the in-memory map for the lifetime of the process — Syncthing-propagated updates were invisible until the app was quit and relaunched. `SessionManager` now tracks the on-disk mtime and reloads the file when it has advanced. The mtime is also updated after our own `save()` so a local rename doesn't trigger a self-reload loop. The check is gated by a sub-millisecond `os.Stat` under the read lock, only escalating to a write lock + re-parse when there's an actual change to pick up.
+
+### Added
+- **Window-focus auto-refresh of session names** — Tabbing back to ClaudeFu from another app now re-queries `GetAllSessionNames` for every visible agent. Combined with the mtime-based reload above, this means the common workflow (rename on Machine A, switch focus to Machine B) shows the fresh name immediately. The existing Refresh button on the Sessions Dialog now also picks up external changes for free since it routes through the same `GetAllSessionNames` path.
+
 ## [0.5.42] - 2026-04-27
 
 ### Fixed

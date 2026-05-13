@@ -26,6 +26,12 @@ type SessionManager struct {
 	names      SessionNames
 	views      SessionViews
 	mu         sync.RWMutex
+
+	// lastLoadMtime is the on-disk mtime of session-names.json at the last
+	// successful load/save. reloadIfChanged() uses this to detect external
+	// modifications (e.g., Syncthing pushing an update from another machine)
+	// and refresh the in-memory map without restarting the app.
+	lastLoadMtime time.Time
 }
 
 // NewSessionManager creates a new session manager.
@@ -47,8 +53,12 @@ func NewSessionManager(configPath string) (*SessionManager, error) {
 	return sm, nil
 }
 
-// GetSessionName returns the custom name for a session, or empty string if not set
+// GetSessionName returns the custom name for a session, or empty string if not set.
+// Reloads from disk first if session-names.json was modified externally (e.g., by
+// Syncthing pushing an update from another machine).
 func (sm *SessionManager) GetSessionName(folder, sessionId string) string {
+	sm.reloadIfChanged()
+
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
 
@@ -82,8 +92,12 @@ func (sm *SessionManager) SetSessionName(folder, sessionId, name string) error {
 	return sm.save()
 }
 
-// GetAllSessionNames returns all session names for a folder
+// GetAllSessionNames returns all session names for a folder.
+// Reloads from disk first if session-names.json was modified externally (e.g.,
+// by Syncthing pushing an update from another machine).
 func (sm *SessionManager) GetAllSessionNames(folder string) map[string]string {
+	sm.reloadIfChanged()
+
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
 
@@ -98,7 +112,8 @@ func (sm *SessionManager) GetAllSessionNames(folder string) map[string]string {
 	return make(map[string]string)
 }
 
-// load reads session names from disk
+// load reads session names from disk. Records mtime after successful read
+// so reloadIfChanged() can detect external modifications.
 func (sm *SessionManager) load() error {
 	path := filepath.Join(sm.configPath, SessionNamesFile)
 
@@ -110,10 +125,21 @@ func (sm *SessionManager) load() error {
 		return err
 	}
 
-	return json.Unmarshal(data, &sm.names)
+	if err := json.Unmarshal(data, &sm.names); err != nil {
+		return err
+	}
+
+	// Record mtime so reloadIfChanged() only re-reads when the file
+	// is modified externally (e.g., by Syncthing).
+	if stat, err := os.Stat(path); err == nil {
+		sm.lastLoadMtime = stat.ModTime()
+	}
+	return nil
 }
 
-// save writes session names to disk
+// save writes session names to disk. Updates lastLoadMtime to the post-write
+// mtime so our own write doesn't make reloadIfChanged() think the file
+// changed externally.
 func (sm *SessionManager) save() error {
 	path := filepath.Join(sm.configPath, SessionNamesFile)
 
@@ -122,7 +148,55 @@ func (sm *SessionManager) save() error {
 		return err
 	}
 
-	return os.WriteFile(path, jsonData, 0644)
+	if err := os.WriteFile(path, jsonData, 0644); err != nil {
+		return err
+	}
+
+	// Sync our cached mtime with the on-disk file after our own write.
+	if stat, err := os.Stat(path); err == nil {
+		sm.lastLoadMtime = stat.ModTime()
+	}
+	return nil
+}
+
+// reloadIfChanged reloads session-names.json from disk if its on-disk mtime
+// has advanced since the last load/save. This catches Syncthing-propagated
+// updates from other machines without requiring an app restart. Caller must
+// NOT hold sm.mu — this method acquires the write lock when reloading.
+func (sm *SessionManager) reloadIfChanged() {
+	path := filepath.Join(sm.configPath, SessionNamesFile)
+	stat, err := os.Stat(path)
+	if err != nil {
+		return // File missing or unreadable — nothing to do
+	}
+
+	// Cheap mtime comparison under the read lock first; only take the write
+	// lock if we actually need to reload.
+	sm.mu.RLock()
+	unchanged := !stat.ModTime().After(sm.lastLoadMtime)
+	sm.mu.RUnlock()
+	if unchanged {
+		return
+	}
+
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	// Re-check under the write lock in case a concurrent caller already reloaded.
+	if !stat.ModTime().After(sm.lastLoadMtime) {
+		return
+	}
+	// Re-read from disk. Reuse load() but call its body inline since we
+	// already hold the write lock (load() doesn't lock — its callers do).
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	var fresh SessionNames
+	if err := json.Unmarshal(data, &fresh); err != nil {
+		return // Leave existing in-memory map intact on parse error
+	}
+	sm.names = fresh
+	sm.lastLoadMtime = stat.ModTime()
 }
 
 // ============================================================================
