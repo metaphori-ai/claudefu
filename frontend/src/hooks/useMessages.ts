@@ -17,18 +17,25 @@ export function useMessages() {
     return agentMessages.get(sessionId);
   }, [state.sessionMessages]);
 
-  // Set initial messages for a session
+  // Set initial messages for a session.
+  // Turn-based + jsonlLineCount fields are optional — pass them when the
+  // producer is on the turn-based pagination path (GetConversationByTurns).
+  // Legacy callers that only have message-based counts can omit them.
   const setMessages = useCallback((
     agentId: string,
     sessionId: string,
     messages: Message[],
     totalCount: number,
     hasMore: boolean,
-    displayCount: number
+    displayCount: number,
+    turnCount?: number,
+    turnsLoaded?: number,
+    hasMoreTurns?: boolean,
+    jsonlLineCount?: number
   ) => {
     dispatch({
       type: 'SET_MESSAGES',
-      payload: { agentId, sessionId, messages, totalCount, hasMore, displayCount }
+      payload: { agentId, sessionId, messages, totalCount, hasMore, displayCount, turnCount, turnsLoaded, hasMoreTurns, jsonlLineCount }
     });
   }, [dispatch]);
 

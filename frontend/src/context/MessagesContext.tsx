@@ -3,11 +3,22 @@ import { Message } from '../components/chat/types';
 import { logDebug } from '../utils/debugLogger';
 
 // SessionMessages: per-session message state
+//
+// Two unit systems coexist (mirrors the Go-side Conversation struct):
+//   - message-based (legacy): hasMore, offset, totalCount
+//   - turn-based (current):   hasMoreTurns, turnCount, turnsLoaded
+// ChatView and MessageList now read the turn-based fields. The message-based
+// fields are still populated by the backend and kept here for any consumer
+// still on the old path.
 export interface SessionMessages {
   messages: Message[];          // Loaded messages
-  hasMore: boolean;             // More available to load
-  offset: number;               // Current offset for pagination
-  totalCount: number;           // Total from backend
+  hasMore: boolean;             // More available to load (message-based legacy)
+  offset: number;               // Current offset for pagination (message-based legacy)
+  totalCount: number;           // Total display messages in file (excludes carriers)
+  turnCount: number;            // Total turns in file (real user messages)
+  turnsLoaded: number;          // Turns included in the current page
+  hasMoreTurns: boolean;        // True if earlier turns exist beyond the current page
+  jsonlLineCount: number;       // Raw non-empty JSONL line count (includes metadata + carriers)
   isLoading: boolean;           // Loading indicator
   initialLoadDone: boolean;     // Prevents race conditions
 }
@@ -23,7 +34,7 @@ export interface MessagesState {
 }
 
 export type MessagesAction =
-  | { type: 'SET_MESSAGES'; payload: { agentId: string; sessionId: string; messages: Message[]; totalCount: number; hasMore: boolean; displayCount: number } }
+  | { type: 'SET_MESSAGES'; payload: { agentId: string; sessionId: string; messages: Message[]; totalCount: number; hasMore: boolean; displayCount: number; turnCount?: number; turnsLoaded?: number; hasMoreTurns?: boolean; jsonlLineCount?: number } }
   | { type: 'APPEND_MESSAGES'; payload: { agentId: string; sessionId: string; messages: Message[] } }
   | { type: 'PREPEND_MESSAGES'; payload: { agentId: string; sessionId: string; messages: Message[]; hasMore: boolean; displayCount: number } }
   | { type: 'SET_LOADING'; payload: { agentId: string; sessionId: string; isLoading: boolean } }
@@ -58,6 +69,10 @@ function getOrCreateSessionMessages(
     hasMore: false,
     offset: 0,
     totalCount: 0,
+    turnCount: 0,
+    turnsLoaded: 0,
+    hasMoreTurns: false,
+    jsonlLineCount: 0,
     isLoading: false,
     initialLoadDone: false,
   };
@@ -136,14 +151,20 @@ function setPendingMessages(
 function messagesReducer(state: MessagesState, action: MessagesAction): MessagesState {
   switch (action.type) {
     case 'SET_MESSAGES': {
-      const { agentId, sessionId, messages, totalCount, hasMore, displayCount } = action.payload;
+      const { agentId, sessionId, messages, totalCount, hasMore, displayCount, turnCount, turnsLoaded, hasMoreTurns, jsonlLineCount } = action.payload;
 
-      // Create new session messages
+      // Create new session messages.
+      // Turn-based + jsonlLineCount fields default to 0/false when the action
+      // doesn't carry them — i.e. when the producer is on the legacy path.
       const sessionMsgs: SessionMessages = {
         messages,
         hasMore,
         offset: displayCount,  // Track how many display messages loaded from end
         totalCount,
+        turnCount: turnCount ?? 0,
+        turnsLoaded: turnsLoaded ?? 0,
+        hasMoreTurns: hasMoreTurns ?? false,
+        jsonlLineCount: jsonlLineCount ?? 0,
         isLoading: false,
         initialLoadDone: true,
       };
@@ -226,10 +247,27 @@ function messagesReducer(state: MessagesState, action: MessagesAction): Messages
         updatedMessages.push(msg);
       }
 
+      // Keep turn counters in sync with appended messages so the "Showing X
+      // of Y turns" header updates as the conversation grows in real time.
+      // Only real user messages (msg.type === 'user') bump the turn count;
+      // tool_result_carrier and assistant messages belong to an existing turn.
+      let newUserTurns = 0;
+      let newDisplay = 0;
+      for (const msg of newMessages) {
+        if (msg.type === 'user') newUserTurns++;
+        if (msg.type !== 'tool_result_carrier') newDisplay++;
+      }
+
       const sessionMsgs: SessionMessages = {
         ...current,
         messages: updatedMessages,
-        totalCount: current.totalCount + newMessages.length,
+        totalCount: current.totalCount + newDisplay,
+        turnCount: current.turnCount + newUserTurns,
+        turnsLoaded: current.turnsLoaded + newUserTurns,
+        // Each appended msg corresponds to at least one JSONL line (typically
+        // one — the watcher emits one msg per JSONL event). Close enough for
+        // a live counter; the next full reload reconciles to the exact count.
+        jsonlLineCount: current.jsonlLineCount + newMessages.length,
       };
 
       return {

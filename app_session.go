@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"claudefu/internal/types"
 	"claudefu/internal/workspace"
@@ -12,30 +13,67 @@ import (
 // SESSION METHODS (Bound to frontend)
 // =============================================================================
 
-// GetSessions returns sessions for an agent
+// GetSessions returns sessions for an agent.
+//
+// File truth wins for counts: TurnCount / JsonlLineCount / MessageCount /
+// Preview come from scanning the JSONL files on disk (workspace.Manager.
+// GetSessions), not from len(SessionState.Messages) — which only reflects
+// what's loaded into memory for view (default 25 turns post-v0.5.45) and
+// would lie about how long a session actually is.
+//
+// Runtime data contributes precise timestamps (CreatedAt/UpdatedAt) when
+// available; file mtime is the fallback for never-opened sessions.
 func (a *App) GetSessions(agentID string) ([]types.Session, error) {
-	if a.rt == nil {
-		return nil, fmt.Errorf("runtime not initialized")
+	if a.workspace == nil {
+		return nil, fmt.Errorf("workspace manager not initialized")
+	}
+	agent := a.getAgentByID(agentID)
+	if agent == nil {
+		return nil, fmt.Errorf("agent not found: %s", agentID)
 	}
 
-	sessions := a.rt.GetSessionsForAgent(agentID)
+	// File-truth stats from disk scan (one streaming pass per session file).
+	fileSessions, err := a.workspace.GetSessions(agent.Folder)
+	if err != nil {
+		return nil, err
+	}
 
-	result := make([]types.Session, 0, len(sessions))
-	for _, s := range sessions {
-		// Skip subagent sessions (format: agent-{short-id})
-		// These are quick task executions, not main conversations
-		if strings.HasPrefix(s.SessionID, "agent-") {
+	// Runtime sessions for precise timestamps. Optional — sessions that have
+	// never been opened don't have a runtime entry; file mtime is the fallback.
+	type tsEntry struct{ created, updated time.Time }
+	tsByID := make(map[string]tsEntry, len(fileSessions))
+	if a.rt != nil {
+		for _, s := range a.rt.GetSessionsForAgent(agentID) {
+			tsByID[s.SessionID] = tsEntry{created: s.CreatedAt, updated: s.UpdatedAt}
+		}
+	}
+
+	result := make([]types.Session, 0, len(fileSessions))
+	for _, fs := range fileSessions {
+		// Skip subagent sessions defensively (format: agent-{short-id}).
+		if strings.HasPrefix(fs.SessionID, "agent-") {
 			continue
 		}
 
-		result = append(result, types.Session{
-			ID:           s.SessionID,
-			AgentID:      s.AgentID,
-			Preview:      s.Preview,
-			MessageCount: len(s.Messages),
-			CreatedAt:    s.CreatedAt,
-			UpdatedAt:    s.UpdatedAt,
-		})
+		sess := types.Session{
+			ID:             fs.SessionID,
+			AgentID:        agentID,
+			Preview:        fs.Preview,
+			MessageCount:   fs.MessageCount,
+			TurnCount:      fs.TurnCount,
+			JsonlLineCount: fs.JsonlLineCount,
+			CreatedAt:      fs.LastModified, // fallback when runtime has no entry
+			UpdatedAt:      fs.LastModified,
+		}
+		if rt, ok := tsByID[fs.SessionID]; ok {
+			if !rt.created.IsZero() {
+				sess.CreatedAt = rt.created
+			}
+			if !rt.updated.IsZero() {
+				sess.UpdatedAt = rt.updated
+			}
+		}
+		result = append(result, sess)
 	}
 	return result, nil
 }
@@ -89,13 +127,21 @@ func (a *App) GetConversation(agentID, sessionID string) ([]types.Message, error
 	return messages, nil
 }
 
-// ConversationResult is the paged conversation response for frontend
+// ConversationResult is the paged conversation response for frontend.
+// Carries both legacy message-based pagination fields (TotalCount/HasMore/
+// DisplayCount) and the newer turn-based fields (TurnCount/TurnsLoaded/
+// HasMoreTurns) so callers can choose either unit. ChatView now uses the
+// turn-based fields exclusively.
 type ConversationResult struct {
-	SessionID    string          `json:"sessionId"`
-	Messages     []types.Message `json:"messages"`
-	TotalCount   int             `json:"totalCount"`
-	HasMore      bool            `json:"hasMore"`
-	DisplayCount int             `json:"displayCount"` // Display messages in this page (excludes carriers)
+	SessionID      string          `json:"sessionId"`
+	Messages       []types.Message `json:"messages"`
+	TotalCount     int             `json:"totalCount"`
+	HasMore        bool            `json:"hasMore"`
+	DisplayCount   int             `json:"displayCount"`   // Display messages in this page (excludes carriers)
+	TurnCount      int             `json:"turnCount"`      // Total turns in file (real user messages)
+	TurnsLoaded    int             `json:"turnsLoaded"`    // Turns included in this page
+	HasMoreTurns   bool            `json:"hasMoreTurns"`   // True if earlier turns exist beyond this page
+	JsonlLineCount int             `json:"jsonlLineCount"` // Raw non-empty JSONL line count
 }
 
 // GetConversationPaged returns messages with pagination support
@@ -117,11 +163,51 @@ func (a *App) GetConversationPaged(agentID, sessionID string, limit, offset int)
 	}
 
 	return &ConversationResult{
-		SessionID:    conv.SessionID,
-		Messages:     conv.Messages,
-		TotalCount:   conv.TotalCount,
-		HasMore:      conv.HasMore,
-		DisplayCount: conv.DisplayCount,
+		SessionID:      conv.SessionID,
+		Messages:       conv.Messages,
+		TotalCount:     conv.TotalCount,
+		HasMore:        conv.HasMore,
+		DisplayCount:   conv.DisplayCount,
+		TurnCount:      conv.TurnCount,
+		TurnsLoaded:    conv.TurnsLoaded,
+		HasMoreTurns:   conv.HasMoreTurns,
+		JsonlLineCount: conv.JsonlLineCount,
+	}, nil
+}
+
+// GetConversationByTurns returns the last `turnLimit` turns from a session.
+// A turn is one real user message + everything that follows until the next
+// real user message. turnLimit <= 0 means "all turns".
+//
+// This is the turn-based sibling of GetConversationPaged. ChatView uses this
+// for both the initial load and the Load Recent buttons because users
+// naturally count conversations in turns, not in (user|assistant|carrier)
+// message records.
+func (a *App) GetConversationByTurns(agentID, sessionID string, turnLimit int) (*ConversationResult, error) {
+	if a.workspace == nil {
+		return nil, fmt.Errorf("workspace manager not initialized")
+	}
+
+	agent := a.getAgentByID(agentID)
+	if agent == nil {
+		return nil, fmt.Errorf("agent not found: %s", agentID)
+	}
+
+	conv, err := a.workspace.GetConversationByTurns(agent.Folder, sessionID, turnLimit)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ConversationResult{
+		SessionID:      conv.SessionID,
+		Messages:       conv.Messages,
+		TotalCount:     conv.TotalCount,
+		HasMore:        conv.HasMore,
+		DisplayCount:   conv.DisplayCount,
+		TurnCount:      conv.TurnCount,
+		TurnsLoaded:    conv.TurnsLoaded,
+		HasMoreTurns:   conv.HasMoreTurns,
+		JsonlLineCount: conv.JsonlLineCount,
 	}, nil
 }
 

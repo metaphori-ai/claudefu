@@ -19,10 +19,12 @@ import { AuthView } from './components/AuthView';
 import { NotificationToast } from './components/NotificationToast';
 import { NotificationsDialog } from './components/NotificationsDialog';
 import { WorkspaceMetaDialog } from './components/WorkspaceMetaDialog';
+import { BroadcastDialog } from './components/BroadcastDialog';
 import { WorkspaceProvider, SessionProvider, MessagesProvider } from './context';
 import { useWorkspace, useSession, useSelectedAgent, useSessionName, useKeyboardShortcuts, useErrorListeners, useMenuEvents, useNotifications, WailsEventHub } from './hooks';
 import { QueueWatcher } from './components/QueueWatcher';
 import { Tooltip } from './components/Tooltip';
+import { SessionTurnIndicator } from './components/chat/SessionTurnIndicator';
 import {
   GetAuthStatus,
   GetSettings,
@@ -81,6 +83,7 @@ function AppContent() {
   // Local UI state
   const [saveDialogOpen, setSaveDialogOpen] = useState<boolean>(false);
   const [mcpSettingsOpen, setMcpSettingsOpen] = useState<boolean>(false);
+  const [broadcastOpen, setBroadcastOpen] = useState<boolean>(false);
   const [manageWorkspacesOpen, setManageWorkspacesOpen] = useState<boolean>(false);
   const [manageAgentsOpen, setManageAgentsOpen] = useState<boolean>(false);
   const [confirmDeleteWorkspaceId, setConfirmDeleteWorkspaceId] = useState<string | null>(null);
@@ -854,12 +857,48 @@ function AppContent() {
                       </svg>
                     </button>
                   </Tooltip>
+                  {/* Compact pagination indicator: "Turns n of m (x msg) [+] [-]".
+                      Self-contained — reads MessagesContext and calls
+                      GetConversationByTurns internally, so we don't need to
+                      thread any handlers down from App.tsx. */}
+                  {selectedAgentId && selectedSessionId && (
+                    <SessionTurnIndicator
+                      agentId={selectedAgentId}
+                      sessionId={selectedSessionId}
+                    />
+                  )}
                 </>
               )}
             </>
           )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          {/* Broadcast Message (user-initiated AgentMessage) */}
+          <button
+            onClick={() => setBroadcastOpen(true)}
+            title="Broadcast a message to one or more agents"
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '0.25rem',
+              display: 'flex',
+              alignItems: 'center',
+              color: '#ccc',
+              opacity: 0.7,
+              transition: 'opacity 0.2s ease',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
+            onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.7')}
+          >
+            {/* Inline megaphone SVG (lucide-react's Megaphone path) — sized to match Ko-fi 26px */}
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="m3 11 18-5v12L3 14v-3z"/>
+              <path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/>
+            </svg>
+          </button>
+
           {/* Ko-fi Support Link */}
           <button
             onClick={() => BrowserOpenURL('https://ko-fi.com/metaphori')}
@@ -1277,6 +1316,12 @@ function AppContent() {
         notifications={notifications.notifications}
         onClearAll={notifications.clearAll}
         onRemove={notifications.removeNotification}
+      />
+
+      {/* Broadcast Dialog (user-initiated AgentMessage to one-or-many agents) */}
+      <BroadcastDialog
+        isOpen={broadcastOpen}
+        onClose={() => setBroadcastOpen(false)}
       />
 
       {/* MCP Notification Toast */}

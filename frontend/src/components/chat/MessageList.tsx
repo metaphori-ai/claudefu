@@ -10,20 +10,20 @@ interface MessageListProps {
   scrollContainerRef: React.RefObject<HTMLDivElement>;
   messagesEndRef: React.RefObject<HTMLDivElement>;
   showScrollButton: boolean;
-  hasMore: boolean;
-  totalCount: number;
-  isLoadingMore: boolean;
-  onLoadCount: (count: number) => void;
+  showScrollTopButton: boolean;
   onScrollToBottom: () => void;
+  onScrollToTop: () => void;
   onCompactionClick: (content: string) => void;
   onViewToolDetails: (toolCall: ContentBlock, result?: ContentBlock) => void;
   onQuestionAnswer?: (toolUseId: string, questions: any[], answers: Record<string, string>) => void;
   onQuestionSkip?: (toolUseId: string) => void;
   onAddPermission?: (toolName: string, command?: string) => void;
   onDeleteFromMessage?: (messageUUID: string) => void;
+  // Turn-based pagination has moved to SessionTurnIndicator in the App.tsx
+  // header. MessageList no longer needs hasMore / turnCount / turnsLoaded /
+  // onLoadTurns / isLoadingMore / totalCount — they were used only by the
+  // removed in-list Load Recent row.
 }
-
-const LOAD_COUNTS = [100, 200, 300, 400, 500];
 
 export function MessageList({
   messages,
@@ -33,11 +33,9 @@ export function MessageList({
   scrollContainerRef,
   messagesEndRef,
   showScrollButton,
-  hasMore,
-  totalCount,
-  isLoadingMore,
-  onLoadCount,
+  showScrollTopButton,
   onScrollToBottom,
+  onScrollToTop,
   onCompactionClick,
   onViewToolDetails,
   onQuestionAnswer,
@@ -68,92 +66,8 @@ export function MessageList({
           textAlign: 'left'
         }}
       >
-        {/* Load Recent buttons (at top) */}
-        {hasMore && (
-          <div style={{
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            gap: '0.4rem',
-            padding: '0.75rem 0 1.5rem 0'
-          }}>
-            <span style={{ color: '#555', fontSize: '0.75rem', marginRight: '0.25rem' }}>
-              Load recent:
-            </span>
-            {LOAD_COUNTS.filter(c => c <= totalCount).map(count => (
-              <button
-                key={count}
-                onClick={() => onLoadCount(count)}
-                disabled={isLoadingMore}
-                style={{
-                  background: '#1a1a1a',
-                  border: '1px solid #333',
-                  borderRadius: '4px',
-                  padding: '0.25rem 0.5rem',
-                  color: isLoadingMore ? '#555' : '#888',
-                  cursor: isLoadingMore ? 'default' : 'pointer',
-                  fontSize: '0.75rem',
-                  fontFamily: 'ui-monospace, monospace',
-                  transition: 'all 0.15s ease',
-                  minWidth: '36px',
-                }}
-                onMouseEnter={(e) => {
-                  if (!isLoadingMore) {
-                    e.currentTarget.style.borderColor = '#d97757';
-                    e.currentTarget.style.color = '#d97757';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = '#333';
-                  e.currentTarget.style.color = isLoadingMore ? '#555' : '#888';
-                }}
-              >
-                {count}
-              </button>
-            ))}
-            {totalCount > 500 && (
-              <button
-                onClick={() => onLoadCount(0)}
-                disabled={isLoadingMore}
-                style={{
-                  background: '#1a1a1a',
-                  border: '1px solid #333',
-                  borderRadius: '4px',
-                  padding: '0.25rem 0.5rem',
-                  color: isLoadingMore ? '#555' : '#888',
-                  cursor: isLoadingMore ? 'default' : 'pointer',
-                  fontSize: '0.75rem',
-                  fontFamily: 'ui-monospace, monospace',
-                  transition: 'all 0.15s ease',
-                }}
-                onMouseEnter={(e) => {
-                  if (!isLoadingMore) {
-                    e.currentTarget.style.borderColor = '#d97757';
-                    e.currentTarget.style.color = '#d97757';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = '#333';
-                  e.currentTarget.style.color = isLoadingMore ? '#555' : '#888';
-                }}
-              >
-                All
-              </button>
-            )}
-            {isLoadingMore && (
-              <span style={{
-                display: 'inline-block',
-                width: '12px',
-                height: '12px',
-                border: '2px solid #333',
-                borderTopColor: '#d97757',
-                borderRadius: '50%',
-                animation: 'spin 1s linear infinite',
-                marginLeft: '0.25rem',
-              }} />
-            )}
-          </div>
-        )}
+        {/* Load Recent row removed in v0.5.45 — moved to SessionTurnIndicator
+            in the App.tsx header (compact "Turns n of m (x msg) [+] [-]"). */}
 
         {/* Creating new session indicator */}
         {isCreatingSession && (
@@ -209,6 +123,48 @@ export function MessageList({
         <div style={{ height: '60px' }} /> {/* Bottom spacer */}
         <div ref={messagesEndRef} />
       </div>
+
+      {/* Scroll to top button — mirror of scroll-to-bottom, top-right of viewport.
+          Conditional on the user being meaningfully scrolled away from the
+          top; hides on tiny conversations that don't actually scroll. */}
+      {showScrollTopButton && (
+        <button
+          onClick={onScrollToTop}
+          style={{
+            position: 'absolute',
+            top: '1.5rem',
+            right: '2.5rem',
+            width: '44px',
+            height: '44px',
+            borderRadius: '50%',
+            background: '#444',
+            border: '1px solid #555',
+            color: '#fff',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+            transition: 'all 0.15s ease',
+            zIndex: 100
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = '#555';
+            e.currentTarget.style.borderColor = '#666';
+            e.currentTarget.style.transform = 'scale(1.1)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = '#444';
+            e.currentTarget.style.borderColor = '#555';
+            e.currentTarget.style.transform = 'scale(1)';
+          }}
+          title="Scroll to top"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 19V5M5 12l7-7 7 7"/>
+          </svg>
+        </button>
+      )}
 
       {/* Scroll to bottom button */}
       {showScrollButton && (

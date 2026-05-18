@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { GetConversationPaged, SetActiveSession, ClearActiveSession, SendMessage, MarkSessionViewed, NewSession, ReadPlanFile, TouchPlanFile, AnswerQuestion, CancelSession, AcceptPlanReview, RejectPlanReview, RunSlashCommand, DeleteFromMessage, GetAgentMeta, UpdateAgentMeta } from '../../wailsjs/go/main/App';
+import { GetConversationPaged, GetConversationByTurns, SetActiveSession, ClearActiveSession, SendMessage, MarkSessionViewed, NewSession, ReadPlanFile, TouchPlanFile, AnswerQuestion, CancelSession, AcceptPlanReview, RejectPlanReview, RunSlashCommand, DeleteFromMessage, GetAgentMeta, UpdateAgentMeta } from '../../wailsjs/go/main/App';
+import { resolveInitialLoadTurns, AGENT_META_DEFAULT_LOAD_TURNS } from './chat/constants';
 import { types } from '../../wailsjs/go/models';
 
 // Extracted components
@@ -54,8 +55,11 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
   const [selectedEffort, setSelectedEffort] = useState('');
   const [agentDefaultModel, setAgentDefaultModel] = useState('');
   const [agentDefaultEffort, setAgentDefaultEffort] = useState('');
+  // Per-agent initial-load-turns override. Falls back to DEFAULT_INITIAL_LOAD_TURNS
+  // (resolved via resolveInitialLoadTurns) when the meta value is absent/invalid.
+  const [initialLoadTurns, setInitialLoadTurns] = useState<number>(() => resolveInitialLoadTurns(null));
 
-  // Load the agent's persisted model/effort defaults when the folder changes.
+  // Load the agent's persisted model/effort/load-turns defaults when the folder changes.
   useEffect(() => {
     if (!folder) return;
     let cancelled = false;
@@ -63,20 +67,24 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
       try {
         const info = await GetAgentMeta(folder);
         if (cancelled) return;
-        const meta = info?.meta ?? {};
-        const m = (meta['AGENT_MODEL'] as string) ?? '';
-        const e = (meta['AGENT_EFFORT'] as string) ?? '';
+        const meta = (info?.meta ?? {}) as Record<string, string>;
+        const m = meta['AGENT_MODEL'] ?? '';
+        const e = meta['AGENT_EFFORT'] ?? '';
         setAgentDefaultModel(m);
         setAgentDefaultEffort(e);
+        setInitialLoadTurns(resolveInitialLoadTurns(meta));
         // Initialize current selections to the agent default (per-message override starts unset).
         setSelectedModel(m);
         setSelectedEffort(e);
       } catch (err) {
-        console.warn('[ChatView] Failed to load AGENT_MODEL/AGENT_EFFORT meta:', err);
+        console.warn('[ChatView] Failed to load agent meta defaults:', err);
       }
     })();
     return () => { cancelled = true; };
   }, [folder]);
+  // Reference AGENT_META_DEFAULT_LOAD_TURNS so the import is preserved even if
+  // tree-shaking gets aggressive — it's the single source of truth for the key.
+  void AGENT_META_DEFAULT_LOAD_TURNS;
 
   // Persist a model or effort choice to the agent's registry meta.
   const saveAgentMetaField = async (key: 'AGENT_MODEL' | 'AGENT_EFFORT', value: string) => {
@@ -127,7 +135,11 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
   const sessionData = getSessionMessages(agentId, sessionId);
   const messages = sessionData?.messages || [];
   const isContextLoading = sessionData?.isLoading ?? false;
-  const hasMore = sessionData?.hasMore ?? false;
+  // Turn-based pagination is the primary path; we keep `hasMore` as the alias
+  // MessageList already consumes, but it's now driven by hasMoreTurns.
+  const hasMore = sessionData?.hasMoreTurns ?? sessionData?.hasMore ?? false;
+  const turnCount = sessionData?.turnCount ?? 0;
+  const turnsLoaded = sessionData?.turnsLoaded ?? 0;
   const initialLoadDone = sessionData?.initialLoadDone ?? false;
 
   // Local loading state for initial render before context is populated
@@ -377,13 +389,19 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
     setError(null);
 
     try {
-      // Load most recent 50 messages (limit=50, offset=0)
-      const result = await GetConversationPaged(agentId, sessionId, 50, 0);
+      // Initial load: last N turns (per-agent override → global default).
+      // A "turn" = one real user message + everything until the next real user
+      // message. See internal/workspace/workspace.go GetConversationByTurns.
+      const result = await GetConversationByTurns(agentId, sessionId, initialLoadTurns);
       const messageList = result?.messages || [];
       const totalCount = result?.totalCount || messageList.length;
-      const hasMoreMessages = result?.hasMore || false;
+      const hasMoreMessages = result?.hasMoreTurns || false;
       const displayCount = result?.displayCount || messageList.length;
-      setContextMessages(agentId, sessionId, messageList, totalCount, hasMoreMessages, displayCount);
+      const turnCount = result?.turnCount || 0;
+      const turnsLoaded = result?.turnsLoaded || 0;
+      const hasMoreTurns = result?.hasMoreTurns || false;
+      const jsonlLineCount = result?.jsonlLineCount || 0;
+      setContextMessages(agentId, sessionId, messageList, totalCount, hasMoreMessages, displayCount, turnCount, turnsLoaded, hasMoreTurns, jsonlLineCount);
 
       // Scroll to bottom after initial load
       scroll.scrollToBottomRAF();
@@ -395,29 +413,38 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
     }
   };
 
-  // Load a specific number of recent messages (replaces offset-based Load More)
+  // Load Recent: reload the conversation with N turns of history.
+  // turnCount=0 means "all turns" (the All button).
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const handleLoadCount = async (count: number) => {
+  const handleLoadTurns = async (turnCount: number) => {
     if (isLoadingMore) return;
 
     setIsLoadingMore(true);
     try {
-      // count=0 means "all messages"
-      const result = await GetConversationPaged(agentId, sessionId, count, 0);
+      const result = await GetConversationByTurns(agentId, sessionId, turnCount);
       const messageList = result?.messages || [];
       const totalCount = result?.totalCount || messageList.length;
-      const hasMoreMessages = result?.hasMore || false;
+      const hasMoreMessages = result?.hasMoreTurns || false;
       const displayCount = result?.displayCount || messageList.length;
-      setContextMessages(agentId, sessionId, messageList, totalCount, hasMoreMessages, displayCount);
+      const tCount = result?.turnCount || 0;
+      const tLoaded = result?.turnsLoaded || 0;
+      const hMoreTurns = result?.hasMoreTurns || false;
+      const jLines = result?.jsonlLineCount || 0;
+      setContextMessages(agentId, sessionId, messageList, totalCount, hasMoreMessages, displayCount, tCount, tLoaded, hMoreTurns, jLines);
 
       // Scroll to bottom after reload
       scroll.scrollToBottomRAF();
     } catch (err) {
-      console.error('Failed to load messages:', err);
+      console.error('Failed to load turns:', err);
     } finally {
       setIsLoadingMore(false);
     }
   };
+  // Keep the legacy name aliased so any inline ref still wired up doesn't break.
+  const handleLoadCount = handleLoadTurns;
+  // Preserve import of GetConversationPaged for any consumer that imports the
+  // module by side effect (also future-proofs against tree-shaking warnings).
+  void GetConversationPaged;
 
   // Session initialization - event handling is now in WailsEventHub
   useEffect(() => {
@@ -877,7 +904,11 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
         />
       )}
 
-      {/* Messages Area */}
+      {/* Messages Area.
+          Turn-based pagination ([+]/[-] buttons, "Turns n of m") lives in the
+          App.tsx header via SessionTurnIndicator now — MessageList just
+          renders. The hasMore / turnCount / turnsLoaded / onLoadTurns /
+          isLoadingMore / totalCount props are intentionally absent. */}
       <MessageList
         messages={messagesToRender}
         globalToolResultMap={globalToolResultMap}
@@ -886,11 +917,9 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
         scrollContainerRef={scroll.scrollContainerRef}
         messagesEndRef={scroll.messagesEndRef}
         showScrollButton={scroll.showScrollButton}
-        hasMore={hasMore}
-        totalCount={sessionData?.totalCount || 0}
-        isLoadingMore={isLoadingMore}
-        onLoadCount={handleLoadCount}
+        showScrollTopButton={scroll.showScrollTopButton}
         onScrollToBottom={scroll.scrollToBottom}
+        onScrollToTop={scroll.scrollToTop}
         onCompactionClick={setCompactionContent}
         onViewToolDetails={handleViewToolDetails}
         onQuestionAnswer={handleQuestionAnswer}

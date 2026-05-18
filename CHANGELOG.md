@@ -5,6 +5,25 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.45] - 2026-05-18
+
+### Added
+- **Broadcast Dialog** — Top-bar megaphone button opens a dialog for sending a one-shot message to one or more agents (`AgentMessage` MCP tool, user-initiated). New files: `app_broadcast.go` (Go binding) and `frontend/src/components/BroadcastDialog.tsx`. Renders next to the Ko-fi button in the App header.
+- **Turn-based session pagination** — New Go API `Manager.GetConversationByTurns(folder, sessionID, turnLimit)` returns the last N turns from a session in a single streaming pass. A "turn" is one real user message + everything until the next real user message; `tool_result_carrier` rows don't start turns (they belong to the prior turn). `Conversation` and `ConversationResult` structs now carry `TurnCount` / `TurnsLoaded` / `HasMoreTurns` alongside the legacy message-based pagination fields, which stay populated for back-compat. ChatView's initial load and every subsequent reload use the turn-based path.
+- **`SessionTurnIndicator` header chip** — Compact display in the App.tsx top bar after the session-name chevron: `Turns n of m (x msg) [+] [-]`. `n` = turns currently loaded, `m` = total turns in the session file, `x` = raw JSONL line count. `[+]` loads one more turn (`turnsLoaded + 1`), `[-]` drops one turn from the view. Single-step semantics chosen because users anchor on their own prompts, not on tool-call/assistant chunks between them. Buttons disable themselves at the boundaries. Self-contained component — reads `MessagesContext` and calls `GetConversationByTurns` itself, so App.tsx only needs `<SessionTurnIndicator agentId sessionId/>`.
+- **`AGENT_DEFAULT_LOAD_TURNS` per-agent meta override** — System attribute (migration 11) that controls the initial turn count for an agent. Settable via Workspace & Agents dialog → Agents tab → that agent's row. Positive integer wins; blank/non-numeric falls back to `DEFAULT_INITIAL_LOAD_TURNS = 25` (in `frontend/src/components/chat/constants.ts`).
+- **Scroll-to-top button** — Mirrors the existing scroll-to-bottom button at the top-right of the message viewport. Conditional on `scrollTop > 150` AND the viewport having room to scroll (avoids showing on tiny pages). Clicking it deactivates force-scroll so new messages don't yank the view back down.
+- **File-truth session stats in Sessions Dialog** — `getSessionPreview` now returns `(preview, count, turnCount, jsonlLineCount)` in one streaming pass. `types.Session` carries `TurnCount` and `JsonlLineCount`. `app_session.go::GetSessions` and `app.go::emitInitialState` source counts from the file scan via `workspace.Manager.GetSessions` instead of `len(SessionState.Messages)` (which only reflected the 25 turns loaded in memory). The dialog now displays `n turns · m messages` and sorts/filters by `turnCount`. Hover preserves the legacy user+assistant event count for debug curiosity.
+
+### Removed
+- **In-list Load Recent button row** in `MessageList.tsx` — replaced by the header `[+]/[-]` chip. `MessageList` props slimmed accordingly (`hasMore`, `totalCount`, `turnCount`, `turnsLoaded`, `onLoadTurns`, `isLoadingMore` are no longer needed there; `showScrollTopButton` and `onScrollToTop` added). `LOAD_TURN_COUNTS = [25, 50, 100, 200]` still defined in `constants.ts` for any future quick-jump menu.
+
+### Fixed
+- **`MessageCount` lying about session size** — Sessions that had been opened showed counts like "750 messages" reflecting only what was loaded in memory (25 turns × varying assistant chunks). Sessions that had never been opened showed 0 or 1. Now every count in the Sessions Dialog comes from a fresh file scan, so a 5000-line session reports 5000 even if nothing has been viewed yet.
+
+### Migration
+- **Sequential migration 11 (`add-agent-default-load-turns-to-schema`)** — adds `AGENT_DEFAULT_LOAD_TURNS` system attribute to existing meta schemas. Idempotent; inserts after `AGENT_EFFORT` or appends.
+
 ## [0.5.44] - 2026-05-13
 
 ### Fixed

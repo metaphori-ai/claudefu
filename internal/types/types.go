@@ -105,12 +105,14 @@ type EventEnvelope struct {
 // Session represents metadata about a Claude Code session.
 // The actual messages are stored in SessionState.
 type Session struct {
-	ID           string    `json:"id"`           // Session UUID (from JSONL filename)
-	AgentID      string    `json:"agentId"`      // Parent agent UUID
-	Preview      string    `json:"preview"`      // First user message preview
-	MessageCount int       `json:"messageCount"` // Total messages in session
-	CreatedAt    time.Time `json:"createdAt"`    // From first message timestamp
-	UpdatedAt    time.Time `json:"updatedAt"`    // From last message timestamp
+	ID             string    `json:"id"`             // Session UUID (from JSONL filename)
+	AgentID        string    `json:"agentId"`        // Parent agent UUID
+	Preview        string    `json:"preview"`        // First user message preview
+	MessageCount   int       `json:"messageCount"`   // legacy: user+assistant event count (kept for back-compat)
+	TurnCount      int       `json:"turnCount"`      // v0.5.46: real user prompts in the FILE (not memory)
+	JsonlLineCount int       `json:"jsonlLineCount"` // v0.5.46: every non-empty JSONL line in the FILE
+	CreatedAt      time.Time `json:"createdAt"`      // From first message timestamp
+	UpdatedAt      time.Time `json:"updatedAt"`      // From last message timestamp
 }
 
 // =============================================================================

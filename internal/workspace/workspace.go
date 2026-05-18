@@ -214,12 +214,23 @@ func (m *Manager) UpgradeWorkspaceSchema(ws *Workspace) *Workspace {
 	return ws
 }
 
-// Session represents a Claude Code chat session
+// Session represents a Claude Code chat session.
+//
+// Three counts (since v0.5.46) — see getSessionPreview for the single streaming
+// pass that produces all of them:
+//   - MessageCount: count of user+assistant events. Legacy field; kept so
+//     existing consumers don't break. New code should prefer TurnCount.
+//   - TurnCount: count of real user messages (tool_result_carrier rows
+//     excluded). This is what end-users mean by "how long is this session".
+//   - JsonlLineCount: count of non-empty JSONL lines (every type — metadata,
+//     carriers, summaries, snapshots — everything the file actually contains).
 type Session struct {
-	SessionID    string    `json:"sessionId"`
-	LastModified time.Time `json:"lastModified"`
-	MessageCount int       `json:"messageCount"`
-	Preview      string    `json:"preview"` // First user message preview
+	SessionID      string    `json:"sessionId"`
+	LastModified   time.Time `json:"lastModified"`
+	MessageCount   int       `json:"messageCount"`   // legacy: user+assistant event count
+	TurnCount      int       `json:"turnCount"`      // real user prompts only
+	JsonlLineCount int       `json:"jsonlLineCount"` // raw non-empty JSONL lines
+	Preview        string    `json:"preview"`        // First user message preview
 }
 
 // Manager handles workspace operations. Registries are private — all access goes through Manager methods.
@@ -939,8 +950,8 @@ func (m *Manager) GetSessions(folder string) ([]Session, error) {
 			continue
 		}
 
-		// Get preview and count from file
-		preview, count := getSessionPreview(filePath)
+		// Get preview + all three counts from a single streaming pass.
+		preview, count, turnCount, jsonlLineCount := getSessionPreview(filePath)
 
 		// Skip summary-only sessions (no actual user/assistant messages)
 		if count == 0 {
@@ -948,10 +959,12 @@ func (m *Manager) GetSessions(folder string) ([]Session, error) {
 		}
 
 		sessions = append(sessions, Session{
-			SessionID:    sessionID,
-			LastModified: info.ModTime(),
-			MessageCount: count,
-			Preview:      preview,
+			SessionID:      sessionID,
+			LastModified:   info.ModTime(),
+			MessageCount:   count,
+			TurnCount:      turnCount,
+			JsonlLineCount: jsonlLineCount,
+			Preview:        preview,
 		})
 	}
 
@@ -975,8 +988,15 @@ func encodeProjectPathRegex(path string) string {
 	return nonAlphanumeric.ReplaceAllString(path, "-")
 }
 
-// getSessionPreview streams the entire JSONL file line-by-line, counting every
-// user/assistant event and grabbing the first user message as the preview.
+// getSessionPreview streams the entire JSONL file line-by-line and returns
+// four values in one pass:
+//
+//   preview        — first user message (truncated to 100 chars)
+//   count          — user+assistant event count (legacy unit; kept for back-compat)
+//   turnCount      — real user prompts only (carriers excluded). What end-users
+//                    intuit as "how many things I asked".
+//   jsonlLineCount — every non-empty line in the file (metadata, carriers,
+//                    summaries, snapshots, parse failures — everything).
 //
 // Why streaming: prior to this, a fixed 64KB Read() was used. A single large
 // user prompt (e.g. a 33KB initial message with injected CLAUDE.md context)
@@ -984,13 +1004,16 @@ func encodeProjectPathRegex(path string) string {
 // invisible to the counter and to the preview logic. Long sessions appeared
 // as "1 messages" in the UI.
 //
-// bufio.Scanner uses one line of memory at a time. We bump MaxTokenSize to
-// 8MB to handle pathological single-line content blocks (images, large file
+// bufio.Scanner uses one line of memory at a time. MaxTokenSize is 8MB to
+// handle pathological single-line content blocks (images, large file
 // attachments, big tool results — JSONL lines can legitimately get huge).
-func getSessionPreview(filePath string) (string, int) {
+//
+// Performance: ~10ms for a 2MB session. Called once per session file when
+// SessionsDialog opens and during watcher session discovery.
+func getSessionPreview(filePath string) (preview string, count int, turnCount int, jsonlLineCount int) {
 	file, err := os.Open(filePath)
 	if err != nil {
-		return "", 0
+		return "", 0, 0, 0
 	}
 	defer file.Close()
 
@@ -999,38 +1022,46 @@ func getSessionPreview(filePath string) (string, int) {
 	// Grow up to 8MB per line; this is read-on-demand, not pre-allocated.
 	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
 
-	preview := ""
-	count := 0
-
 	for scanner.Scan() {
 		line := scanner.Text()
 		if line == "" {
 			continue
 		}
+		// jsonlLineCount counts every non-empty line — even if it fails to
+		// classify. That matches what `wc -l` would report and what the user
+		// sees as "the file's size in messages".
+		jsonlLineCount++
 
 		classified, err := types.ClassifyJSONLEvent(line)
 		if err != nil {
 			continue
 		}
 
-		// Count user and assistant messages
+		// Legacy: user OR assistant event types.
 		if classified.EventType == types.JSONLEventUser || classified.EventType == types.JSONLEventAssistant {
 			count++
 		}
 
-		// Get first user message as preview (set once, never overwritten)
-		if preview == "" && classified.EventType == types.JSONLEventUser && classified.User != nil {
+		// Turn count: a turn starts only when ConvertToMessage produces a
+		// "user" message (NOT a tool_result_carrier). The classifier alone
+		// can't distinguish — JSONLEventUser covers both — so we convert and
+		// check the resulting Type.
+		if classified.EventType == types.JSONLEventUser {
 			msg := types.ConvertToMessage(classified)
-			if msg != nil && msg.Content != "" {
-				preview = msg.Content
-				if len(preview) > 100 {
-					preview = preview[:100] + "..."
+			if msg != nil && msg.Type == "user" {
+				turnCount++
+				// First real user message becomes the preview.
+				if preview == "" && msg.Content != "" {
+					preview = msg.Content
+					if len(preview) > 100 {
+						preview = preview[:100] + "..."
+					}
 				}
 			}
 		}
 	}
 
-	return preview, count
+	return preview, count, turnCount, jsonlLineCount
 }
 
 // sanitizeFilename makes a string safe for use as filename
@@ -1050,18 +1081,141 @@ func sanitizeFilename(name string) string {
 	return replacer.Replace(name)
 }
 
-// Conversation represents a chat conversation with pagination info
+// Conversation represents a chat conversation with pagination info.
+//
+// Two unit systems coexist intentionally:
+//   - Message-based (TotalCount, HasMore, DisplayCount) — legacy, used by
+//     GetConversationPaged. Counts each ConvertToMessage result minus carriers.
+//   - Turn-based (TurnCount, TurnsLoaded, HasMoreTurns) — produced by
+//     GetConversationByTurns. A "turn" is one real user message + everything
+//     that follows until the next real user message. tool_result_carrier
+//     messages do NOT start turns; they belong to the prior turn.
+//
+// The frontend now uses turn-based fields; the message-based fields are kept
+// populated for backward compatibility with any consumer still on the old path.
 type Conversation struct {
-	SessionID    string          `json:"sessionId"`
-	Messages     []types.Message `json:"messages"`
-	TotalCount   int             `json:"totalCount"`   // Total display messages available
-	HasMore      bool            `json:"hasMore"`      // More messages available to load
-	DisplayCount int             `json:"displayCount"` // Display messages in this page (excludes carrier messages)
+	SessionID      string          `json:"sessionId"`
+	Messages       []types.Message `json:"messages"`
+	TotalCount     int             `json:"totalCount"`     // Total display messages in the file (excludes carriers)
+	HasMore        bool            `json:"hasMore"`        // More messages available to load (message-based)
+	DisplayCount   int             `json:"displayCount"`   // Display messages in this page (excludes carriers)
+	TurnCount      int             `json:"turnCount"`      // Total turns in the file (count of real user messages)
+	TurnsLoaded    int             `json:"turnsLoaded"`    // Turns included in this page
+	HasMoreTurns   bool            `json:"hasMoreTurns"`   // True if earlier turns exist beyond this page
+	JsonlLineCount int             `json:"jsonlLineCount"` // Raw non-empty JSONL line count (includes metadata + carriers)
 }
 
 // GetConversation reads conversation with optional limit (0 = all, returns last N messages)
 func (m *Manager) GetConversation(folder, sessionID string) (*Conversation, error) {
 	return m.GetConversationPaged(folder, sessionID, 30, 0) // Default to last 30
+}
+
+// GetConversationByTurns streams the entire JSONL once, identifies turn
+// boundaries (each real user message = a new turn), and returns every message
+// within the last `turnLimit` turns. turnLimit <= 0 means "all turns".
+//
+// Turn definition:
+//   - A turn starts when a user message arrives that ConvertToMessage classifies
+//     as Type=="user" (i.e. NOT a tool_result_carrier). Carrier messages belong
+//     to the turn they're answering — they don't start their own turn.
+//   - Everything between real user message N and real user message N+1 belongs
+//     to turn N: assistant chunks, carriers, summaries, system markers.
+//   - Messages that appear before the first real user message (e.g. an opening
+//     compaction summary) are included only when the full conversation is being
+//     returned (i.e. startTurn == 0); otherwise they're skipped as orphaned.
+//
+// Returned messages preserve their JSONL order so any timestamp-based reorder
+// downstream produces a stable view.
+func (m *Manager) GetConversationByTurns(folder, sessionID string, turnLimit int) (*Conversation, error) {
+	encodedName := encodeProjectPath(folder)
+	sessionPath := filepath.Join(os.Getenv("HOME"), ".claude", "projects", encodedName, sessionID+".jsonl")
+
+	file, err := os.Open(sessionPath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	// 8MB MaxTokenSize matches getSessionPreview — handles large content blocks.
+	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
+
+	// Build an in-memory turn index in a single streaming pass.
+	// Each entry remembers which turn (-1 = pre-first-user) the message belongs to.
+	type turned struct {
+		turnIdx int
+		msg     types.Message
+	}
+	var all []turned
+	turnIdx := -1
+	totalDisplay := 0  // non-carrier message count across the whole file
+	jsonlLines := 0    // every non-empty line, including metadata + classification failures
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			continue
+		}
+		jsonlLines++
+		classified, err := types.ClassifyJSONLEvent(line)
+		if err != nil {
+			continue
+		}
+		msg := types.ConvertToMessage(classified)
+		if msg == nil {
+			continue
+		}
+		// A turn starts when a real user message arrives. Carriers don't bump.
+		if msg.Type == "user" {
+			turnIdx++
+		}
+		if msg.Type != "tool_result_carrier" {
+			totalDisplay++
+		}
+		all = append(all, turned{turnIdx: turnIdx, msg: *msg})
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+
+	totalTurns := turnIdx + 1 // -1 means 0 turns; 0 means 1 turn
+
+	// Determine which turns survive the slice.
+	startTurn := 0
+	if turnLimit > 0 && turnLimit < totalTurns {
+		startTurn = totalTurns - turnLimit
+	}
+
+	messages := make([]types.Message, 0, len(all))
+	displayCount := 0
+	for _, t := range all {
+		// Include the message if its turn is in the visible range.
+		// Pre-user messages (turnIdx == -1) ride along only when we're loading
+		// from the start — otherwise they'd appear as orphaned context.
+		include := t.turnIdx >= startTurn || (startTurn == 0 && t.turnIdx == -1)
+		if !include {
+			continue
+		}
+		messages = append(messages, t.msg)
+		if t.msg.Type != "tool_result_carrier" {
+			displayCount++
+		}
+	}
+
+	turnsLoaded := totalTurns - startTurn
+	hasMoreTurns := startTurn > 0
+
+	return &Conversation{
+		SessionID:      sessionID,
+		Messages:       messages,
+		TotalCount:     totalDisplay,
+		HasMore:        hasMoreTurns, // mirror turn-based hasMore for legacy consumers
+		DisplayCount:   displayCount,
+		TurnCount:      totalTurns,
+		TurnsLoaded:    turnsLoaded,
+		HasMoreTurns:   hasMoreTurns,
+		JsonlLineCount: jsonlLines,
+	}, nil
 }
 
 // GetConversationPaged reads conversation with pagination using the classifier.

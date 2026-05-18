@@ -632,18 +632,45 @@ func (a *App) emitInitialState() {
 
 	for _, agent := range a.currentWorkspace.Agents {
 		sessions := a.rt.GetSessionsForAgent(agent.ID)
-		typeSessions := make([]types.Session, 0, len(sessions))
 		sessionUnread := make(map[string]int)
 
+		// File-truth stats: scan the JSONL files so initial counts match what
+		// SessionsDialog will show post-refresh. Without this, the workspace:
+		// loaded event would seed the FE with len(s.Messages) — i.e. only the
+		// 25 turns currently in memory per session, lying about how long each
+		// session actually is. Safe to fail silently per-agent — fall back to
+		// runtime data.
+		var fileSessions []workspace.Session
+		if a.workspace != nil {
+			if fs, err := a.workspace.GetSessions(agent.Folder); err == nil {
+				fileSessions = fs
+			}
+		}
+		fileByID := make(map[string]workspace.Session, len(fileSessions))
+		for _, fs := range fileSessions {
+			fileByID[fs.SessionID] = fs
+		}
+
+		typeSessions := make([]types.Session, 0, len(sessions))
 		for _, s := range sessions {
-			typeSessions = append(typeSessions, types.Session{
+			sess := types.Session{
 				ID:           s.SessionID,
 				AgentID:      s.AgentID,
 				Preview:      s.Preview,
-				MessageCount: len(s.Messages),
+				MessageCount: len(s.Messages), // legacy fallback
 				CreatedAt:    s.CreatedAt,
 				UpdatedAt:    s.UpdatedAt,
-			})
+			}
+			// Overlay file-truth counts when available.
+			if fs, ok := fileByID[s.SessionID]; ok {
+				sess.MessageCount = fs.MessageCount
+				sess.TurnCount = fs.TurnCount
+				sess.JsonlLineCount = fs.JsonlLineCount
+				if sess.Preview == "" {
+					sess.Preview = fs.Preview
+				}
+			}
+			typeSessions = append(typeSessions, sess)
 			sessionUnread[s.SessionID] = s.UnreadCount
 		}
 

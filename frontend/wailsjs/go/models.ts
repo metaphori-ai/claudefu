@@ -64,6 +64,44 @@ export namespace keys {
 
 export namespace main {
 	
+	export class BroadcastResult {
+	    agentId: string;
+	    agentSlug: string;
+	    success: boolean;
+	    error?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new BroadcastResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.agentId = source["agentId"];
+	        this.agentSlug = source["agentSlug"];
+	        this.success = source["success"];
+	        this.error = source["error"];
+	    }
+	}
+	export class BroadcastableAgent {
+	    id: string;
+	    slug: string;
+	    description: string;
+	    folder: string;
+	    isCrossWorkspace: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new BroadcastableAgent(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.slug = source["slug"];
+	        this.description = source["description"];
+	        this.folder = source["folder"];
+	        this.isCrossWorkspace = source["isCrossWorkspace"];
+	    }
+	}
 	export class ClaudePermissions {
 	    allow: string[];
 	    deny: string[];
@@ -86,6 +124,10 @@ export namespace main {
 	    totalCount: number;
 	    hasMore: boolean;
 	    displayCount: number;
+	    turnCount: number;
+	    turnsLoaded: number;
+	    hasMoreTurns: boolean;
+	    jsonlLineCount: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new ConversationResult(source);
@@ -98,6 +140,10 @@ export namespace main {
 	        this.totalCount = source["totalCount"];
 	        this.hasMore = source["hasMore"];
 	        this.displayCount = source["displayCount"];
+	        this.turnCount = source["turnCount"];
+	        this.turnsLoaded = source["turnsLoaded"];
+	        this.hasMoreTurns = source["hasMoreTurns"];
+	        this.jsonlLineCount = source["jsonlLineCount"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -1149,6 +1195,8 @@ export namespace types {
 	    agentId: string;
 	    preview: string;
 	    messageCount: number;
+	    turnCount: number;
+	    jsonlLineCount: number;
 	    // Go type: time
 	    createdAt: any;
 	    // Go type: time
@@ -1164,6 +1212,8 @@ export namespace types {
 	        this.agentId = source["agentId"];
 	        this.preview = source["preview"];
 	        this.messageCount = source["messageCount"];
+	        this.turnCount = source["turnCount"];
+	        this.jsonlLineCount = source["jsonlLineCount"];
 	        this.createdAt = this.convertValues(source["createdAt"], null);
 	        this.updatedAt = this.convertValues(source["updatedAt"], null);
 	    }

@@ -4,7 +4,8 @@ import { isNearBottom as checkNearBottom, getScrollDebugInfo, type ScrollDebugIn
 export interface UseScrollManagementReturn {
   scrollContainerRef: React.RefObject<HTMLDivElement>;
   messagesEndRef: React.RefObject<HTMLDivElement>;
-  showScrollButton: boolean;
+  showScrollButton: boolean;       // user has scrolled away from bottom
+  showScrollTopButton: boolean;    // user has scrolled away from top
   forceScrollActive: boolean;
   forceScrollActiveRef: React.MutableRefObject<boolean>;
   scrollDebug: ScrollDebugInfo;
@@ -12,6 +13,7 @@ export interface UseScrollManagementReturn {
   scrollToBottom: () => void;
   scrollToBottomRAF: () => void;
   scrollToBottomDoubleRAF: () => void;
+  scrollToTop: () => void;
   activateForceScroll: () => void;
 }
 
@@ -21,6 +23,7 @@ export function useScrollManagement(messages: unknown[]): UseScrollManagementRet
   const forceScrollActiveRef = useRef<boolean>(false);
 
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [showScrollTopButton, setShowScrollTopButton] = useState(false);
   const [forceScrollActive, setForceScrollActive] = useState(false);
   const [scrollDebug, setScrollDebug] = useState<ScrollDebugInfo>({
     scrollTop: 0,
@@ -65,6 +68,17 @@ export function useScrollManagement(messages: unknown[]): UseScrollManagementRet
     });
   }, []);
 
+  // Scroll to top of the conversation (mirrors scrollToBottom).
+  // Turns off force-scroll so we don't immediately snap back down on next
+  // message; the user clearly wants to read the top.
+  const scrollToTop = useCallback(() => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = 0;
+      forceScrollActiveRef.current = false;
+      setForceScrollActive(false);
+    }
+  }, []);
+
   // Activate force scroll (for when user sends a message)
   const activateForceScroll = useCallback(() => {
     forceScrollActiveRef.current = true;
@@ -80,6 +94,10 @@ export function useScrollManagement(messages: unknown[]): UseScrollManagementRet
       const { scrollTop, scrollHeight, clientHeight } = container;
       const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
       setShowScrollButton(distanceFromBottom > 150);
+      // Show the top button only when scrolled away from the top AND the
+      // viewport actually has room to scroll up to (filter out tiny pages
+      // where scrollHeight ~ clientHeight).
+      setShowScrollTopButton(scrollTop > 150 && scrollHeight > clientHeight + 150);
 
       // Turn off force scroll if user scrolls away from bottom
       if (distanceFromBottom > 300 && forceScrollActiveRef.current) {
@@ -101,6 +119,7 @@ export function useScrollManagement(messages: unknown[]): UseScrollManagementRet
     scrollContainerRef,
     messagesEndRef,
     showScrollButton,
+    showScrollTopButton,
     forceScrollActive,
     forceScrollActiveRef,
     scrollDebug,
@@ -108,6 +127,7 @@ export function useScrollManagement(messages: unknown[]): UseScrollManagementRet
     scrollToBottom,
     scrollToBottomRAF,
     scrollToBottomDoubleRAF,
+    scrollToTop,
     activateForceScroll
   };
 }

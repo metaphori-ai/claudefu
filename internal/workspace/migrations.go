@@ -35,6 +35,7 @@ var allMigrations = []Migration{
 	{8, "fix-agent-slug-description", migrateFixAgentSlugDescription},
 	{9, "add-agent-type-to-schema", migrateAddAgentTypeToSchema},
 	{10, "add-agent-model-attrs-to-schema", migrateAddAgentModelAttrs},
+	{11, "add-agent-default-load-turns-to-schema", migrateAddAgentDefaultLoadTurns},
 }
 
 // RunMigrations runs all pending migrations in order.
@@ -693,5 +694,56 @@ func migrateAddAgentModelAttrs(configPath string, m *Manager) error {
 		return err
 	}
 	log.Printf("Migration 10: added %d agent model attributes to meta-schema", len(toAdd))
+	return nil
+}
+
+// =============================================================================
+// Migration 11: Add AGENT_DEFAULT_LOAD_TURNS system attribute to meta-schema
+// =============================================================================
+//
+// Lets users override the default initial-load turn count per agent via the
+// Workspace & Agents dialog. Blank value falls back to DEFAULT_INITIAL_LOAD_TURNS
+// (see frontend/src/components/chat/constants.ts). Inserted after AGENT_EFFORT.
+
+func migrateAddAgentDefaultLoadTurns(configPath string, m *Manager) error {
+	const attrName = "AGENT_DEFAULT_LOAD_TURNS"
+	schema := m.metaSchema.GetSchema()
+
+	for _, attr := range schema.AgentAttributes {
+		if attr.Name == attrName {
+			return nil // Already present — idempotent
+		}
+	}
+
+	newAttr := MetaAttribute{
+		Name:        attrName,
+		Type:        "text",
+		Description: "Initial turns to load when opening a session (positive integer; blank = global default 25)",
+		System:      true,
+	}
+
+	// Insert after AGENT_EFFORT if present, else append.
+	var updated []MetaAttribute
+	inserted := false
+	for _, attr := range schema.AgentAttributes {
+		updated = append(updated, attr)
+		if !inserted && attr.Name == "AGENT_EFFORT" {
+			updated = append(updated, newAttr)
+			inserted = true
+		}
+	}
+	if !inserted {
+		updated = append(updated, newAttr)
+	}
+
+	schema.AgentAttributes = updated
+	m.metaSchema.mu.Lock()
+	m.metaSchema.schema = schema
+	err := m.metaSchema.save()
+	m.metaSchema.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	log.Printf("Migration 11: added AGENT_DEFAULT_LOAD_TURNS system attribute")
 	return nil
 }

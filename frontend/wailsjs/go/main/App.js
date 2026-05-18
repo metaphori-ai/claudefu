@@ -38,6 +38,10 @@ export function ApplyUpdateAndRestart() {
   return window['go']['main']['App']['ApplyUpdateAndRestart']();
 }
 
+export function BroadcastToInbox(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['BroadcastToInbox'](arg1, arg2, arg3, arg4);
+}
+
 export function CancelSession(arg1, arg2) {
   return window['go']['main']['App']['CancelSession'](arg1, arg2);
 }
@@ -166,6 +170,10 @@ export function GetBacklogItems(arg1) {
   return window['go']['main']['App']['GetBacklogItems'](arg1);
 }
 
+export function GetBroadcastableAgents() {
+  return window['go']['main']['App']['GetBroadcastableAgents']();
+}
+
 export function GetClaudeMD(arg1) {
   return window['go']['main']['App']['GetClaudeMD'](arg1);
 }
@@ -184,6 +192,10 @@ export function GetConfigPath() {
 
 export function GetConversation(arg1, arg2) {
   return window['go']['main']['App']['GetConversation'](arg1, arg2);
+}
+
+export function GetConversationByTurns(arg1, arg2, arg3) {
+  return window['go']['main']['App']['GetConversationByTurns'](arg1, arg2, arg3);
 }
 
 export function GetConversationPaged(arg1, arg2, arg3, arg4) {

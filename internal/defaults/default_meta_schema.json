@@ -17,6 +17,7 @@
     { "name": "AGENT_CROSS_WORKSPACE", "type": "text", "description": "Enable cross-workspace messaging (true/false)", "system": true },
     { "name": "AGENT_MODEL", "type": "text", "description": "Default Claude model (alias or full ID; blank = CLI default)", "system": true },
     { "name": "AGENT_EFFORT", "type": "text", "description": "Default effort level (low|medium|high|xhigh|max; blank = model default)", "system": true },
+    { "name": "AGENT_DEFAULT_LOAD_TURNS", "type": "text", "description": "Initial turns to load when opening a session (positive integer; blank = global default 25)", "system": true },
     { "name": "AGENT_DESCRIPTION", "type": "text", "description": "What this agent does" }
   ]
 }

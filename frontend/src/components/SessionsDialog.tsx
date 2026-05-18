@@ -121,14 +121,20 @@ export function SessionsDialog({
     return customName || session.preview || 'New conversation';
   };
 
-  // Filter and sort sessions
+  // Filter and sort sessions.
+  // Empty-filter uses turnCount because that's the user's mental model — a
+  // session with zero real prompts (e.g. summary-only or aborted) reads as
+  // empty even if its file has a bunch of metadata lines.
+  // Sort-by-count uses turnCount for the same reason.
+  // Both fall back to messageCount when the backend hasn't populated the new
+  // fields yet (e.g. an old initial workspace:loaded snapshot before refresh).
   const filteredAndSortedSessions = sessions
-    .filter(s => !hideEmpty || s.messageCount > 0)
+    .filter(s => !hideEmpty || (s.turnCount ?? s.messageCount) > 0)
     .sort((a, b) => {
       if (sortOrder === 'recency') {
         return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
       } else {
-        return b.messageCount - a.messageCount;
+        return (b.turnCount ?? b.messageCount) - (a.turnCount ?? a.messageCount);
       }
     });
 
@@ -497,7 +503,16 @@ export function SessionsDialog({
                     fontSize: '0.75rem',
                     color: '#666'
                   }}>
-                    <span>{session.messageCount} messages</span>
+                    {/* File-truth session stats (v0.5.46): turns = real user
+                        prompts, messages = raw JSONL line count. Replaces the
+                        single user+assistant count that was being driven from
+                        in-memory loaded messages. Hover for the legacy count. */}
+                    <span
+                      title={`${session.messageCount} user+assistant events`}
+                    >
+                      {session.turnCount ?? 0} turns &middot;{' '}
+                      {session.jsonlLineCount ?? session.messageCount} messages
+                    </span>
                     <span>•</span>
                     <span>Updated {formatRelativeTime(session.updatedAt)}</span>
                   </div>
