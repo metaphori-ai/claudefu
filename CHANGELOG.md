@@ -5,6 +5,16 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.46] - 2026-05-20
+
+### Added
+- **Per-machine Claude CLI env vars + command** — Moved out of synced `settings.json` into a dedicated `~/.claudefu/env-vars-{sanitized-hostname}.json` file per machine. Files still replicate across machines via Syncthing, but each machine reads only its own file (filename keyed by sanitized `os.Hostname()`), so simultaneous saves on two machines can never produce a Syncthing conflict. Solves the real-world pain of `CLAUDE_CODE_OAUTH_TOKEN` (which legitimately differs per machine) clobbering itself across the sync. New Go types `settings.LocalEnvVars` + Manager methods `GetLocalEnvVars` / `SaveLocalEnvVars` / `LocalEnvVarsFilePath`. New Wails bindings for the same.
+- **One-shot migration from `settings.json`** — On the first Manager init after upgrading, if the local file does not yet exist AND `settings.json` carries `ClaudeEnvVars` or `ClaudeCodeCommand`, the values are copied into the local file and those fields are cleared from `settings.json`. Idempotent on subsequent runs.
+- **"Machine-local" hint in GlobalSettingsDialog** — Above the env vars section, a small chip displays `Machine-local: ~/.claudefu/env-vars-{hostname}.json — other machines won't see or overwrite them.` Removes any ambiguity about where values are stored.
+
+### Changed
+- **All env var read sites redirected** — `app.go::initializeClaude`, `app.go::initializeProxy`, `app_settings.go::SaveSettings`, `app_settings.go::applyMachineProxySettings` now source env vars + CLI command from `LocalEnvVars` instead of `Settings.ClaudeEnvVars` / `ClaudeCodeCommand`. The Settings struct keeps those fields for back-compat + migration detection, but the local file is now the source of truth.
+
 ## [0.5.45] - 2026-05-18
 
 ### Added

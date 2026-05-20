@@ -4,6 +4,9 @@ import { useSaveShortcut } from '../hooks';
 import {
   GetSettings,
   SaveSettings,
+  GetLocalEnvVars,
+  SaveLocalEnvVars,
+  LocalEnvVarsFilePath,
   GetGlobalPermissions,
   SaveGlobalPermissions,
   GetOrderedPermissionSets,
@@ -97,6 +100,9 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
 
   // Claude CLI command state
   const [claudeCodeCommand, setClaudeCodeCommand] = useState('');
+  // v0.5.46: path to this machine's env-vars file (for the "machine-local"
+  // hint shown above the section). Empty until LocalEnvVarsFilePath resolves.
+  const [localEnvVarsPath, setLocalEnvVarsPath] = useState('');
 
   // Sifu state
   const [sifuEnabled, setSifuEnabled] = useState(false);
@@ -153,17 +159,35 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
       try { sifuMD = await GetSifuTemplateMD(); } catch { /* ok */ }
       try { sifuAgentMD = await GetSifuAgentTemplateMD(); } catch { /* ok */ }
 
-      // Convert settings env vars map to array
+      // v0.5.46+: env vars + CLI command are PER-MACHINE.
+      // Sourced from ~/.claudefu/env-vars-{hostname}.json so OAuth tokens etc.
+      // don't conflict across machines via Syncthing. Falls back to the
+      // settings.json values if the local file is somehow missing (won't
+      // happen post-migration, but safe).
       const vars: EnvVar[] = [];
-      if (settingsResult.claudeEnvVars) {
-        for (const [key, value] of Object.entries(settingsResult.claudeEnvVars)) {
-          vars.push({ key, value });
+      let cliCommand = '';
+      let localPath = '';
+      try {
+        const [lev, p] = await Promise.all([GetLocalEnvVars(), LocalEnvVarsFilePath()]);
+        localPath = p;
+        if (lev?.envVars) {
+          for (const [key, value] of Object.entries(lev.envVars)) {
+            vars.push({ key, value: value as string });
+          }
         }
+        cliCommand = lev?.claudeCliCommand || '';
+      } catch (err) {
+        console.warn('[GlobalSettingsDialog] Failed to load LocalEnvVars, falling back to settings.json:', err);
+        if (settingsResult.claudeEnvVars) {
+          for (const [key, value] of Object.entries(settingsResult.claudeEnvVars)) {
+            vars.push({ key, value });
+          }
+        }
+        cliCommand = settingsResult.claudeCodeCommand || '';
       }
       setEnvVars(vars);
-
-      // Load Claude CLI command
-      setClaudeCodeCommand(settingsResult.claudeCodeCommand || '');
+      setClaudeCodeCommand(cliCommand);
+      setLocalEnvVarsPath(localPath);
 
       // Load Sifu settings
       setSifuEnabled(settingsResult.sifuEnabled || false);
@@ -249,7 +273,9 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
         try { setProxyStatus(await GetProxyStatus()); } catch { /* ok */ }
         onClose();
       } else {
-        // Save env + permissions for non-MD, non-proxy tabs
+        // v0.5.46+: env vars + CLI command go to the machine-local file via
+        // SaveLocalEnvVars. The shared settings.json continues to hold the
+        // truly-global fields (sifu, defaults, etc.) via SaveSettings.
         const currentSettings = await GetSettings();
         const envMap: Record<string, string> = {};
         for (const { key, value } of envVars) {
@@ -257,15 +283,22 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
             envMap[key.trim()] = value;
           }
         }
+        // Strip env vars + CLI command from the synced settings — defensive
+        // even though MigrateEnvVarsFromSettings should have cleared them
+        // already. Prevents a stale value from sneaking back in.
         const updatedSettings = new settings.Settings({
           ...currentSettings,
-          claudeEnvVars: envMap,
-          claudeCodeCommand,
+          claudeEnvVars: {},
+          claudeCodeCommand: '',
           sifuEnabled,
           sifuRootFolder,
         });
         await Promise.all([
           SaveSettings(updatedSettings),
+          SaveLocalEnvVars(new settings.LocalEnvVars({
+            envVars: envMap,
+            claudeCliCommand: claudeCodeCommand,
+          })),
           globalPermissions ? SaveGlobalPermissions(globalPermissions as any) : Promise.resolve(),
         ]);
         onClose();
@@ -559,8 +592,32 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
           padding: '0.1rem 0.3rem',
           borderRadius: '3px',
           fontSize: '0.75rem'
-        }}>ANTHROPIC_BASE_URL</code>).
+        }}>ANTHROPIC_BASE_URL</code>) and per-machine OAuth tokens.
       </p>
+      {/* v0.5.46: Machine-local storage hint. Reassures the user that values
+          set here (especially OAuth tokens) don't sync to other machines —
+          each machine has its own env-vars-{hostname}.json file. */}
+      {localEnvVarsPath && (
+        <p style={{
+          margin: '0 0 1rem 0',
+          padding: '0.5rem 0.75rem',
+          fontSize: '0.75rem',
+          color: '#888',
+          background: '#0d0d0d',
+          border: '1px solid #222',
+          borderRadius: '4px',
+          lineHeight: 1.4
+        }}>
+          <strong style={{ color: '#d97757' }}>Machine-local:</strong>{' '}
+          values below are stored in{' '}
+          <code style={{
+            background: 'transparent',
+            color: '#aaa',
+            fontSize: '0.72rem'
+          }}>{localEnvVarsPath}</code>
+          {' '}— other machines won't see or overwrite them.
+        </p>
+      )}
 
       {/* Known Variables — curated list with dropdown + custom fallback.
           None = omit the var from ClaudeEnvVars; anything else = include on CLI. */}

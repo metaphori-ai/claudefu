@@ -872,6 +872,22 @@ export namespace scaffold {
 
 export namespace settings {
 	
+	export class LocalEnvVars {
+	    hostname: string;
+	    claudeCliCommand: string;
+	    envVars: Record<string, string>;
+	
+	    static createFrom(source: any = {}) {
+	        return new LocalEnvVars(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.hostname = source["hostname"];
+	        this.claudeCliCommand = source["claudeCliCommand"];
+	        this.envVars = source["envVars"];
+	    }
+	}
 	export class MachineProxySettings {
 	    proxyEnabled: boolean;
 	    proxyPort: number;

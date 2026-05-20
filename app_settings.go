@@ -25,7 +25,14 @@ func (a *App) GetSettings() settings.Settings {
 }
 
 // SaveSettings saves application settings and applies runtime changes.
-// NOTE: Proxy settings are saved separately via SaveMachineProxySettings.
+//
+// NOTE on per-machine fields (v0.5.46+):
+//   - Proxy settings are saved separately via SaveMachineProxySettings.
+//   - Env vars + ClaudeCliCommand live in env-vars-{hostname}.json (see
+//     SaveLocalEnvVars). The Settings struct's ClaudeEnvVars / ClaudeCodeCommand
+//     fields are retained for back-compat but are no longer the source of
+//     truth — anything written to them through SaveSettings is ignored at
+//     runtime (the local file wins).
 func (a *App) SaveSettings(s settings.Settings) error {
 	if a.settings == nil {
 		return fmt.Errorf("settings manager not initialized")
@@ -36,14 +43,58 @@ func (a *App) SaveSettings(s settings.Settings) error {
 		return err
 	}
 
-	// Apply runtime changes: update Claude CLI environment variables and command
-	providers.SetClaudeCommand(s.ClaudeCodeCommand)
+	// Apply runtime changes from the machine-local env vars file.
+	lev := a.settings.GetLocalEnvVars()
+	providers.SetClaudeCommand(lev.ClaudeCliCommand)
 
 	// Apply proxy changes (reads machine-specific settings)
 	mps := a.settings.GetMachineProxySettings()
 	a.applyMachineProxySettings(mps)
 
 	return nil
+}
+
+// GetLocalEnvVars returns the env vars + custom CLI command for the CURRENT
+// machine. File: ~/.claudefu/env-vars-{sanitized-hostname}.json. Each machine
+// reads only its own file even though the file syncs across machines via
+// Syncthing — this prevents OAuth tokens (and other machine-specific values)
+// from being clobbered when two machines edit at the same time.
+func (a *App) GetLocalEnvVars() settings.LocalEnvVars {
+	if a.settings == nil {
+		return settings.LocalEnvVars{EnvVars: map[string]string{}}
+	}
+	return a.settings.GetLocalEnvVars()
+}
+
+// SaveLocalEnvVars persists the env vars + custom CLI command for THIS
+// machine, then applies them to the running Claude CLI service so subsequent
+// invocations pick them up without an app restart.
+func (a *App) SaveLocalEnvVars(lev settings.LocalEnvVars) error {
+	if a.settings == nil {
+		return fmt.Errorf("settings manager not initialized")
+	}
+	if err := a.settings.SaveLocalEnvVars(lev); err != nil {
+		return err
+	}
+
+	// Apply runtime changes.
+	providers.SetClaudeCommand(lev.ClaudeCliCommand)
+
+	// Reapply proxy settings so ANTHROPIC_BASE_URL gets re-injected on top of
+	// the latest env vars (or removed if proxy is off and user just cleared
+	// the value).
+	mps := a.settings.GetMachineProxySettings()
+	a.applyMachineProxySettings(mps)
+	return nil
+}
+
+// LocalEnvVarsFilePath returns the absolute path to this machine's env-vars
+// file. Bound so the GlobalSettingsDialog can display it in the UI hint.
+func (a *App) LocalEnvVarsFilePath() string {
+	if a.settings == nil {
+		return ""
+	}
+	return a.settings.LocalEnvVarsFilePath()
 }
 
 // GetHostname returns the current machine's hostname.
@@ -72,10 +123,15 @@ func (a *App) SaveMachineProxySettings(mps settings.MachineProxySettings) error 
 	return nil
 }
 
-// applyMachineProxySettings manages proxy lifecycle based on machine-specific settings.
-// When proxy is enabled, it auto-injects ANTHROPIC_BASE_URL into Claude CLI env.
+// applyMachineProxySettings manages proxy lifecycle based on machine-specific
+// settings. When the proxy is enabled, it auto-injects ANTHROPIC_BASE_URL into
+// Claude CLI env on top of the machine-local env vars.
+//
+// v0.5.46+: reads env vars from LocalEnvVars (machine-local file) instead of
+// settings.json's ClaudeEnvVars field. Keeps OAuth tokens etc. on the machine
+// that owns them.
 func (a *App) applyMachineProxySettings(mps settings.MachineProxySettings) {
-	s := a.settings.GetSettings() // Need ClaudeEnvVars for upstream detection
+	lev := a.settings.GetLocalEnvVars()
 
 	if mps.ProxyEnabled {
 		port := mps.ProxyPort
@@ -85,7 +141,7 @@ func (a *App) applyMachineProxySettings(mps settings.MachineProxySettings) {
 
 		// Determine upstream
 		upstream := "https://api.anthropic.com"
-		if userURL, ok := s.ClaudeEnvVars["ANTHROPIC_BASE_URL"]; ok && userURL != "" {
+		if userURL, ok := lev.EnvVars["ANTHROPIC_BASE_URL"]; ok && userURL != "" {
 			upstream = userURL
 		}
 
@@ -119,11 +175,11 @@ func (a *App) applyMachineProxySettings(mps settings.MachineProxySettings) {
 			}
 		}
 
-		// Inject ANTHROPIC_BASE_URL pointing to our proxy
+		// Inject ANTHROPIC_BASE_URL pointing to our proxy (overlaid on local vars)
 		if a.claude != nil {
 			proxyURL := fmt.Sprintf("http://localhost:%d", port)
 			envVars := make(map[string]string)
-			for k, v := range s.ClaudeEnvVars {
+			for k, v := range lev.EnvVars {
 				envVars[k] = v
 			}
 			envVars["ANTHROPIC_BASE_URL"] = proxyURL
@@ -137,7 +193,7 @@ func (a *App) applyMachineProxySettings(mps settings.MachineProxySettings) {
 
 		// Apply env vars without proxy override
 		if a.claude != nil {
-			a.claude.SetEnvironment(s.ClaudeEnvVars)
+			a.claude.SetEnvironment(lev.EnvVars)
 		}
 	}
 }

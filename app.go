@@ -426,16 +426,18 @@ func (a *App) initializeClaude() {
 
 	a.claude = providers.NewClaudeCodeService(a.ctx)
 
-	// Apply custom environment variables and command from settings
+	// Apply machine-local env vars + custom command (v0.5.46+).
+	// Sourced from env-vars-{hostname}.json, NOT settings.json — so OAuth
+	// tokens and other per-machine secrets don't sync across machines.
 	if a.settings != nil {
-		s := a.settings.GetSettings()
-		if len(s.ClaudeEnvVars) > 0 {
-			a.claude.SetEnvironment(s.ClaudeEnvVars)
-			wailsrt.LogInfo(a.ctx, fmt.Sprintf("Claude CLI environment configured with %d custom variable(s)", len(s.ClaudeEnvVars)))
+		lev := a.settings.GetLocalEnvVars()
+		if len(lev.EnvVars) > 0 {
+			a.claude.SetEnvironment(lev.EnvVars)
+			wailsrt.LogInfo(a.ctx, fmt.Sprintf("Claude CLI environment configured with %d custom variable(s) from %s", len(lev.EnvVars), a.settings.LocalEnvVarsFilePath()))
 		}
-		if s.ClaudeCodeCommand != "" {
-			providers.SetClaudeCommand(s.ClaudeCodeCommand)
-			wailsrt.LogInfo(a.ctx, fmt.Sprintf("Claude CLI command: %s", s.ClaudeCodeCommand))
+		if lev.ClaudeCliCommand != "" {
+			providers.SetClaudeCommand(lev.ClaudeCliCommand)
+			wailsrt.LogInfo(a.ctx, fmt.Sprintf("Claude CLI command: %s", lev.ClaudeCliCommand))
 		}
 	}
 
@@ -465,7 +467,7 @@ func (a *App) initializeProxy() {
 		return
 	}
 
-	s := a.settings.GetSettings() // Need ClaudeEnvVars for upstream detection
+	lev := a.settings.GetLocalEnvVars() // machine-local env vars for upstream detection
 
 	port := mps.ProxyPort
 	if port == 0 {
@@ -474,7 +476,7 @@ func (a *App) initializeProxy() {
 
 	// Determine upstream: use user's ANTHROPIC_BASE_URL if set, otherwise Anthropic direct
 	upstream := "https://api.anthropic.com"
-	if userURL, ok := s.ClaudeEnvVars["ANTHROPIC_BASE_URL"]; ok && userURL != "" {
+	if userURL, ok := lev.EnvVars["ANTHROPIC_BASE_URL"]; ok && userURL != "" {
 		// Chain through user's proxy (e.g., corporate mTLS proxy)
 		upstream = userURL
 	}
@@ -507,10 +509,10 @@ func (a *App) initializeProxy() {
 
 	wailsrt.LogInfo(a.ctx, fmt.Sprintf("Cache fix proxy started on :%d → %s (TTL: %s)", port, upstream, config.CacheTTL))
 
-	// Auto-inject ANTHROPIC_BASE_URL pointing to our proxy
+	// Auto-inject ANTHROPIC_BASE_URL pointing to our proxy (overlaid on local vars)
 	proxyURL := fmt.Sprintf("http://localhost:%d", port)
 	envVars := make(map[string]string)
-	for k, v := range s.ClaudeEnvVars {
+	for k, v := range lev.EnvVars {
 		envVars[k] = v
 	}
 	envVars["ANTHROPIC_BASE_URL"] = proxyURL

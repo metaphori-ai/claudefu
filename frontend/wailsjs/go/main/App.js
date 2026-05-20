@@ -262,6 +262,10 @@ export function GetInboxUnreadCount(arg1) {
   return window['go']['main']['App']['GetInboxUnreadCount'](arg1);
 }
 
+export function GetLocalEnvVars() {
+  return window['go']['main']['App']['GetLocalEnvVars']();
+}
+
 export function GetMCPServerPort() {
   return window['go']['main']['App']['GetMCPServerPort']();
 }
@@ -392,6 +396,10 @@ export function IsUpdateReady() {
 
 export function ListFiles(arg1, arg2, arg3) {
   return window['go']['main']['App']['ListFiles'](arg1, arg2, arg3);
+}
+
+export function LocalEnvVarsFilePath() {
+  return window['go']['main']['App']['LocalEnvVarsFilePath']();
 }
 
 export function Logout() {
@@ -528,6 +536,10 @@ export function SaveGlobalClaudeMD(arg1) {
 
 export function SaveGlobalPermissions(arg1) {
   return window['go']['main']['App']['SaveGlobalPermissions'](arg1);
+}
+
+export function SaveLocalEnvVars(arg1) {
+  return window['go']['main']['App']['SaveLocalEnvVars'](arg1);
 }
 
 export function SaveMCPToolAvailability(arg1) {

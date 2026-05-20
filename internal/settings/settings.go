@@ -101,6 +101,15 @@ func NewManager() (*Manager, error) {
 	_ = m.loadSettings()
 	_ = m.loadAuth()
 
+	// One-shot migration: if settings.json carries env vars + cli command
+	// from before v0.5.46 and the machine-local file does not yet exist,
+	// move them and clear settings.json. Idempotent on subsequent runs.
+	if err := m.MigrateEnvVarsFromSettings(); err != nil {
+		// Migration failure is logged but non-fatal — env vars stay in
+		// settings.json and the existing read sites continue to work.
+		_, _ = os.Stderr.WriteString("[settings] env-vars migration failed: " + err.Error() + "\n")
+	}
+
 	return m, nil
 }
 

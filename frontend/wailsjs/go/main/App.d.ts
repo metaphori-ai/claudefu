@@ -142,6 +142,8 @@ export function GetInboxTotalCount(arg1:string):Promise<number>;
 
 export function GetInboxUnreadCount(arg1:string):Promise<number>;
 
+export function GetLocalEnvVars():Promise<settings.LocalEnvVars>;
+
 export function GetMCPServerPort():Promise<number>;
 
 export function GetMCPToolAvailability():Promise<mcpserver.ToolAvailability>;
@@ -207,6 +209,8 @@ export function IsClaudeInstalled():Promise<boolean>;
 export function IsUpdateReady():Promise<boolean|string>;
 
 export function ListFiles(arg1:string,arg2:string,arg3:number):Promise<Array<main.FileInfo>>;
+
+export function LocalEnvVarsFilePath():Promise<string>;
 
 export function Logout():Promise<void>;
 
@@ -275,6 +279,8 @@ export function SaveFile(arg1:string):Promise<string>;
 export function SaveGlobalClaudeMD(arg1:string):Promise<void>;
 
 export function SaveGlobalPermissions(arg1:permissions.ClaudeFuPermissions):Promise<void>;
+
+export function SaveLocalEnvVars(arg1:settings.LocalEnvVars):Promise<void>;
 
 export function SaveMCPToolAvailability(arg1:mcpserver.ToolAvailability):Promise<void>;
 
