@@ -119,7 +119,7 @@ func (s *Service) CreateSession(folder string) (string, error) {
 		Version:     "2.1.19",
 		GitBranch:   gitBranch,
 		Message: AssistantMessageBody{
-			Model: "claude-opus-4-5-20251101",
+			Model: "claude-opus-4-8",
 			ID:    "msg_claudefu_starter",
 			Type:  "message",
 			Role:  "assistant",

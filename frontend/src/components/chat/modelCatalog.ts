@@ -25,8 +25,15 @@ export interface ModelEntry {
 // Effort levels available across the platform. Individual models declare which they support.
 export const EFFORT_LEVELS: EffortLevel[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 
-// Effort profiles referenced by multiple entries.
-const EFFORT_OPUS_47: EffortLevel[] = ['low', 'medium', 'high', 'xhigh', 'max'];
+// Effort profiles referenced by multiple entries. Named by the level SET they
+// expose, not by the first model that used them, so new models inherit the
+// right profile without a misleading version label.
+//   EFFORT_FULL = the complete five-level set (includes xhigh). Opus 4.7 + 4.8.
+//   EFFORT_46   = four levels, no xhigh. Opus 4.6 + Sonnet 4.6 + opusplan.
+//   EFFORT_NONE = effort selector hidden (model doesn't take --effort).
+// NOTE: a profile lists which levels are SELECTABLE, not the model's default.
+// (Opus 4.7 defaults to xhigh, Opus 4.8 to high — both still expose all five.)
+const EFFORT_FULL: EffortLevel[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 const EFFORT_46: EffortLevel[] = ['low', 'medium', 'high', 'max'];
 const EFFORT_NONE: EffortLevel[] = [];
 
@@ -35,10 +42,10 @@ export const MODEL_CATALOG: ModelEntry[] = [
   // ---------- Aliases ----------
   // Zero-value (empty id) = no --model flag; Claude Code resolves via its own priority chain
   // (settings.json → ANTHROPIC_MODEL env → account tier default). This is the "no opinion" state.
-  { id: '',          label: 'Empty/Default',    group: 'alias', effortLevels: EFFORT_OPUS_47, description: 'No --model flag — Claude Code decides based on settings.json, ANTHROPIC_MODEL env, or account tier default (Max → Opus 4.7; Pro/API → Sonnet 4.6).' },
-  { id: 'best',      label: 'best (opus)',      group: 'alias', effortLevels: EFFORT_OPUS_47, description: 'Most capable model available, currently opus.' },
-  { id: 'opus',      label: 'opus',             group: 'alias', family: 'opus',   effortLevels: EFFORT_OPUS_47 },
-  { id: 'opus[1m]',  label: 'opus [1M]',        group: 'alias', family: 'opus',   effortLevels: EFFORT_OPUS_47, contextOneMillion: true },
+  { id: '',          label: 'Empty/Default',    group: 'alias', effortLevels: EFFORT_FULL, description: 'No --model flag — Claude Code decides based on settings.json, ANTHROPIC_MODEL env, or account tier default (Max → Opus 4.8; Pro/API → Sonnet 4.6).' },
+  { id: 'best',      label: 'best (opus)',      group: 'alias', effortLevels: EFFORT_FULL, description: 'Most capable model available, currently Opus 4.8.' },
+  { id: 'opus',      label: 'opus',             group: 'alias', family: 'opus',   effortLevels: EFFORT_FULL },
+  { id: 'opus[1m]',  label: 'opus [1M]',        group: 'alias', family: 'opus',   effortLevels: EFFORT_FULL, contextOneMillion: true },
   { id: 'opusplan',  label: 'opusplan',         group: 'alias', family: 'mixed',  effortLevels: EFFORT_46,      description: 'Opus for plan mode, Sonnet for execution.' },
   { id: 'opusplan[1m]', label: 'opusplan [1M]', group: 'alias', family: 'mixed',  effortLevels: EFFORT_46,      contextOneMillion: true },
   { id: 'sonnet',    label: 'sonnet',           group: 'alias', family: 'sonnet', effortLevels: EFFORT_46 },
@@ -46,8 +53,10 @@ export const MODEL_CATALOG: ModelEntry[] = [
   { id: 'haiku',     label: 'haiku',            group: 'alias', family: 'haiku',  effortLevels: EFFORT_NONE },
 
   // ---------- Explicit — Opus ----------
-  { id: 'claude-opus-4-7',        label: 'Opus 4.7',         group: 'explicit', family: 'opus',   effortLevels: EFFORT_OPUS_47 },
-  { id: 'claude-opus-4-7[1m]',    label: 'Opus 4.7 [1M]',    group: 'explicit', family: 'opus',   effortLevels: EFFORT_OPUS_47, contextOneMillion: true },
+  { id: 'claude-opus-4-8',        label: 'Opus 4.8',         group: 'explicit', family: 'opus',   effortLevels: EFFORT_FULL },
+  { id: 'claude-opus-4-8[1m]',    label: 'Opus 4.8 [1M]',    group: 'explicit', family: 'opus',   effortLevels: EFFORT_FULL, contextOneMillion: true },
+  { id: 'claude-opus-4-7',        label: 'Opus 4.7',         group: 'explicit', family: 'opus',   effortLevels: EFFORT_FULL },
+  { id: 'claude-opus-4-7[1m]',    label: 'Opus 4.7 [1M]',    group: 'explicit', family: 'opus',   effortLevels: EFFORT_FULL, contextOneMillion: true },
   { id: 'claude-opus-4-6',        label: 'Opus 4.6',         group: 'explicit', family: 'opus',   effortLevels: EFFORT_46 },
   { id: 'claude-opus-4-6[1m]',    label: 'Opus 4.6 [1M]',    group: 'explicit', family: 'opus',   effortLevels: EFFORT_46, contextOneMillion: true },
   { id: 'claude-opus-4-5-20251101', label: 'Opus 4.5',       group: 'explicit', family: 'opus',   effortLevels: EFFORT_NONE },
@@ -83,8 +92,8 @@ export function requiresExtraUsage(id: string): boolean {
 //   - Explicit `[1m]` variants (or contextOneMillion: true) → 1,000,000
 //   - Everything else → 200,000
 //   - Empty string (Empty/Default) → 1,000,000 assumption (Max plan is the common ClaudeFu tier;
-//     Opus auto-upgrades to 1M there; on Pro/API the assumption is pessimistic — user can
-//     explicitly pick a 200K model or alias to see accurate numbers).
+//     Opus 4.8 ships 1M context generally available there; on Pro/API the assumption is
+//     pessimistic — user can explicitly pick a 200K model or alias to see accurate numbers).
 // Unknown IDs fall through to 200K — a safer default for warning purposes (false positive
 // warnings on model change are less harmful than false negatives).
 export function getContextWindow(id: string): number {
@@ -99,6 +108,8 @@ export function getContextWindow(id: string): number {
 // to ClaudeEnvVars. A value of "" means "None (omit)".
 
 export const ENV_OPUS_MODEL_OPTIONS: string[] = [
+  'claude-opus-4-8',
+  'claude-opus-4-8[1m]',
   'claude-opus-4-7',
   'claude-opus-4-7[1m]',
   'claude-opus-4-6',

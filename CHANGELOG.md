@@ -5,6 +5,15 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.47] - 2026-05-20
+
+### Added
+- **Claude Opus 4.8 in the model picker** — `claude-opus-4-8` and `claude-opus-4-8[1m]` added to the top of the Specific Versions group in the ModelSelector dropdown (above the input area), and to the Opus dropdown in Global Settings → Known Variables. Both expose the full effort range (low/medium/high/xhigh/max). 1M context confirmed generally available; effort defaults to `high` server-side (vs 4.7's `xhigh`) when left on auto. The `opus` / `best` / `opusplan` aliases now resolve to 4.8 automatically (server-side), and the Empty/Default + best descriptions were updated to name 4.8 as the current Max-tier flagship.
+
+### Changed
+- **Renamed effort profile `EFFORT_OPUS_47` → `EFFORT_FULL`** in `modelCatalog.ts` — named by the level set it exposes (the complete five levels including xhigh) rather than the first model that used it, so 4.7 and 4.8 share it without a misleading version label. Profiles list *selectable* levels, not a model's default.
+- **Session-starter cosmetic model field** bumped from `claude-opus-4-5-20251101` to `claude-opus-4-8` (metadata on the synthetic starter exchange written at instant session creation; no functional effect).
+
 ## [0.5.46] - 2026-05-20
 
 ### Added
