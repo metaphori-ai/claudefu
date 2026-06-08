@@ -86,6 +86,17 @@ func (s *MCPService) getAvailableAgentSlugs() []string {
 	return slugs
 }
 
+// spawnEnv returns the environment for MCP-spawned `claude` subprocesses.
+// It prefers the claude service's full environment (PATH + custom auth/proxy env
+// vars) so spawned queries authenticate identically to real session messages.
+// Falls back to BuildShellEnv() only if the claude service isn't wired up.
+func (s *MCPService) spawnEnv() []string {
+	if s.claude != nil {
+		return s.claude.BuildEnv()
+	}
+	return providers.BuildShellEnv()
+}
+
 // handleAgentQuery handles the AgentQuery tool call
 // Spawns a stateless claude --print query in the target agent's folder
 func (s *MCPService) handleAgentQuery(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -149,7 +160,10 @@ func (s *MCPService) handleAgentQuery(ctx context.Context, req mcp.CallToolReque
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		cmd := exec.CommandContext(ctx, claudePath, args...)
 		cmd.Dir = agent.Folder
-		cmd.Env = providers.BuildShellEnv()
+		// Use the claude service's full environment (PATH + custom auth/proxy env
+		// vars from LocalEnvVars). BuildShellEnv() omits custom vars, which causes
+		// 401s on machines whose Claude auth lives in env-vars-{hostname}.json.
+		cmd.Env = s.spawnEnv()
 
 		output, cmdErr = cmd.CombinedOutput()
 		if cmdErr == nil {
@@ -244,7 +258,8 @@ func (s *MCPService) handleSelfQuery(ctx context.Context, req mcp.CallToolReques
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		cmd := exec.CommandContext(ctx, claudePath, args...)
 		cmd.Dir = agent.Folder // Run in CALLER'S folder (key difference from AgentQuery)
-		cmd.Env = providers.BuildShellEnv()
+		// Same env requirement as AgentQuery — include custom auth/proxy vars.
+		cmd.Env = s.spawnEnv()
 
 		output, cmdErr = cmd.CombinedOutput()
 		if cmdErr == nil {
@@ -542,6 +557,39 @@ func (s *MCPService) emitInboxUpdate(agentID string) {
 			"unreadCount": unread,
 		},
 	})
+}
+
+// DeliverUserMessageLocal writes a user-originated message directly to a local
+// agent's inbox and emits the count-update event. This is the user-broadcast
+// counterpart to the MCP AgentMessage tool's local-write path — same end state
+// in the recipient's inbox, no MCP detour.
+func (s *MCPService) DeliverUserMessageLocal(toAgentID, fromName, message, priority string) {
+	s.inbox.AddMessage(toAgentID, "", fromName, message, priority)
+	s.emitInboxUpdate(toAgentID)
+}
+
+// DeliverUserMessageSpool writes a user-originated message to the cross-workspace
+// spool directory for the given agent ID. Used when the recipient lives in a
+// different workspace; Syncthing replicates the spool file and the receiver's
+// SpoolManager imports it into its local inbox.
+func (s *MCPService) DeliverUserMessageSpool(toAgentID, fromName, message, priority string) error {
+	if s.spool == nil {
+		return fmt.Errorf("spool manager not initialized")
+	}
+	if priority == "" {
+		priority = "normal"
+	}
+	msg := InboxMessage{
+		ID:            uuid.New().String(),
+		FromAgentID:   "",
+		FromAgentName: fromName,
+		ToAgentID:     toAgentID,
+		Message:       message,
+		Priority:      priority,
+		Timestamp:     time.Now(),
+		Read:          false,
+	}
+	return s.spool.WriteMessage(toAgentID, msg)
 }
 
 // handleAskUserQuestion handles the AskUserQuestion tool call

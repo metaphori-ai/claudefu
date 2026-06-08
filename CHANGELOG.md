@@ -5,6 +5,11 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.48] - 2026-06-07
+
+### Fixed
+- **AgentQuery / SelfQuery 401 on machines whose Claude auth lives in env vars** — Both MCP handlers spawned their stateless `claude --print` subprocess with `providers.BuildShellEnv()` (PATH only), which silently dropped the custom env vars (`CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY`, proxy `ANTHROPIC_BASE_URL`) that real session messages receive via `ClaudeCodeService.buildEnvironment()`. On a machine that authenticates through those injected vars (rather than the inherited keychain environment), regular chat worked but AgentQuery failed with `401 Invalid authentication credentials`. The bug was latent everywhere since v0.5.46 moved auth into per-machine `env-vars-{hostname}.json`; it only surfaced on machines whose Claude login depends on the injected token. Added exported `ClaudeCodeService.BuildEnv()` and `MCPService.spawnEnv()` (nil-safe, falls back to `BuildShellEnv()` only if the claude service isn't wired). Both spawn sites now use the full authenticated environment.
+
 ## [0.5.47] - 2026-05-20
 
 ### Added

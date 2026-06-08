@@ -294,6 +294,17 @@ func (s *ClaudeCodeService) buildEnvironment() []string {
 	return env
 }
 
+// BuildEnv is the exported accessor for buildEnvironment. MCP handlers that spawn
+// their own `claude` subprocesses (AgentQuery, SelfQuery) must use this — NOT the
+// free BuildShellEnv() function — so the spawned process inherits the same custom
+// env vars (CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL proxy,
+// etc.) that real session messages get. Otherwise those subprocesses authenticate
+// with only the inherited environment and 401 on machines whose auth lives in
+// per-machine LocalEnvVars (see env-vars-{hostname}.json, v0.5.46).
+func (s *ClaudeCodeService) BuildEnv() []string {
+	return s.buildEnvironment()
+}
+
 // replaceOrAppendEnv replaces an existing KEY=value entry in the env slice,
 // or appends it if the key doesn't exist. This avoids duplicate keys.
 func replaceOrAppendEnv(env []string, key, value string) []string {
