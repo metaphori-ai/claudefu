@@ -5,6 +5,11 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.49] - 2026-06-11
+
+### Added
+- **Claude Fable 5 in the model picker + Settings** — `claude-fable-5` added to the top of the Specific Versions group in the ModelSelector dropdown (above Opus 4.8), labeled "Fable". It surfaces automatically in Global Settings → Known Variables for the `ANTHROPIC_MODEL` and `CLAUDE_CODE_SUBAGENT_MODEL` dropdowns via the catalog-derived `ENV_ANY_MODEL_OPTIONS`. Anthropic's most capable widely released model (GA 2026-06-09): 1M-token context by default (no 200K/`[1m]` split, so `contextOneMillion: true` keeps the ctx-usage chip math correct), always-on adaptive thinking, and the full five-level effort range (`low/medium/high/xhigh/max`, default `high`) — mapped to the existing `EFFORT_FULL` profile, so the EffortSelector exposes all five levels. Explicit ID only — no `fable` alias; the ID passes to `--model` verbatim. New `'fable'` member added to the `ModelEntry.family` union (display metadata only; drives no logic).
+
 ## [0.5.48] - 2026-06-07
 
 ### Fixed

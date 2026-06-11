@@ -15,7 +15,7 @@ export interface ModelEntry {
   id: string;             // passed to --model verbatim; "" = omit flag entirely
   label: string;          // dropdown display
   group: ModelGroup;
-  family?: 'opus' | 'sonnet' | 'haiku' | 'mixed'; // for grouping in explicit section
+  family?: 'opus' | 'sonnet' | 'haiku' | 'fable' | 'mixed'; // for grouping in explicit section
   effortLevels: EffortLevel[]; // empty array => effort selector hidden for this model
   extraUsage?: boolean;   // render $ badge (e.g., sonnet[1m] on Max plan)
   contextOneMillion?: boolean;
@@ -28,7 +28,7 @@ export const EFFORT_LEVELS: EffortLevel[] = ['low', 'medium', 'high', 'xhigh', '
 // Effort profiles referenced by multiple entries. Named by the level SET they
 // expose, not by the first model that used them, so new models inherit the
 // right profile without a misleading version label.
-//   EFFORT_FULL = the complete five-level set (includes xhigh). Opus 4.7 + 4.8.
+//   EFFORT_FULL = the complete five-level set (includes xhigh). Fable 5 + Opus 4.7 + 4.8.
 //   EFFORT_46   = four levels, no xhigh. Opus 4.6 + Sonnet 4.6 + opusplan.
 //   EFFORT_NONE = effort selector hidden (model doesn't take --effort).
 // NOTE: a profile lists which levels are SELECTABLE, not the model's default.
@@ -51,6 +51,12 @@ export const MODEL_CATALOG: ModelEntry[] = [
   { id: 'sonnet',    label: 'sonnet',           group: 'alias', family: 'sonnet', effortLevels: EFFORT_46 },
   { id: 'sonnet[1m]',label: 'sonnet [1M]',      group: 'alias', family: 'sonnet', effortLevels: EFFORT_46,      contextOneMillion: true, extraUsage: true, description: '1M context Sonnet — requires extra usage on Max plans.' },
   { id: 'haiku',     label: 'haiku',            group: 'alias', family: 'haiku',  effortLevels: EFFORT_NONE },
+
+  // ---------- Explicit — Fable ----------
+  // Anthropic's most capable widely released model (GA 2026-06-09). 1M context by
+  // default (no 200K/[1m] split), always-on adaptive thinking, full five-level effort
+  // (default high). Explicit ID only — no `fable` alias.
+  { id: 'claude-fable-5',         label: 'Fable',            group: 'explicit', family: 'fable',  effortLevels: EFFORT_FULL, contextOneMillion: true, description: "Anthropic's most capable widely released model. 1M context, always-on adaptive thinking, effort default high." },
 
   // ---------- Explicit — Opus ----------
   { id: 'claude-opus-4-8',        label: 'Opus 4.8',         group: 'explicit', family: 'opus',   effortLevels: EFFORT_FULL },
