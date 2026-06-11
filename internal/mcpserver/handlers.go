@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -158,7 +157,7 @@ func (s *MCPService) handleAgentQuery(ctx context.Context, req mcp.CallToolReque
 	maxRetries := 3
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
-		cmd := exec.CommandContext(ctx, claudePath, args...)
+		cmd := providers.ShellWrappedCommand(ctx, claudePath, args...)
 		cmd.Dir = agent.Folder
 		// Use the claude service's full environment (PATH + custom auth/proxy env
 		// vars from LocalEnvVars). BuildShellEnv() omits custom vars, which causes
@@ -256,7 +255,7 @@ func (s *MCPService) handleSelfQuery(ctx context.Context, req mcp.CallToolReques
 	maxRetries := 3
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
-		cmd := exec.CommandContext(ctx, claudePath, args...)
+		cmd := providers.ShellWrappedCommand(ctx, claudePath, args...)
 		cmd.Dir = agent.Folder // Run in CALLER'S folder (key difference from AgentQuery)
 		// Same env requirement as AgentQuery — include custom auth/proxy vars.
 		cmd.Env = s.spawnEnv()

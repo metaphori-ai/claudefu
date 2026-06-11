@@ -5,6 +5,11 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.50] - 2026-06-11
+
+### Fixed
+- **Stale/corrupted PATH in spawned Claude processes** — Every `claude` CLI invocation now runs through a zsh wrapper (`providers.ShellWrappedCommand`) that re-sources `~/.zshenv` and `~/.zshrc` before `exec`'ing claude, so each spawn gets a freshly built PATH instead of the one cached at app launch. Previously `GetShellPATH()` resolved PATH once via `sync.Once` and injected it for the app's entire lifetime — if PATH drifted or got corrupted mid-session (observed intermittently inside Claude Code's environment), every subsequent spawn inherited the bad value until restart. Applied to all five spawn sites: `sendViaStdin` (every message), `NewSession`, `RunSlashCommand`, and the MCP `AgentQuery`/`SelfQuery` handlers. Source output is redirected to `/dev/null` so zshrc echo output can't corrupt the stream-json stdout that ClaudeFu parses; `exec "$0" "$@"` keeps claude in the same PID so SIGINT cancellation via `CancelSession` still works. Custom env vars (OAuth token, proxy `ANTHROPIC_BASE_URL`) still flow through `buildEnvironment()` unchanged — only PATH is refreshed by the re-source.
+
 ## [0.5.49] - 2026-06-11
 
 ### Added

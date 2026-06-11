@@ -165,6 +165,28 @@ func BuildShellEnv() []string {
 	return replaceOrAppendEnv(env, "PATH", resolvedPATH)
 }
 
+// shellSourcePreamble re-sources the user's shell config before exec'ing claude.
+// Guards against stale/corrupted PATH: the cached GetShellPATH() is resolved once
+// per app launch, so if PATH drifts mid-session every spawn inherits the bad value.
+// Sourcing on every spawn guarantees a freshly built PATH.
+//
+// Critical details:
+//   - Sources are redirected to /dev/null — zshrc echo output would otherwise land
+//     in claude's stdout pipe and corrupt stream-json parsing.
+//   - `exec "$0" "$@"` replaces zsh with claude in the SAME PID, so cancellation
+//     (CancelSession → cmd.Process.Signal) still targets the claude process.
+const shellSourcePreamble = `[ -f ~/.zshenv ] && source ~/.zshenv >/dev/null 2>&1; ` +
+	`[ -f ~/.zshrc ] && source ~/.zshrc >/dev/null 2>&1; ` +
+	`export PATH="$PATH"; exec "$0" "$@"`
+
+// ShellWrappedCommand builds an exec.Cmd that runs the claude CLI through zsh,
+// re-sourcing ~/.zshenv and ~/.zshrc first so claude always gets a valid PATH.
+// claudePath becomes $0 and args become $1.. inside the preamble's exec.
+func ShellWrappedCommand(ctx context.Context, claudePath string, args ...string) *exec.Cmd {
+	shellArgs := append([]string{"-c", shellSourcePreamble, claudePath}, args...)
+	return exec.CommandContext(ctx, "/bin/zsh", shellArgs...)
+}
+
 // GetClaudePath returns the path to the claude binary (cached, resettable via SetClaudeCommand).
 func GetClaudePath() string {
 	// Fast path: already resolved
@@ -629,7 +651,7 @@ func (s *ClaudeCodeService) sendViaStdin(claudePath, folder, sessionId, message 
 
 	fmt.Printf("[DEBUG] sendViaStdin: running command: %s %v\n", claudePath, args)
 
-	cmd := exec.CommandContext(s.ctx, claudePath, args...)
+	cmd := ShellWrappedCommand(s.ctx, claudePath, args...)
 	cmd.Dir = folder
 	cmd.Env = s.buildEnvironment() // Apply custom env vars (e.g., ANTHROPIC_BASE_URL for proxies)
 	cmd.Stdin = bytes.NewReader(jsonBytes)
@@ -726,7 +748,7 @@ func (s *ClaudeCodeService) NewSession(folder, model, effort string) (string, er
 	// Add MCP config if configured (enables inter-agent communication)
 	args = append(args, s.getMCPArgs()...)
 
-	cmd := exec.CommandContext(s.ctx, path, args...)
+	cmd := ShellWrappedCommand(s.ctx, path, args...)
 	cmd.Dir = folder
 	cmd.Env = s.buildEnvironment() // Apply custom env vars (e.g., ANTHROPIC_BASE_URL for proxies)
 
@@ -838,7 +860,7 @@ func (s *ClaudeCodeService) RunSlashCommand(folder, sessionId, command string) (
 
 	fmt.Printf("[DEBUG] RunSlashCommand: %s %v in %s\n", path, args, folder)
 
-	cmd := exec.CommandContext(s.ctx, path, args...)
+	cmd := ShellWrappedCommand(s.ctx, path, args...)
 	cmd.Dir = folder
 	cmd.Env = s.buildEnvironment()
 
