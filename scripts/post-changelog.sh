@@ -44,6 +44,69 @@ fi
 
 echo -e "${YELLOW}Posting changelog for $VERSION to Slack...${NC}"
 
+# --- post_section: chunked Slack section poster ---
+# Slack's `section` block has a 3000-character text limit. Long ### bodies
+# (e.g. v0.5.54+) get rejected with `invalid_blocks`. This helper splits a
+# section's body on paragraph boundaries (\n\n preferred), hard-cuts any
+# single paragraph that exceeds the limit, and posts each chunk as its own
+# section block. The first chunk carries the header prefix; continuations
+# are plain. Slack renders them as adjacent blocks visually contiguous.
+post_section() {
+    local header="$1"
+    local body="$2"
+    local max_chunk=2800   # 3000 - room for *header*\n prefix + safety margin
+
+    # Use awk to chunk on paragraph boundaries. Records = paragraphs (RS='\n\n').
+    # Single paragraphs > max get hard-split. Output: chunks separated by \x1F.
+    local chunks
+    chunks=$(printf '%s' "$body" | awk -v max="$max_chunk" '
+    BEGIN { RS="\n\n"; ORS=""; chunk="" }
+    {
+        rec=$0
+        # If a single paragraph exceeds max, flush current chunk and hard-split
+        if (length(rec) > max) {
+            if (chunk != "") { print chunk "\x1F"; chunk="" }
+            while (length(rec) > max) {
+                print substr(rec, 1, max) "\x1F"
+                rec = substr(rec, max+1)
+            }
+            chunk = rec
+        } else if (chunk == "") {
+            chunk = rec
+        } else if (length(chunk) + length(rec) + 2 <= max) {
+            chunk = chunk "\n\n" rec
+        } else {
+            print chunk "\x1F"
+            chunk = rec
+        }
+    }
+    END { if (chunk != "") print chunk }
+    ')
+
+    local first=true
+    while IFS= read -r -d $'\x1F' chunk || [ -n "$chunk" ]; do
+        [ -z "$chunk" ] && continue
+
+        local text
+        if [ "$first" = true ]; then
+            text="*${header}*"$'\n'"$chunk"
+            first=false
+        else
+            text="$chunk"
+        fi
+
+        local payload resp
+        payload=$(jq -n --arg t "$text" '{ blocks: [
+            { type: "section", text: { type: "mrkdwn", text: $t } }
+        ]}')
+        resp=$(curl -s -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_WEBHOOK")
+        if [ "$resp" != "ok" ]; then
+            echo -e "${YELLOW}  Warning: Slack section post returned: $resp${NC}"
+            SLACK_ERRORS=$((SLACK_ERRORS+1))
+        fi
+    done <<< "$chunks"
+}
+
 SLACK_ERRORS=0
 
 # --- Post 1: Release header ---
@@ -62,20 +125,9 @@ CURRENT_HEADER=""
 
 while IFS= read -r line || [ -n "$line" ]; do
     if [[ "$line" =~ ^###\  ]]; then
-        # If we have a previous section buffered, post it
         if [ -n "$CURRENT_HEADER" ] && [ -n "$CURRENT_SECTION" ]; then
-            # Convert markdown to Slack mrkdwn
-            SLACK_TEXT=$(echo "$CURRENT_SECTION" | \
-                sed 's/\*\*\([^*]*\)\*\*/*\1*/g')
-
-            SECTION_PAYLOAD=$(jq -n \
-                --arg header "*${CURRENT_HEADER}*" \
-                --arg body "$SLACK_TEXT" \
-                '{ blocks: [
-                    { type: "section", text: { type: "mrkdwn", text: ($header + "\n" + $body) } }
-                ]}')
-            RESP=$(curl -s -X POST -H 'Content-type: application/json' --data "$SECTION_PAYLOAD" "$SLACK_WEBHOOK")
-            [ "$RESP" != "ok" ] && echo -e "${YELLOW}  Warning: Slack section post returned: $RESP${NC}" && SLACK_ERRORS=$((SLACK_ERRORS+1))
+            SLACK_TEXT=$(echo "$CURRENT_SECTION" | sed 's/\*\*\([^*]*\)\*\*/*\1*/g')
+            post_section "$CURRENT_HEADER" "$SLACK_TEXT"
         fi
         # Start new section
         CURRENT_HEADER="${line#\#\#\# }"
@@ -93,17 +145,8 @@ done <<< "$CHANGELOG_SECTION"
 
 # Post the last buffered section
 if [ -n "$CURRENT_HEADER" ] && [ -n "$CURRENT_SECTION" ]; then
-    SLACK_TEXT=$(echo "$CURRENT_SECTION" | \
-        sed 's/\*\*\([^*]*\)\*\*/*\1*/g')
-
-    SECTION_PAYLOAD=$(jq -n \
-        --arg header "*${CURRENT_HEADER}*" \
-        --arg body "$SLACK_TEXT" \
-        '{ blocks: [
-            { type: "section", text: { type: "mrkdwn", text: ($header + "\n" + $body) } }
-        ]}')
-    RESP=$(curl -s -X POST -H 'Content-type: application/json' --data "$SECTION_PAYLOAD" "$SLACK_WEBHOOK")
-    [ "$RESP" != "ok" ] && echo -e "${YELLOW}  Warning: Slack section post returned: $RESP${NC}" && SLACK_ERRORS=$((SLACK_ERRORS+1))
+    SLACK_TEXT=$(echo "$CURRENT_SECTION" | sed 's/\*\*\([^*]*\)\*\*/*\1*/g')
+    post_section "$CURRENT_HEADER" "$SLACK_TEXT"
 fi
 
 # --- Final post: Install instructions ---
