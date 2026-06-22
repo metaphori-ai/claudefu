@@ -1,19 +1,29 @@
 package mcpserver
 
-// Cross-workspace message spool manager.
+// Cross-machine message spool manager.
 //
-// Architecture: cross-workspace messages use append-only JSON files instead
-// of direct SQLite writes. This avoids Syncthing conflicts on binary SQLite
-// files when two machines write to inbox DBs at the same path.
+// Architecture: agent messages are mirrored to append-only JSON spool files
+// instead of relying on Syncthing replicating the binary per-agent SQLite DBs
+// (which conflict whenever two machines write the same DB path between syncs).
+// The spool is the ONLY synced inbox artifact; the per-agent .db files are
+// treated as machine-local stores.
 //
 // Layout:
-//   ~/.claudefu/inbox/spool/{recipient-agent-id}/{timestamp}-{sender}-{uuid}.json
+//   ~/.claudefu/inbox/spool/{recipient-agent-id}/{timestamp}--{hostname}--{sender}--{uuid}.json
 //
 // Flow:
-//   1. Sender: WriteMessage() drops JSON file in recipient's spool dir
-//   2. Syncthing: replicates the file to the recipient machine (no conflict -- unique name)
-//   3. Receiver: fsnotify watcher detects new file, imports into local SQLite, deletes file
-//   4. Syncthing: propagates deletion back to sender
+//   1. Sender: WriteMessage() drops a JSON file in the recipient's spool dir
+//      (and, for agents local to the sender, also writes its OWN SQLite copy).
+//   2. Syncthing: replicates the file to every machine (unique name -> no conflict).
+//   3. Receiver: fsnotify watcher imports it into the local SQLite for any KNOWN
+//      agent (idempotent INSERT OR IGNORE), then LEAVES the file in place.
+//   4. A per-machine "seen" index prevents re-processing the same file.
+//   5. A TTL sweep eventually deletes spool files older than spoolTTL.
+//
+// Why leave files instead of delete-on-import: with 3+ machines, delete-on-import
+// races replication — the first importer's deletion can propagate before a third
+// machine has synced the file, so it never sees the message. Leaving the file and
+// de-duplicating via the seen index + idempotent insert is safe for any machine count.
 
 import (
 	"context"
@@ -26,25 +36,46 @@ import (
 	"time"
 
 	"claudefu/internal/types"
-	"claudefu/internal/workspace"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/google/uuid"
 )
 
-// SpoolManager writes outbound cross-workspace messages to disk and watches
-// for inbound spool files created by Syncthing from other machines.
+// spoolTTL bounds how long a spool file lives before the sweep reclaims it.
+// MUST exceed the longest plausible offline window of any machine, or a laptop
+// that was shut for a while could miss messages deleted while it was away.
+const spoolTTL = 30 * 24 * time.Hour
+
+// spoolTSLayout is the timestamp format embedded as the first field of every
+// spool filename. Used for natural ordering and TTL expiry.
+const spoolTSLayout = "20060102T150405.000000000"
+
+// spoolSweepInterval is how often the background sweep runs.
+const spoolSweepInterval = 6 * time.Hour
+
+// SpoolManager writes outbound messages to disk as JSON files and imports
+// inbound ones replicated by Syncthing from other machines.
 //
-// IMPORTANT: Only machines that "own" a recipient agent (i.e., have it in the
-// current workspace) import its spool files. All other machines — including
-// the sender — leave files alone so Syncthing can deliver them to the correct
-// machine. Without this check, the sender's own fsnotify watcher would race
-// Syncthing and import+delete its own writes before replication completes.
+// Import is gated on agent KNOWN-ness (presence in the global agent registry),
+// not workspace membership — a message lands in an agent's local DB regardless
+// of which workspace is currently open. The sender's own writes are skipped via
+// the hostname stamp (isOwnWrite) so the sender never re-imports its own message;
+// its own copy comes from the direct SQLite write at send time.
 type SpoolManager struct {
-	configPath      string // e.g. ~/.claudefu/inbox/spool
-	inbox           *InboxManager
-	emitFunc        func(types.EventEnvelope)
-	workspaceGetter func() *workspace.Workspace // Used to check agent ownership
+	configPath string // e.g. ~/.claudefu/inbox/spool
+	inbox      *InboxManager
+	emitFunc   func(types.EventEnvelope)
+
+	// knownAgent reports whether an agent ID exists in the global registry.
+	// Registry-backed (not workspace-scoped) so delivery is workspace-independent;
+	// gating on "known" (rather than "any") avoids creating orphan DBs for stray
+	// spool files referencing unknown agent IDs.
+	knownAgent func(agentID string) bool
+
+	// seen is this machine's per-machine, never-synced index of already-imported
+	// spool filenames. Prevents re-inserting + re-emitting on every re-scan now
+	// that files are left in place rather than deleted on import.
+	seen *seenSet
 
 	watcher *fsnotify.Watcher
 	ctx     context.Context
@@ -66,7 +97,8 @@ type SpoolManager struct {
 
 // NewSpoolManager creates a spool manager backed by the given directory.
 // The hostname is captured at construction and stamped into every outbound
-// spool filename.
+// spool filename. The seen index is stored under ~/.claudefu/local (machine-local,
+// NOT Syncthing-synced) keyed by hostname.
 func NewSpoolManager(configPath string, inbox *InboxManager, emitFunc func(types.EventEnvelope)) *SpoolManager {
 	hostname := "unknown"
 	if h, err := os.Hostname(); err == nil && h != "" {
@@ -75,44 +107,41 @@ func NewSpoolManager(configPath string, inbox *InboxManager, emitFunc func(types
 	if hostname == "" {
 		hostname = "unknown"
 	}
+
+	// configPath is ~/.claudefu/inbox/spool — derive ~/.claudefu/local for the
+	// per-machine seen index. local/ is the designated non-synced runtime dir.
+	claudefuRoot := filepath.Dir(filepath.Dir(configPath))
+	seenPath := filepath.Join(claudefuRoot, "local", "spool-seen-"+hostname+".json")
+
 	return &SpoolManager{
 		configPath: configPath,
 		inbox:      inbox,
 		emitFunc:   emitFunc,
 		hostname:   hostname,
+		seen:       newSeenSet(seenPath),
 		pending:    make(map[string]*time.Timer),
 	}
 }
 
-// SetWorkspaceGetter configures how the manager determines which agents are
-// "local" (owned by this machine). An agent is local iff it exists in the
-// current workspace; only local agents' spool files are imported.
-func (sm *SpoolManager) SetWorkspaceGetter(getter func() *workspace.Workspace) {
-	sm.workspaceGetter = getter
+// SetKnownAgentFunc configures the registry-backed predicate used to decide
+// whether an inbound spool file's recipient agent is known to this machine.
+// Only known agents are imported (others are left for the registry to catch up,
+// or for the TTL sweep to reap if truly orphaned).
+func (sm *SpoolManager) SetKnownAgentFunc(fn func(agentID string) bool) {
+	sm.knownAgent = fn
 }
 
-// isLocalAgent returns true if the given agent ID is in the current workspace.
-// Only local agents have their spool files imported and deleted; all others
-// are left in place for Syncthing to deliver to the machine that owns them.
-func (sm *SpoolManager) isLocalAgent(agentID string) bool {
-	if sm.workspaceGetter == nil {
-		return false // Safe default: don't import if ownership is unknown
+// isKnownAgent returns true if the given agent ID exists in the global registry.
+func (sm *SpoolManager) isKnownAgent(agentID string) bool {
+	if sm.knownAgent == nil {
+		return false // Safe default: don't import if we can't resolve the registry
 	}
-	ws := sm.workspaceGetter()
-	if ws == nil {
-		return false
-	}
-	for _, agent := range ws.Agents {
-		if agent.ID == agentID {
-			return true
-		}
-	}
-	return false
+	return sm.knownAgent(agentID)
 }
 
 // WriteMessage writes a spool file for the target agent. The caller need not
 // know anything about the recipient machine — the file will replicate via
-// Syncthing and be ingested by the receiver's SpoolManager.
+// Syncthing and be ingested by every machine's SpoolManager (idempotently).
 func (sm *SpoolManager) WriteMessage(toAgentID string, msg InboxMessage) error {
 	dir := filepath.Join(sm.configPath, toAgentID)
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -120,7 +149,7 @@ func (sm *SpoolManager) WriteMessage(toAgentID string, msg InboxMessage) error {
 	}
 
 	// Filename: {timestamp}--{hostname}--{sender-slug}--{uuid}.json
-	// - timestamp: natural ordering
+	// - timestamp: natural ordering + TTL expiry
 	// - hostname:  identifies the sending machine (sender can skip its own)
 	// - sender:    the sending agent's slug (from_agent)
 	// - uuid:      collision-resistant short id
@@ -131,7 +160,7 @@ func (sm *SpoolManager) WriteMessage(toAgentID string, msg InboxMessage) error {
 		sender = "unknown"
 	}
 	filename := fmt.Sprintf("%s--%s--%s--%s.json",
-		msg.Timestamp.UTC().Format("20060102T150405.000000000"),
+		msg.Timestamp.UTC().Format(spoolTSLayout),
 		sm.hostname,
 		sender,
 		uuid.New().String()[:8],
@@ -180,6 +209,9 @@ func (sm *SpoolManager) Start(ctx context.Context) error {
 	sm.running = true
 	sm.mu.Unlock()
 
+	// Load the per-machine seen index (best-effort).
+	sm.seen.load()
+
 	// Ensure base spool dir exists
 	if err := os.MkdirAll(sm.configPath, 0755); err != nil {
 		return fmt.Errorf("create spool base dir: %w", err)
@@ -222,6 +254,10 @@ func (sm *SpoolManager) Start(ctx context.Context) error {
 		fmt.Printf("[MCP:Spool] Startup scan imported %d pending messages\n", imported)
 	}
 
+	// Reap expired files now, then periodically.
+	sm.sweepExpired()
+	go sm.sweepLoop()
+
 	return nil
 }
 
@@ -246,6 +282,7 @@ func (sm *SpoolManager) Stop() {
 	if sm.watcher != nil {
 		sm.watcher.Close()
 	}
+	sm.seen.flush()
 }
 
 // runLoop processes fsnotify events until the context is cancelled.
@@ -266,6 +303,20 @@ func (sm *SpoolManager) runLoop() {
 				return
 			}
 			fmt.Printf("[MCP:Spool] Watcher error: %v\n", err)
+		}
+	}
+}
+
+// sweepLoop runs the TTL sweep on an interval until the context is cancelled.
+func (sm *SpoolManager) sweepLoop() {
+	ticker := time.NewTicker(spoolSweepInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-sm.ctx.Done():
+			return
+		case <-ticker.C:
+			sm.sweepExpired()
 		}
 	}
 }
@@ -297,6 +348,10 @@ func (sm *SpoolManager) handleEvent(event fsnotify.Event) {
 func (sm *SpoolManager) debounceImport(path string) {
 	// Skip files written by this machine — they're for other machines to consume
 	if sm.isOwnWrite(path) {
+		return
+	}
+	// Cheap early skip: already imported on this machine.
+	if sm.seen.has(filepath.Base(path)) {
 		return
 	}
 
@@ -346,6 +401,10 @@ func (sm *SpoolManager) scanAndImportDir(dir string) int {
 		if !strings.HasSuffix(entry.Name(), ".json") {
 			continue
 		}
+		// Cheap early skips before reading the file.
+		if sm.seen.has(entry.Name()) {
+			continue
+		}
 		path := filepath.Join(dir, entry.Name())
 		// Skip our own writes even during startup scans — we may have
 		// crashed mid-send before Syncthing replicated, and we don't want
@@ -360,18 +419,27 @@ func (sm *SpoolManager) scanAndImportDir(dir string) int {
 	return count
 }
 
-// importFile reads a spool JSON file, inserts into SQLite, emits mcp:inbox,
-// and deletes the file. Returns true on successful import.
+// importFile reads a spool JSON file, inserts into SQLite (idempotently), emits
+// mcp:inbox, records the file in the per-machine seen index, and LEAVES the file
+// in place. Returns true on a fresh import.
 //
-// Ownership check: the recipient agent ID is encoded in the parent directory
-// name (spool/{agentID}/file.json). If the agent is not in our current
-// workspace, we skip this file entirely — leaving it for Syncthing to deliver
-// to the machine that owns the agent. This prevents the sender from racing
-// Syncthing to import+delete its own writes.
+// Gating: the recipient agent ID is the parent directory name
+// (spool/{agentID}/file.json). If the agent is not known to the global registry
+// we skip — leaving the file for the registry to catch up or the TTL sweep to
+// reap. Files are NOT deleted on import: with 3+ machines, delete-on-import races
+// replication. De-duplication is handled by the seen index + idempotent insert.
 func (sm *SpoolManager) importFile(path string) bool {
+	base := filepath.Base(path)
+
+	// Already imported on this machine — nothing to do, leave the file.
+	if sm.seen.has(base) {
+		return false
+	}
+
 	agentID := filepath.Base(filepath.Dir(path))
-	if !sm.isLocalAgent(agentID) {
-		// Not our agent — leave for Syncthing to deliver to the owning machine
+	if !sm.isKnownAgent(agentID) {
+		// Unknown agent on this machine — leave the file; registry may catch up,
+		// otherwise the TTL sweep reaps it. Do NOT mark seen (so we retry later).
 		return false
 	}
 
@@ -383,26 +451,30 @@ func (sm *SpoolManager) importFile(path string) bool {
 
 	var msg InboxMessage
 	if err := json.Unmarshal(raw, &msg); err != nil {
-		fmt.Printf("[MCP:Spool] Corrupt spool file %s: %v — deleting\n", path, err)
-		_ = os.Remove(path)
+		// Could be a partial write Syncthing hasn't finished. Do NOT delete —
+		// leave it for a later scan; the TTL sweep handles truly-corrupt files.
+		fmt.Printf("[MCP:Spool] Unparseable spool file %s: %v — leaving for retry\n", base, err)
 		return false
 	}
 
 	if msg.ToAgentID == "" || msg.Message == "" {
-		fmt.Printf("[MCP:Spool] Invalid spool file %s (missing fields) — deleting\n", path)
-		_ = os.Remove(path)
+		fmt.Printf("[MCP:Spool] Invalid spool file %s (missing fields) — leaving for retry\n", base)
 		return false
 	}
 
 	// Insert into local SQLite via the inbox manager. AddMessageRaw preserves
 	// the original ID so duplicate imports are idempotent (SQLite PRIMARY KEY).
 	if err := sm.inbox.AddMessageRaw(msg); err != nil {
-		fmt.Printf("[MCP:Spool] Failed to insert spool message from %s: %v\n", path, err)
-		// Leave file in place so a retry can pick it up
+		fmt.Printf("[MCP:Spool] Failed to insert spool message from %s: %v\n", base, err)
+		// Leave file in place so a retry can pick it up; don't mark seen.
 		return false
 	}
 
-	// Emit mcp:inbox event so UI refreshes
+	// Record in the per-machine seen index so we don't re-import/re-emit.
+	sm.seen.add(base)
+	sm.seen.flush()
+
+	// Emit mcp:inbox event so UI refreshes (only fires on a fresh import).
 	if sm.emitFunc != nil {
 		total := sm.inbox.GetTotalCount(msg.ToAgentID)
 		unread := sm.inbox.GetUnreadCount(msg.ToAgentID)
@@ -417,13 +489,61 @@ func (sm *SpoolManager) importFile(path string) bool {
 		})
 	}
 
-	// Remove the spool file — Syncthing will propagate the deletion
-	if err := os.Remove(path); err != nil {
-		fmt.Printf("[MCP:Spool] Warning: failed to remove imported spool file %s: %v\n", path, err)
-	}
-
 	fmt.Printf("[MCP:Spool] Imported message from %q for agent %s\n", msg.FromAgentName, msg.ToAgentID[:8])
 	return true
+}
+
+// sweepExpired deletes spool files older than spoolTTL and prunes stale entries
+// from the seen index. Any machine may run this; deletions propagate via Syncthing.
+func (sm *SpoolManager) sweepExpired() {
+	cutoff := time.Now().Add(-spoolTTL)
+	removed := 0
+
+	entries, err := os.ReadDir(sm.configPath)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		subdir := filepath.Join(sm.configPath, entry.Name())
+		files, err := os.ReadDir(subdir)
+		if err != nil {
+			continue
+		}
+		for _, f := range files {
+			if f.IsDir() || !strings.HasSuffix(f.Name(), ".json") {
+				continue
+			}
+			ts, ok := parseSpoolTimestamp(f.Name())
+			if !ok || !ts.Before(cutoff) {
+				continue
+			}
+			if err := os.Remove(filepath.Join(subdir, f.Name())); err == nil {
+				removed++
+			}
+		}
+	}
+
+	sm.seen.prune(cutoff)
+	if removed > 0 {
+		fmt.Printf("[MCP:Spool] Sweep removed %d spool files older than %s\n", removed, spoolTTL)
+	}
+}
+
+// parseSpoolTimestamp extracts the leading timestamp field from a spool filename.
+func parseSpoolTimestamp(name string) (time.Time, bool) {
+	base := strings.TrimSuffix(name, ".json")
+	parts := strings.Split(base, "--")
+	if len(parts) < 1 {
+		return time.Time{}, false
+	}
+	t, err := time.Parse(spoolTSLayout, parts[0])
+	if err != nil {
+		return time.Time{}, false
+	}
+	return t.UTC(), true
 }
 
 // sanitizeForFilename strips characters that don't belong in filenames.
@@ -435,4 +555,92 @@ func sanitizeForFilename(s string) string {
 		}
 	}
 	return sb.String()
+}
+
+// -----------------------------------------------------------------------------
+// seenSet — per-machine, never-synced index of imported spool filenames.
+// -----------------------------------------------------------------------------
+
+// seenSet tracks which spool filenames this machine has already imported, so we
+// can leave files in place (for other machines) without re-inserting/re-emitting
+// on every re-scan. Persisted to ~/.claudefu/local (NOT Syncthing-synced).
+type seenSet struct {
+	path  string
+	mu    sync.Mutex
+	seen  map[string]int64 // filename -> imported unix seconds (for pruning)
+	dirty bool
+}
+
+func newSeenSet(path string) *seenSet {
+	return &seenSet{path: path, seen: make(map[string]int64)}
+}
+
+// load reads the seen index from disk (best-effort).
+func (s *seenSet) load() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	raw, err := os.ReadFile(s.path)
+	if err != nil {
+		return // First run or unreadable — start empty
+	}
+	var m map[string]int64
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return
+	}
+	if m != nil {
+		s.seen = m
+	}
+}
+
+func (s *seenSet) has(name string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, ok := s.seen[name]
+	return ok
+}
+
+func (s *seenSet) add(name string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.seen[name] = time.Now().Unix()
+	s.dirty = true
+}
+
+// prune drops entries older than cutoff (keeps the set bounded).
+func (s *seenSet) prune(cutoff time.Time) {
+	s.mu.Lock()
+	c := cutoff.Unix()
+	for name, ts := range s.seen {
+		if ts < c {
+			delete(s.seen, name)
+			s.dirty = true
+		}
+	}
+	s.mu.Unlock()
+	s.flush()
+}
+
+// flush writes the index to disk if dirty, via atomic tmp+rename.
+func (s *seenSet) flush() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.dirty {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(s.path), 0755); err != nil {
+		return
+	}
+	raw, err := json.Marshal(s.seen)
+	if err != nil {
+		return
+	}
+	tmp := s.path + ".tmp"
+	if err := os.WriteFile(tmp, raw, 0644); err != nil {
+		return
+	}
+	if err := os.Rename(tmp, s.path); err != nil {
+		_ = os.Remove(tmp)
+		return
+	}
+	s.dirty = false
 }

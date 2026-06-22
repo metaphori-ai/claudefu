@@ -5,6 +5,18 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.51] - 2026-06-22
+
+### Changed
+- **Inbox cross-machine delivery now always rides the spool, not the synced SQLite DBs** — Previously, `AgentMessage`/`AgentBroadcast` only wrote a spool file when the recipient was *not* in the sender's current workspace; same-workspace recipients got a direct SQLite write and relied on Syncthing replicating the binary `inbox/agents/{id}.db` files. That physical DB sync is conflict-prone (whole-file/page replication can't merge row-level inserts → `.sync-conflict-*.db` files, and an app holding the DB open can clobber synced-in rows), so a message sent on one machine could silently never appear on another. Now every local send *also* mirrors the message to the spool (`SpoolManager.WriteMessage`) reusing the message's own ID, so the local DB copy and every remote import share one UUID and `INSERT OR IGNORE` collapses to exactly one copy per machine. The sender still skips its own spool writes via the hostname stamp (`isOwnWrite`), so no self-reimport.
+- **Spool import is now workspace-independent and gated on registry membership** — The receiver's import gate changed from `isLocalAgent` (recipient must be in the *currently-open* workspace) to `isKnownAgent` (recipient exists in the global `agents.json` registry). A message now lands in an agent's local inbox DB regardless of which workspace is open, while gating on "known" still prevents stray spool files from spawning orphan `agents/{unknown}.db` files. `MCPService` wires the predicate to `manager.FindAgentByID`.
+
+### Fixed
+- **Spool files are left in place after import (3+ machine safety)** — `importFile` no longer deletes the spool file on success. With three or more machines, delete-on-import races replication: the first importer's deletion can propagate before a third machine has synced the file, so it never sees the message. Files are now retained and de-duplicated via a new **per-machine seen index** (`~/.claudefu/local/spool-seen-{hostname}.json`, in the non-synced `local/` dir) plus the idempotent insert; `mcp:inbox` fires only on a genuinely fresh import. Parse/validation failures also stopped deleting (a partially-synced file is no longer destroyed) — they're left for retry. A **TTL sweep** (`spoolTTL` = 30 days, run at startup and every 6h) reclaims aged spool files and prunes the seen index. TTL is intentionally long so a machine offline for a while doesn't miss messages reaped while it was away.
+
+### Note
+- Both transports run in parallel in this release (DBs still Syncthing-synced) so nothing regresses while the spool path is verified. Once `[MCP:Spool] Imported message …` is confirmed landing on all machines, add a Syncthing ignore rule for `inbox/agents/*.db*` (keep `inbox/spool/**` synced) to retire physical DB sync. `RecoverFromConflictFiles()` continues to drain any existing `.sync-conflict-*.db` files on launch.
+
 ## [0.5.50] - 2026-06-11
 
 ### Fixed

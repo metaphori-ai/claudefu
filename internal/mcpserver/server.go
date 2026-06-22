@@ -144,10 +144,18 @@ func (s *MCPService) Start() error {
 		spoolPath := s.inboxPath + "/spool"
 		s.spool = NewSpoolManager(spoolPath, s.inbox, s.emitFunc)
 	}
-	// Configure ownership check: only import spool files for agents in the
-	// current workspace. This prevents the sender from importing+deleting
-	// its own writes before Syncthing replicates them.
-	s.spool.SetWorkspaceGetter(s.workspace)
+	// Configure the import gate: import spool files for any agent KNOWN to the
+	// global registry (workspace-independent delivery), not just agents in the
+	// current workspace. The sender still skips its own writes via the hostname
+	// stamp (isOwnWrite). Gating on "known" avoids creating orphan DBs for stray
+	// spool files referencing unknown agent IDs.
+	s.spool.SetKnownAgentFunc(func(agentID string) bool {
+		if s.manager == nil {
+			return false
+		}
+		info, _ := s.manager.FindAgentByID(agentID)
+		return info != nil
+	})
 	if err := s.spool.Start(s.ctx); err != nil {
 		fmt.Printf("[MCP:Spool] Failed to start spool manager: %v\n", err)
 	}

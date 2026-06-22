@@ -391,10 +391,19 @@ func (s *MCPService) handleAgentMessage(ctx context.Context, req mcp.CallToolReq
 			continue
 		}
 
-		// Add to inbox
+		// Add to inbox (this machine's own copy — instant local UI update)
 		fmt.Printf("[MCP:AgentMessage] Adding message to inbox for agent: %s (ID: %s)\n", agent.GetSlug(), agent.ID)
-		s.inbox.AddMessage(agent.ID, "", fromAgent, message, priority)
+		msg := s.inbox.AddMessage(agent.ID, "", fromAgent, message, priority)
 		s.emitInboxUpdate(agent.ID)
+		// Mirror to the spool so OTHER machines ingest this message too. The
+		// sender's own SpoolManager skips its own writes (isOwnWrite), so no
+		// self-reimport. Reusing msg (same ID) keeps cross-machine import
+		// idempotent — every machine ends up with exactly one copy.
+		if s.spool != nil {
+			if err := s.spool.WriteMessage(msg.ToAgentID, msg); err != nil {
+				fmt.Printf("[MCP:AgentMessage] Spool mirror write failed for %s: %v\n", agent.GetSlug(), err)
+			}
+		}
 		sentTo = append(sentTo, agent.GetSlug())
 	}
 
@@ -454,8 +463,15 @@ func (s *MCPService) handleAgentBroadcast(ctx context.Context, req mcp.CallToolR
 		if !agent.GetMCPEnabled() {
 			continue // Skip agents with MCP disabled
 		}
-		s.inbox.AddMessage(agent.ID, "", fromAgent, message, priority)
+		msg := s.inbox.AddMessage(agent.ID, "", fromAgent, message, priority)
 		s.emitInboxUpdate(agent.ID)
+		// Mirror to the spool so other machines ingest this broadcast too
+		// (same ID -> idempotent cross-machine import).
+		if s.spool != nil {
+			if err := s.spool.WriteMessage(msg.ToAgentID, msg); err != nil {
+				fmt.Printf("[MCP:AgentBroadcast] Spool mirror write failed for %s: %v\n", agent.GetSlug(), err)
+			}
+		}
 		sentTo = append(sentTo, agent.GetSlug())
 		count++
 	}
