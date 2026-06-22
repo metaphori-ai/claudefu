@@ -475,6 +475,9 @@ func (sm *SpoolManager) importFile(path string) bool {
 	sm.seen.flush()
 
 	// Emit mcp:inbox event so UI refreshes (only fires on a fresh import).
+	// Payload keys MUST match the FE handler (useWailsEvents 'mcp:inbox'), which
+	// reads envelope.agentId + payload.unreadCount / payload.totalCount. This
+	// mirrors emitInboxUpdate (handlers.go) — divergent keys = silent no-op in UI.
 	if sm.emitFunc != nil {
 		total := sm.inbox.GetTotalCount(msg.ToAgentID)
 		unread := sm.inbox.GetUnreadCount(msg.ToAgentID)
@@ -482,9 +485,8 @@ func (sm *SpoolManager) importFile(path string) bool {
 			AgentID:   msg.ToAgentID,
 			EventType: "mcp:inbox",
 			Payload: map[string]any{
-				"agentId": msg.ToAgentID,
-				"total":   total,
-				"unread":  unread,
+				"unreadCount": unread,
+				"totalCount":  total,
 			},
 		})
 	}

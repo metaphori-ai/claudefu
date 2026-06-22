@@ -5,6 +5,11 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.52] - 2026-06-22
+
+### Fixed
+- **Spool inbox import didn't update the FE unread badge (wrong event payload keys)** — Follow-up to v0.5.51. The receiver's `SpoolManager.importFile` *was* emitting `mcp:inbox` on every fresh import, but with payload keys `{ agentId, unread, total }` instead of the keys the FE handler (`useWailsEvents` `mcp:inbox`) actually reads: `envelope.agentId` (top-level, was correct) + `payload.unreadCount` / `payload.totalCount`. Because `unread` ≠ `unreadCount`, the count resolved to `undefined` and `setInboxCounts` was a silent no-op — the message landed in the SQLite DB (visible on next workspace load) but the live badge never ticked up. Payload now sends `{ unreadCount, totalCount }`, matching `emitInboxUpdate` (and providing total directly so the FE skips its `GetInboxTotalCount` fallback). A NAMES-consistency bug: same concept, different field name across the Go→TS event boundary, no compile error.
+
 ## [0.5.51] - 2026-06-22
 
 ### Changed
