@@ -5,6 +5,12 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.53] - 2026-06-26
+
+### Fixed
+- **`~/.zshenv` silently overrode ClaudeFu's injected env (wrong Claude account / OAuth token)** — Regression from v0.5.50. The per-spawn shell wrapper (`ShellWrappedCommand`) runs `claude` through `/bin/zsh -c`, and zsh **auto-sources `~/.zshenv` on every startup** (its defining behavior) *before* the wrapper's PATH-refresh preamble. Any `export` in `~/.zshenv` — notably a hardcoded `export CLAUDE_CODE_OAUTH_TOKEN=…` — was re-applied *over* the environment ClaudeFu injects via `buildEnvironment()`, so the spawned `claude` authenticated with the `.zshenv` token regardless of the per-machine token ClaudeFu set. Symptom: switching `CLAUDE_CODE_OAUTH_TOKEN` (e.g. between two Max accounts) had no effect — the exhausted account's 5-hour limit kept being hit. The `buildEnvironment` debug log showed the *correct* injected token because the override happened one layer later, inside the zsh wrapper. Per the official auth precedence, `CLAUDE_CODE_OAUTH_TOKEN` (#5) already outranks the `/login` keychain credential (#6), so the keychain was never the cause — the env var's *value* was being rewritten by the `.zshenv` auto-source.
+  - **Fix (two parts):** (1) `ShellWrappedCommand` now invokes `zsh -f` (`NO_RCS`), so the outer shell auto-sources nothing — injected env stays authoritative. (2) The preamble rebuilds PATH by sourcing `~/.zshenv` + `~/.zshrc` inside a **command-substitution subshell** and re-exporting only the captured `$PATH` (manual `source` is unaffected by `NO_RCS`). The v0.5.50 goal (fresh PATH per spawn, guarding against stale/corrupted PATH) is fully preserved; the side effect (re-applying every other `.zshenv`/`.zshrc` export over the injected environment) is eliminated. Shell config is now a PATH source only, never an environment-mutation source. Verified end-to-end: with a `.zshenv` hardcoding a different token, the injected token now survives and PATH is still rebuilt from both files.
+
 ## [0.5.52] - 2026-06-22
 
 ### Fixed

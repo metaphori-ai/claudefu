@@ -165,25 +165,46 @@ func BuildShellEnv() []string {
 	return replaceOrAppendEnv(env, "PATH", resolvedPATH)
 }
 
-// shellSourcePreamble re-sources the user's shell config before exec'ing claude.
-// Guards against stale/corrupted PATH: the cached GetShellPATH() is resolved once
-// per app launch, so if PATH drifts mid-session every spawn inherits the bad value.
-// Sourcing on every spawn guarantees a freshly built PATH.
+// shellSourcePreamble refreshes PATH from the user's shell config before exec'ing
+// claude. Guards against stale/corrupted PATH: the cached GetShellPATH() is resolved
+// once per app launch, so if PATH drifts mid-session every spawn inherits the bad
+// value. Refreshing on every spawn guarantees a freshly built PATH.
+//
+// PATH-ONLY by design (v0.5.53): the source runs inside a command-substitution
+// SUBSHELL whose only output is the rebuilt $PATH, which we then re-export in the
+// real shell. This deliberately does NOT let the sourced files mutate any other
+// var in the exec environment. Sourcing ~/.zshenv directly in the exec shell would
+// re-apply EVERY export in it — clobbering vars ClaudeFu intentionally injects via
+// buildEnvironment(). Concretely: a hardcoded `export CLAUDE_CODE_OAUTH_TOKEN=...`
+// in ~/.zshenv would overwrite the per-machine token ClaudeFu injected, silently
+// authenticating claude as the wrong account (observed: rate-limited account used
+// despite UI/env selecting a different one). Capturing only PATH keeps the v0.5.50
+// PATH-refresh win while leaving the injected environment authoritative.
 //
 // Critical details:
 //   - Sources are redirected to /dev/null — zshrc echo output would otherwise land
 //     in claude's stdout pipe and corrupt stream-json parsing.
 //   - `exec "$0" "$@"` replaces zsh with claude in the SAME PID, so cancellation
 //     (CancelSession → cmd.Process.Signal) still targets the claude process.
-const shellSourcePreamble = `[ -f ~/.zshenv ] && source ~/.zshenv >/dev/null 2>&1; ` +
+const shellSourcePreamble = `__cfu_path="$(` +
+	`[ -f ~/.zshenv ] && source ~/.zshenv >/dev/null 2>&1; ` +
 	`[ -f ~/.zshrc ] && source ~/.zshrc >/dev/null 2>&1; ` +
-	`export PATH="$PATH"; exec "$0" "$@"`
+	`printf %s "$PATH")"; [ -n "$__cfu_path" ] && export PATH="$__cfu_path"; exec "$0" "$@"`
 
 // ShellWrappedCommand builds an exec.Cmd that runs the claude CLI through zsh,
-// re-sourcing ~/.zshenv and ~/.zshrc first so claude always gets a valid PATH.
+// rebuilding PATH from ~/.zshenv and ~/.zshrc first so claude always gets a valid PATH.
 // claudePath becomes $0 and args become $1.. inside the preamble's exec.
+//
+// `-f` (NO_RCS) is essential: zsh AUTO-sources ~/.zshenv on every startup — including
+// non-interactive `zsh -c` — BEFORE the preamble runs. That auto-source re-applies
+// every export in ~/.zshenv over ClaudeFu's injected environment (buildEnvironment),
+// which is how a hardcoded `export CLAUDE_CODE_OAUTH_TOKEN=...` in ~/.zshenv silently
+// overrode the per-machine token ClaudeFu injected (wrong-account auth, v0.5.50→.52).
+// With -f the outer shell sources nothing automatically; the preamble's subshell then
+// sources both files explicitly (unaffected by NO_RCS) solely to capture the rebuilt
+// PATH. Net: PATH refresh preserved, injected env stays authoritative.
 func ShellWrappedCommand(ctx context.Context, claudePath string, args ...string) *exec.Cmd {
-	shellArgs := append([]string{"-c", shellSourcePreamble, claudePath}, args...)
+	shellArgs := append([]string{"-f", "-c", shellSourcePreamble, claudePath}, args...)
 	return exec.CommandContext(ctx, "/bin/zsh", shellArgs...)
 }
 
