@@ -356,7 +356,7 @@ export function MCPSettingsPane({
               }}>
                 <div style={{ marginBottom: '0.5rem', color: '#888' }}>Claude Code MCP config:</div>
                 <code style={{ color: '#8b5cf6', wordBreak: 'break-all' }}>
-                  {`~/.claude/mcp.json → "claudefu": { "transport": { "type": "sse", "url": "http://localhost:${port}/sse" } }`}
+                  {`~/.claude/mcp.json → "claudefu": { "type": "http", "url": "http://localhost:${port}/mcp" }`}
                 </code>
               </div>
             )}

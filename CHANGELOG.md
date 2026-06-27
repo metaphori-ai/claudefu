@@ -5,6 +5,15 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.55] - 2026-06-27
+
+### Changed
+- **MCP transport switched from deprecated SSE to streamable-HTTP** — Fixes the transient `No such tool available: mcp__claudefu__*` errors. Spawned `claude --print` processes intermittently failed to complete the MCP handshake over the SSE transport: the v0.5.54 lifecycle logging showed a `session connected` with NO following `tools/list served`, meaning the CLI opened the SSE event stream but never finished `initialize`→`tools/list` before the model acted — so its tool registry was empty and the `mcp__claudefu__*` call failed CLI-side and never reached the server (hence no server error to log). Per the official Claude Code MCP docs, the SSE transport is deprecated in favor of streamable-HTTP, where the handshake folds into a single endpoint with no separate stream to race.
+  - `internal/mcpserver/server.go`: `server.NewSSEServer(...)` (endpoint `/sse`) → `server.NewStreamableHTTPServer(mcpServer)` (endpoint `/mcp`), mounted as the `http.Server` handler. All error/lifecycle hooks + the tool middleware attach to the `MCPServer` and are transport-agnostic, so they carry over unchanged.
+  - `internal/providers/claudecode.go`: the `--mcp-config` handed to every spawn changed from `{"claudefu":{"type":"sse","url":".../sse"}}` to `{"claudefu":{"type":"http","url":".../mcp"}}`.
+  - `MCPSettingsPane.tsx`: the displayed example config updated to the `type: http` / `/mcp` form.
+  - Verified end-to-end: a streamable-HTTP smoke test using mcp-go's own client completed `initialize` → `tools/list` → `tools/call` against the server configured exactly as prod (same hooks/middleware).
+
 ## [0.5.54] - 2026-06-27
 
 ### Added

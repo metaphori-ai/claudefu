@@ -271,9 +271,13 @@ func (s *ClaudeCodeService) SetMCPServerPort(port int) {
 		s.mcpConfig = ""
 		return
 	}
-	// Generate inline JSON config for SSE transport
-	// Format: {"mcpServers":{"name":{"type":"sse","url":"..."}}}
-	s.mcpConfig = fmt.Sprintf(`{"mcpServers":{"claudefu":{"type":"sse","url":"http://localhost:%d/sse"}}}`, port)
+	// Generate inline JSON config for the streamable-HTTP transport (v0.5.55).
+	// Format: {"mcpServers":{"name":{"type":"http","url":".../mcp"}}}
+	// Replaces the deprecated SSE transport — the SSE handshake (separate event
+	// stream + reconnect-with-backoff) intermittently left spawned `claude --print`
+	// processes without our tool list ("No such tool available"). Must stay in sync
+	// with the streamable-HTTP endpoint served in mcpserver/server.go (/mcp).
+	s.mcpConfig = fmt.Sprintf(`{"mcpServers":{"claudefu":{"type":"http","url":"http://localhost:%d/mcp"}}}`, port)
 }
 
 // ClearMCPConfig disables MCP config injection

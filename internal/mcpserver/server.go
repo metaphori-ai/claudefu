@@ -208,18 +208,23 @@ func (s *MCPService) Start() error {
 
 	s.server = mcpServer
 
-	// Start SSE server in goroutine
+	// Start the MCP HTTP transport in a goroutine.
+	// v0.5.55: streamable-HTTP (endpoint /mcp) replaces the deprecated SSE
+	// transport (/sse). The SSE handshake depends on a separate long-lived event
+	// stream that the CLI reconnects to with backoff (the "pending" state); a
+	// `claude --print` spawn that raced that handshake got an empty tool registry
+	// and failed locally with "No such tool available: mcp__claudefu__*" — never
+	// reaching this server. Streamable-HTTP folds the handshake into one endpoint.
+	// All hooks/middleware/logging attach to mcpServer and are transport-agnostic.
 	go func() {
-		sseServer := server.NewSSEServer(mcpServer,
-			server.WithBaseURL(fmt.Sprintf("http://localhost:%d", s.port)),
-		)
+		mcpHTTP := server.NewStreamableHTTPServer(mcpServer) // default endpoint path: /mcp
 
 		addr := fmt.Sprintf(":%d", s.port)
-		fmt.Printf("[MCP] Starting SSE server on %s\n", addr)
+		fmt.Printf("[MCP] Starting streamable-HTTP server on %s/mcp\n", addr)
 
 		httpServer := &http.Server{
 			Addr:    addr,
-			Handler: sseServer,
+			Handler: mcpHTTP,
 		}
 
 		// Run server in a goroutine
@@ -231,7 +236,7 @@ func (s *MCPService) Start() error {
 
 		// Wait for context cancellation
 		<-s.ctx.Done()
-		fmt.Println("[MCP] Shutting down SSE server...")
+		fmt.Println("[MCP] Shutting down MCP HTTP server...")
 		httpServer.Close()
 	}()
 
