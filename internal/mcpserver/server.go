@@ -180,6 +180,11 @@ func (s *MCPService) Start() error {
 		server.WithResourceCapabilities(true, true),
 		server.WithPromptCapabilities(true),
 		server.WithToolCapabilities(true),
+		// Guarantee a [MCP:ERROR] log for ANY MCP failure: tool errors,
+		// error-results, and handler panics (middleware) + protocol/transport
+		// errors that never reach a handler (hooks). See logging.go.
+		server.WithToolHandlerMiddleware(toolLoggingMiddleware),
+		server.WithHooks(newLoggingHooks()),
 	)
 
 	// Register tools with dynamic agent list and configurable instructions
@@ -278,8 +283,14 @@ func (s *MCPService) Stop() {
 	fmt.Println("[MCP] MCP server stopped")
 }
 
-// Restart stops and starts the MCP server (useful for workspace switches)
+// Restart stops and starts the MCP server (useful for workspace switches).
+// WARNING: the SSE server is torn down and rebound during this window, so any
+// `claude --print` process that opens its connection in the gap gets refused and
+// marks the claudefu MCP server failed — surfacing to the agent as
+// "No such tool available: mcp__claudefu__*". This log line brackets that window
+// so such failures can be correlated to a restart in the logs.
 func (s *MCPService) Restart() error {
+	fmt.Println("[MCP] Restarting MCP server — SSE briefly unavailable; spawns in this window may see 'No such tool available'")
 	s.Stop()
 	return s.Start()
 }

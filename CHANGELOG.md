@@ -5,6 +5,15 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.54] - 2026-06-27
+
+### Added
+- **Comprehensive MCP error + lifecycle logging** — Previously an MCP failure could be completely silent: a tool handler returning `mcp.NewToolResultError(...)` without also printing left the agent with an error and the logs empty, and protocol/transport/connection-level failures never surfaced at all. New `internal/mcpserver/logging.go` adds, via mcp-go middleware + hooks (transport-agnostic — attaches to the `MCPServer`, not the SSE/HTTP transport):
+  - **`WithToolHandlerMiddleware(toolLoggingMiddleware)`** — one chokepoint that logs every tool-handler failure mode with the tool name: a returned transport `error`, an error-result (`IsError`), or a **panic** (with stack — and converts it to a clean error-result so the request goroutine doesn't die silently and the agent gets a retryable response). Registered as the only tool middleware so its `recover()` is innermost and captures the real stack.
+  - **`WithHooks(newLoggingHooks())`** — connection-lifecycle breadcrumbs: `[MCP] session connected/disconnected`, `[MCP] tools/list served: N tools`, `[MCP] → call tool=X`, plus `[MCP:ERROR] protocol …` for errors that never reach a handler.
+  - **`Restart()` breadcrumb** — `[MCP] Restarting MCP server — SSE briefly unavailable; spawns in this window may see 'No such tool available'`, bracketing the teardown window so such failures can be correlated to a restart.
+  - Diagnostic value proven immediately: the **absence** of a `tools/list served` line on a failing `mcp__claudefu__*` call pinpoints that the spawned `claude --print` process never completed its MCP handshake (so the tool call failed CLI-side and never reached the server) — vs. a restart-window race. This is the groundwork for the v0.5.55 SSE→streamable-HTTP transport switch.
+
 ## [0.5.53] - 2026-06-26
 
 ### Fixed
