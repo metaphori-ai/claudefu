@@ -567,7 +567,7 @@ func FindToolUseInSubagents(folder, sessionID, toolName string) (toolID, assista
 		}
 	}
 
-	return "", "", "", "", fmt.Errorf("no tool_use block found for %s in any recent subagent")
+	return "", "", "", "", fmt.Errorf("no tool_use block found for %s in any recent subagent", toolName)
 }
 
 // scanSubagentForToolUse scans a single subagent JSONL backwards for a tool_use matching
