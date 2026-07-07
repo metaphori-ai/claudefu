@@ -5,7 +5,7 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.57] - 2026-07-07
 
 ### Fixed
 - **`fmt.Errorf` format bug in `FindToolUseInSubagents`** (`internal/workspace/jsonl_patch.go`) — the "no tool_use block found for %s in any recent subagent" error had a `%s` directive but no argument, so a failed subagent tool-use scan produced the misleading literal `%!s(MISSING)` instead of naming the tool. Now passes `toolName`. Caught by `go vet`; surfaces in the ExitPlanMode plan-review JSONL-patching path.
