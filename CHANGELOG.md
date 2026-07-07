@@ -5,6 +5,20 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.56] - 2026-07-07
+
+### Fixed
+- **Agent registry blank-folder collision sink (the `agents.json` corruption)** — `AgentRegistry.GetOrCreateID(folder)` keyed entries by folder path and would happily mint a `""`-keyed entry when a folder momentarily resolved to empty. Because the map is folder-keyed, every agent that blanked its folder collapsed onto that *one* shared UUID — mixing distinct agents' identities and per-agent inbox/backlog databases, and rendering duplicate rows in the sidebar. A single corrupt sink (`"": {id, slug: <uuid-prefix>}`) had absorbed idio-metaphori-ai plus several tools-workspace agents. Root-cause guards in `internal/workspace/registry.go`:
+  - `GetOrCreateID`, `RegisterID`, and `SyncAgentIDsFromRegistry` now **refuse a blank folder** — the sink can never be created at the source.
+  - `loadLocked` **drops any blank-folder entry on read** — self-healing: an already-corrupt `agents.json` is repaired on the next startup, on every machine.
+  - `marshalSorted` skips blank keys defensively — a blank entry can never be *written* even if one appears in memory.
+- **Duplicate agent IDs in a workspace** — `SaveWorkspace` now dedups agent IDs and drops blanks (`internal/workspace/workspace.go`). A workspace referencing the same agent ID more than once is always the collapsed-to-one-UUID artifact; it can no longer be persisted.
+
+### Added
+- **Rolling backups for `agents.json`** — every registry write first snapshots the pre-write file to `~/.claudefu/backups/agents/agents-{epochMillis}-{hostname}.json` (`internal/workspace/registry.go`). The epoch-ms + hostname naming is collision-free across machines (the same conflict-free scheme the spool directory uses), so the pool is safe to replicate and gives fleet-wide forensics — *which machine, which millisecond* introduced a bad write. Change-detected (no churn on no-op saves); each machine prunes only its own hostname's snapshots (keep last 20), so deletions are of unique-named files and never race replication.
+- **Atomic writes** for `agents.json` and workspace JSON — `tmp` + `rename` so a torn/partial write can't corrupt either file.
+- **Claude Sonnet 5 in the model catalog** (`frontend/src/components/chat/modelCatalog.ts`) — added `claude-sonnet-5` (200K default) and `claude-sonnet-5[1m]` (1M, extra-usage badge) with the full five-level effort profile (first Sonnet with `xhigh`); the `sonnet` / `sonnet[1m]` aliases now resolve to Sonnet 5 and expose `xhigh`; both variants added to the Sonnet env-var dropdown. Sonnet 5 is 1M-native but Claude Code still gates 1M behind the `[1m]` suffix, so the entry mirrors the Opus 200K/`[1m]` split.
+
 ## [0.5.55] - 2026-06-27
 
 ### Changed

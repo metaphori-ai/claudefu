@@ -48,8 +48,8 @@ export const MODEL_CATALOG: ModelEntry[] = [
   { id: 'opus[1m]',  label: 'opus [1M]',        group: 'alias', family: 'opus',   effortLevels: EFFORT_FULL, contextOneMillion: true },
   { id: 'opusplan',  label: 'opusplan',         group: 'alias', family: 'mixed',  effortLevels: EFFORT_46,      description: 'Opus for plan mode, Sonnet for execution.' },
   { id: 'opusplan[1m]', label: 'opusplan [1M]', group: 'alias', family: 'mixed',  effortLevels: EFFORT_46,      contextOneMillion: true },
-  { id: 'sonnet',    label: 'sonnet',           group: 'alias', family: 'sonnet', effortLevels: EFFORT_46 },
-  { id: 'sonnet[1m]',label: 'sonnet [1M]',      group: 'alias', family: 'sonnet', effortLevels: EFFORT_46,      contextOneMillion: true, extraUsage: true, description: '1M context Sonnet — requires extra usage on Max plans.' },
+  { id: 'sonnet',    label: 'sonnet',           group: 'alias', family: 'sonnet', effortLevels: EFFORT_FULL,    description: 'Latest Sonnet (currently Sonnet 5). Full five-level effort incl. xhigh.' },
+  { id: 'sonnet[1m]',label: 'sonnet [1M]',      group: 'alias', family: 'sonnet', effortLevels: EFFORT_FULL,    contextOneMillion: true, extraUsage: true, description: '1M context Sonnet (currently Sonnet 5) — requires extra usage on Max plans.' },
   { id: 'haiku',     label: 'haiku',            group: 'alias', family: 'haiku',  effortLevels: EFFORT_NONE },
 
   // ---------- Explicit — Fable ----------
@@ -70,6 +70,11 @@ export const MODEL_CATALOG: ModelEntry[] = [
   { id: 'claude-opus-4-20250514',   label: 'Opus 4',         group: 'explicit', family: 'opus',   effortLevels: EFFORT_NONE },
 
   // ---------- Explicit — Sonnet ----------
+  // Sonnet 5 (GA): 1M-native context, but Claude Code still gates 1M behind the
+  // [1m] suffix — hence the 200K/[1m] split, mirroring the Opus family. First
+  // Sonnet with the full five-level effort set (xhigh); adaptive thinking on by default.
+  { id: 'claude-sonnet-5',         label: 'Sonnet 5',         group: 'explicit', family: 'sonnet', effortLevels: EFFORT_FULL },
+  { id: 'claude-sonnet-5[1m]',     label: 'Sonnet 5 [1M]',    group: 'explicit', family: 'sonnet', effortLevels: EFFORT_FULL, contextOneMillion: true, extraUsage: true },
   { id: 'claude-sonnet-4-6',       label: 'Sonnet 4.6',       group: 'explicit', family: 'sonnet', effortLevels: EFFORT_46 },
   { id: 'claude-sonnet-4-6[1m]',   label: 'Sonnet 4.6 [1M]',  group: 'explicit', family: 'sonnet', effortLevels: EFFORT_46, contextOneMillion: true, extraUsage: true },
   { id: 'claude-sonnet-4-5-20250929', label: 'Sonnet 4.5',    group: 'explicit', family: 'sonnet', effortLevels: EFFORT_NONE },
@@ -124,6 +129,8 @@ export const ENV_OPUS_MODEL_OPTIONS: string[] = [
 ];
 
 export const ENV_SONNET_MODEL_OPTIONS: string[] = [
+  'claude-sonnet-5',
+  'claude-sonnet-5[1m]',
   'claude-sonnet-4-6',
   'claude-sonnet-4-6[1m]',
   'claude-sonnet-4-5-20250929',

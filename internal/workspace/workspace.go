@@ -828,13 +828,26 @@ func (m *Manager) SaveWorkspace(ws *Workspace) error {
 		Name:      ws.Name,
 		MCPConfig: ws.MCPConfig,
 	}
-	disk.Agents = make([]agentDiskEntry, len(ws.Agents))
-	for i, a := range ws.Agents {
-		disk.Agents[i] = agentDiskEntry{
+	// Dedup agent IDs and drop blanks. A workspace referencing the same agent ID
+	// more than once is always corruption (the collapsed-to-one-UUID artifact);
+	// persisting it would render duplicate rows in the sidebar. Keep first-seen.
+	disk.Agents = make([]agentDiskEntry, 0, len(ws.Agents))
+	seen := make(map[string]bool, len(ws.Agents))
+	for _, a := range ws.Agents {
+		if strings.TrimSpace(a.ID) == "" {
+			log.Printf("[SaveWorkspace] skipping agent with blank ID in workspace %s", ws.ID)
+			continue
+		}
+		if seen[a.ID] {
+			log.Printf("[SaveWorkspace] skipping duplicate agent ID %s in workspace %s", a.ID, ws.ID)
+			continue
+		}
+		seen[a.ID] = true
+		disk.Agents = append(disk.Agents, agentDiskEntry{
 			ID:         a.ID,
 			WatchMode:  a.WatchMode,
 			MCPEnabled: a.MCPEnabled,
-		}
+		})
 	}
 
 	data, err := json.MarshalIndent(&disk, "", "  ")
@@ -844,7 +857,12 @@ func (m *Manager) SaveWorkspace(ws *Workspace) error {
 
 	wsPath := filepath.Join(m.configPath, "workspaces", ws.ID+".json")
 	fmt.Printf("[DEBUG] SaveWorkspace: writing %d agents to %s (%d bytes)\n", len(disk.Agents), wsPath, len(data))
-	return os.WriteFile(wsPath, data, 0644)
+	// Atomic write: tmp + rename so a torn write can't corrupt the workspace file.
+	tmp := wsPath + ".tmp"
+	if err := os.WriteFile(tmp, data, 0644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, wsPath)
 }
 
 

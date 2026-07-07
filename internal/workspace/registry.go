@@ -104,6 +104,17 @@ func (r *AgentRegistry) loadLocked() error {
 		r.data.Agents = make(map[string]AgentInfo)
 	}
 
+	// Self-heal: drop corrupt blank-folder entries. A blank folder key is never
+	// valid — GetOrCreateID("") once minted a "" entry that became a shared UUID
+	// "collision sink" distinct agents collapsed into (the a988cf82 corruption).
+	// Dropping it on load auto-repairs any registry that already has one.
+	for folder := range r.data.Agents {
+		if strings.TrimSpace(folder) == "" {
+			log.Printf("[AgentRegistry] dropping corrupt blank-folder entry (id=%s) on load", r.data.Agents[folder].ID)
+			delete(r.data.Agents, folder)
+		}
+	}
+
 	// Ensure all AgentInfo have initialized Meta maps
 	for folder, info := range r.data.Agents {
 		if info.Meta == nil {
@@ -162,12 +173,101 @@ func (r *AgentRegistry) save() error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(r.filePath, raw, 0644); err != nil {
+	// Snapshot the pre-write file into the rolling backup pool before we clobber it.
+	r.backupBeforeWrite(raw)
+	// Atomic write: tmp + rename so a torn/partial write can never leave a
+	// half-serialized agents.json on disk (a corruption source in its own right).
+	tmp := r.filePath + ".tmp"
+	if err := os.WriteFile(tmp, raw, 0644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, r.filePath); err != nil {
 		return err
 	}
 	// Update mtime tracker so our own save doesn't trigger a self-reload
 	r.touchMtime()
 	return nil
+}
+
+const agentsBackupKeep = 20 // rolling backups retained per machine
+
+// backupBeforeWrite snapshots the current on-disk agents.json (if any) into a
+// per-machine rolling backup pool BEFORE it is overwritten. Filenames carry an
+// epoch-millisecond + hostname stamp, so snapshots from different machines never
+// collide — the same conflict-free naming the spool directory relies on, which
+// makes the pool safe to replicate via Syncthing and gives fleet-wide forensics
+// ("which machine, which millisecond introduced the bad write"). Only this
+// machine's own snapshots are pruned, so deletions are of unique-named files
+// and replicate cleanly without cross-machine delete races.
+func (r *AgentRegistry) backupBeforeWrite(newRaw []byte) {
+	existing, err := os.ReadFile(r.filePath)
+	if err != nil || len(existing) == 0 {
+		return // first write, or unreadable — nothing to snapshot
+	}
+	if bytes.Equal(existing, newRaw) {
+		return // no change — don't churn the backup pool on no-op saves
+	}
+
+	host := sanitizeHostname(hostnameOrUnknown())
+	dir := filepath.Join(filepath.Dir(r.filePath), "backups", "agents")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		log.Printf("[AgentRegistry] backup dir create failed: %v", err)
+		return
+	}
+	name := fmt.Sprintf("agents-%d-%s.json", time.Now().UnixMilli(), host)
+	if err := os.WriteFile(filepath.Join(dir, name), existing, 0644); err != nil {
+		log.Printf("[AgentRegistry] backup write failed: %v", err)
+		return
+	}
+	pruneOwnBackups(dir, host, agentsBackupKeep)
+}
+
+func hostnameOrUnknown() string {
+	if h, err := os.Hostname(); err == nil && h != "" {
+		return h
+	}
+	return "unknown"
+}
+
+// sanitizeHostname keeps filenames shell- and Syncthing-safe (mirrors the
+// spool's hostname sanitizer): anything outside [A-Za-z0-9._-] becomes '-'.
+func sanitizeHostname(h string) string {
+	return strings.Map(func(rr rune) rune {
+		switch {
+		case rr >= 'a' && rr <= 'z', rr >= 'A' && rr <= 'Z', rr >= '0' && rr <= '9', rr == '.', rr == '_', rr == '-':
+			return rr
+		default:
+			return '-'
+		}
+	}, h)
+}
+
+// pruneOwnBackups keeps the newest `keep` snapshots written by this host and
+// removes older ones. It matches on the hostname field in the filename so it
+// only ever deletes this machine's own backups — the epoch-ms prefix is
+// fixed-width (13 digits until year 2286), so lexical sort == chronological.
+func pruneOwnBackups(dir, host string, keep int) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	suffix := "-" + host + ".json"
+	var mine []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if n := e.Name(); strings.HasPrefix(n, "agents-") && strings.HasSuffix(n, suffix) {
+			mine = append(mine, n)
+		}
+	}
+	if len(mine) <= keep {
+		return
+	}
+	sort.Strings(mine)
+	for _, n := range mine[:len(mine)-keep] {
+		_ = os.Remove(filepath.Join(dir, n))
+	}
 }
 
 // marshalSorted produces indented JSON with agents sorted case-insensitively
@@ -176,6 +276,9 @@ func (r *AgentRegistry) save() error {
 func (r *AgentRegistry) marshalSorted() ([]byte, error) {
 	keys := make([]string, 0, len(r.data.Agents))
 	for k := range r.data.Agents {
+		if strings.TrimSpace(k) == "" {
+			continue // defensive: never persist a blank-folder entry
+		}
 		keys = append(keys, k)
 	}
 	sort.Slice(keys, func(i, j int) bool {
@@ -224,6 +327,14 @@ func (r *AgentRegistry) GetOrCreateID(folder string) string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	// Never create a blank-folder entry — that is the collision-sink bug at its
+	// source (every agent whose folder momentarily resolves to "" would collapse
+	// onto one shared UUID). Return empty and let the caller handle it.
+	if strings.TrimSpace(folder) == "" {
+		log.Printf("[AgentRegistry] refusing GetOrCreateID for blank folder — returning empty ID")
+		return ""
+	}
+
 	if info, ok := r.data.Agents[folder]; ok {
 		return info.ID
 	}
@@ -264,6 +375,11 @@ func (r *AgentRegistry) GetInfo(folder string) *AgentInfo {
 func (r *AgentRegistry) RegisterID(folder, id string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	if strings.TrimSpace(folder) == "" {
+		log.Printf("[AgentRegistry] refusing to register blank folder (id=%s)", id)
+		return
+	}
 
 	if _, exists := r.data.Agents[folder]; exists {
 		return // don't overwrite existing mapping
@@ -415,6 +531,10 @@ func (r *AgentRegistry) SyncAgentIDsFromRegistry(ws *Workspace) map[string]strin
 	for i := range ws.Agents {
 		agent := &ws.Agents[i]
 		folder := agent.Folder
+
+		if strings.TrimSpace(folder) == "" {
+			continue // never register a blank-folder agent (collision-sink guard)
+		}
 
 		info, exists := r.data.Agents[folder]
 		if !exists {
