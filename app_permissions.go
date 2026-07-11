@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"claudefu/internal/permissions"
 )
@@ -14,8 +15,8 @@ import (
 
 // ImportResult contains the result of importing from Claude's settings.local.json
 type ImportResult struct {
-	Found          bool                           `json:"found"`
-	HasBlanketBash bool                           `json:"hasBlanketBash"`
+	Found          bool                             `json:"found"`
+	HasBlanketBash bool                             `json:"hasBlanketBash"`
 	Imported       *permissions.ClaudeFuPermissions `json:"imported"`
 }
 
@@ -91,6 +92,99 @@ func (a *App) SaveAgentPermissions(folder string, perms permissions.ClaudeFuPerm
 	}
 
 	return nil
+}
+
+// applyGrantedPermission persists a user-approved MCP RequestToolPermission grant.
+//
+// Session (permanent=false): writes the pattern only to the agent's
+//
+//	settings.local.json allow list. The running CLI honors it on its next
+//	tool-execution loop; it is NOT tracked in ClaudeFu's permission set, so a
+//	later spawn that re-syncs settings.local.json from ClaudeFu perms lets it
+//	lapse naturally — a coherent (if intentionally loose) "session" lifetime.
+//
+// Permanent: adds the pattern to the agent's ClaudeFu permission set via
+//
+//	SaveAgentPermissions, which persists claudefu.permissions.json AND auto-syncs
+//	settings.local.json. Durable, visible in the Permissions UI, and re-applied
+//	on every future spawn. This mirrors the manual "paste into custom permissions
+//	and save" workflow exactly.
+func (a *App) applyGrantedPermission(agentSlug, permission string, permanent bool) error {
+	if strings.TrimSpace(permission) == "" {
+		return fmt.Errorf("empty permission pattern")
+	}
+	_, folder := a.workspace.FindAgentBySlug(agentSlug)
+	if folder == "" {
+		return fmt.Errorf("could not resolve agent slug %q to a folder", agentSlug)
+	}
+
+	if permanent {
+		return a.addPermanentGrant(folder, permission)
+	}
+	return a.addSessionGrant(folder, permission)
+}
+
+// addSessionGrant appends a permission to settings.local.json only (not durable).
+func (a *App) addSessionGrant(folder, permission string) error {
+	current, err := a.GetClaudePermissions(folder)
+	if err != nil {
+		return fmt.Errorf("read settings.local.json: %w", err)
+	}
+	if containsStr(current.Allow, permission) {
+		return nil // already allowed — nothing to do
+	}
+	allow := append(append([]string{}, current.Allow...), permission)
+	return a.SaveClaudePermissions(folder, allow, current.Deny, current.AdditionalDirectories)
+}
+
+// addPermanentGrant adds a permission to the agent's ClaudeFu permission set.
+// The target set is inferred from the granted command (GetSetByCommand); anything
+// that doesn't map to a built-in set lands in "custom", where MigrateCustomToBuiltIn
+// relocates it to its proper home on the next load. Placed in the permissive tier —
+// a user-approved grant is a deliberate capability, not a read-only default.
+func (a *App) addPermanentGrant(folder, permission string) error {
+	perms, err := a.GetAgentPermissionsOrGlobal(folder)
+	if err != nil {
+		return fmt.Errorf("load agent permissions: %w", err)
+	}
+	if perms.ToolPermissions == nil {
+		perms.ToolPermissions = map[string]permissions.ToolPermission{}
+	}
+
+	setID := "custom"
+	if set, _ := permissions.GetSetByCommand(bashInner(permission)); set != nil {
+		setID = set.ID
+	}
+
+	tp := perms.ToolPermissions[setID]
+	if containsStr(tp.Common, permission) || containsStr(tp.Permissive, permission) || containsStr(tp.YOLO, permission) {
+		return nil // already present — settings.local.json already reflects it
+	}
+	tp.Permissive = append(tp.Permissive, permission)
+	perms.ToolPermissions[setID] = tp
+
+	// Persists claudefu.permissions.json AND auto-syncs settings.local.json.
+	return a.SaveAgentPermissions(folder, *perms)
+}
+
+// bashInner extracts the inner command from a "Bash(cmd ...)" pattern so it can
+// be matched to a permission set. A trailing ":*" wildcard is trimmed. Non-Bash
+// patterns are returned unchanged.
+func bashInner(permission string) string {
+	if strings.HasPrefix(permission, "Bash(") && strings.HasSuffix(permission, ")") {
+		inner := permission[len("Bash(") : len(permission)-1]
+		return strings.TrimSuffix(inner, ":*")
+	}
+	return permission
+}
+
+func containsStr(list []string, v string) bool {
+	for _, s := range list {
+		if s == v {
+			return true
+		}
+	}
+	return false
 }
 
 // RevertAgentToGlobal resets agent tool permissions to match the global template

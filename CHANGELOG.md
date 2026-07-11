@@ -5,6 +5,13 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **MCP `RequestToolPermission` grant was a no-op stub** (`app_mcp.go`, `app_permissions.go`) — approving a permission request (Grant Once or Grant Permanently) emitted a "granted and added to allow list" result to the agent but never wrote anything. The blocked tool call would retry and fail again. `AnswerPermissionRequest` now applies the grant to disk **before** unblocking the MCP handler, so the in-flight tool call sees it on retry (Claude re-reads `settings.local.json` on every intra-turn tool-execution loop — no re-spawn needed):
+  - **Grant Once** → appends the pattern to the agent's `settings.local.json` allow list only (effective immediately; not tracked durably, lapses on the next spawn's re-sync).
+  - **Grant Permanently** → adds the pattern to the agent's ClaudeFu permission set (target set inferred from the command via `GetSetByCommand`; `custom` fallback), persisting `claudefu.permissions.json` and auto-syncing `settings.local.json`. Durable, visible in the Permissions UI, re-applied on every future spawn.
+
 ## [0.5.58] - 2026-07-11
 
 ### Changed

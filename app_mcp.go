@@ -180,7 +180,14 @@ type MCPPendingPermission struct {
 	CreatedAt  string `json:"createdAt"`
 }
 
-// AnswerPermissionRequest responds to a pending MCP permission request
+// AnswerPermissionRequest responds to a pending MCP permission request.
+//
+// On a grant, the permission is written to disk BEFORE the request is unblocked.
+// Claude re-reads {folder}/.claude/settings.local.json on every tool-execution
+// loop (intra-turn, not just per-turn), so the in-flight tool call that is
+// blocked on this request will see the new allow rule when the model retries it
+// — no re-spawn required. The write must therefore land before ppm.Respond
+// releases the MCP handler goroutine.
 func (a *App) AnswerPermissionRequest(requestID string, granted bool, permanent bool, denyReason string) error {
 	if a.mcpServer == nil {
 		return fmt.Errorf("MCP server not initialized")
@@ -189,6 +196,18 @@ func (a *App) AnswerPermissionRequest(requestID string, granted bool, permanent 
 	if ppm == nil {
 		return fmt.Errorf("pending permissions manager not initialized")
 	}
+
+	if granted {
+		if pr := ppm.Get(requestID); pr != nil {
+			if err := a.applyGrantedPermission(pr.AgentSlug, pr.Permission, permanent); err != nil {
+				// Best-effort: log and still unblock so the agent isn't stuck.
+				fmt.Printf("[Permissions] Failed to apply granted permission %q for agent %q: %v\n", pr.Permission, pr.AgentSlug, err)
+			}
+		} else {
+			fmt.Printf("[Permissions] AnswerPermissionRequest: no pending request %s to apply grant for\n", requestID)
+		}
+	}
+
 	return ppm.Respond(requestID, granted, permanent, denyReason)
 }
 
