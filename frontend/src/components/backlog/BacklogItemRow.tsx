@@ -19,7 +19,19 @@ export function BacklogItemRow({
   onStatusChange,
 }: BacklogItemRowProps) {
   const [isHovered, setIsHovered] = useState(false);
+  const [copiedId, setCopiedId] = useState(false);
   const statusConfig = STATUS_CONFIG[item.status as BacklogStatus] || STATUS_CONFIG.idea;
+
+  const handleCopyId = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(item.id);
+      setCopiedId(true);
+      setTimeout(() => setCopiedId(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy backlog item id:', err);
+    }
+  };
   const tags = item.tags ? item.tags.split(',').map(t => t.trim()).filter(Boolean) : [];
 
   return (
@@ -141,6 +153,24 @@ export function BacklogItemRow({
           }}
           onClick={(e) => e.stopPropagation()}
         >
+          {/* Copy UUID */}
+          <button
+            onClick={handleCopyId}
+            style={{ ...hoverButtonStyle, color: copiedId ? '#22c55e' : '#666' }}
+            title={copiedId ? 'Copied UUID!' : 'Copy UUID'}
+          >
+            {copiedId ? (
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            ) : (
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+            )}
+          </button>
+
           {/* Quick status cycle */}
           <button
             onClick={() => {

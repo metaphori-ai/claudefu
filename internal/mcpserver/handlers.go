@@ -1200,6 +1200,7 @@ func (s *MCPService) handleBacklogList(ctx context.Context, req mcp.CallToolRequ
 		return mcp.NewToolResultError("BacklogList tool is disabled. Enable in MCP Settings > Tool Availability."), nil
 	}
 
+	idFilter := getOptionalString(req, "id")
 	statusFilter := getOptionalString(req, "status")
 	typeFilter := getOptionalString(req, "type")
 	tagFilter := getOptionalString(req, "tag")
@@ -1213,6 +1214,25 @@ func (s *MCPService) handleBacklogList(ctx context.Context, req mcp.CallToolRequ
 	}
 
 	items := s.backlog.GetItemsByAgent(agentID)
+
+	// Single-item fetch by UUID: narrow to just that item with FULL context,
+	// scoped to the calling agent's backlog. Other filters are neutralized so
+	// the shared renderer below emits exactly the one requested item.
+	if idFilter != "" {
+		found := false
+		for _, item := range items {
+			if item.ID == idFilter {
+				items = []BacklogItem{item}
+				found = true
+				break
+			}
+		}
+		if !found {
+			return mcp.NewToolResultText(fmt.Sprintf("No backlog item found with id %q in this agent's backlog.", idFilter)), nil
+		}
+		includeContext = true
+		statusFilter, typeFilter, tagFilter = "", "", ""
+	}
 
 	// Filter by status if specified
 	if statusFilter != "" {

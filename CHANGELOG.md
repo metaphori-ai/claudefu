@@ -5,7 +5,12 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.59] - 2026-07-11
+
+### Added
+- **Backlog items are now referenceable by UUID** — previously a UUID was never displayed or copyable, so referring an agent to a specific item meant "list all and find the one I mean." Two changes close that loop:
+  - **Copy-UUID button in the Backlog pane** (`frontend/src/components/backlog/BacklogItemRow.tsx`) — a clipboard-icon button (the standard one, with green-checkmark feedback) joins the per-row hover actions (Copy / Cycle / Add Subtask / Delete) and copies the item's UUID.
+  - **`BacklogList` MCP tool gained an optional `id` param** (`internal/mcpserver/tools.go`, `handlers.go`) — pass `id=<uuid>` to fetch that single item with **full context** (short-circuits and neutralizes the status/type/tag filters). Still agent-scoped via the required `from_agent`; returns a clear "not found in this agent's backlog" when the UUID isn't theirs. Fills the gap where the store had `GetItem(id)` but no MCP surface exposed retrieval-by-UUID.
 
 ### Fixed
 - **MCP `RequestToolPermission` grant was a no-op stub** (`app_mcp.go`, `app_permissions.go`) — approving a permission request (Grant Once or Grant Permanently) emitted a "granted and added to allow list" result to the agent but never wrote anything. The blocked tool call would retry and fail again. `AnswerPermissionRequest` now applies the grant to disk **before** unblocking the MCP handler, so the in-flight tool call sees it on retry (Claude re-reads `settings.local.json` on every intra-turn tool-execution loop — no re-spawn needed):

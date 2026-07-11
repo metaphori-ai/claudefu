@@ -389,6 +389,9 @@ func CreateMetaserverRestartTool(instruction string) mcp.Tool {
 func CreateBacklogListTool(instruction string) mcp.Tool {
 	return mcp.NewTool("BacklogList",
 		mcp.WithDescription(instruction),
+		mcp.WithString("id",
+			mcp.Description("Fetch a single item by its exact UUID (returns full context, ignoring include_context and all other filters). Use this when the user gives you a backlog item's UUID and asks you to pull it up."),
+		),
 		mcp.WithString("status",
 			mcp.Description("Filter by status (omit for all items)"),
 			mcp.Enum("idea", "planned", "in_progress", "done", "parked"),
