@@ -75,16 +75,30 @@ func NewManager() (*Manager, error) {
 func DefaultGlobalPermissions() *ClaudeFuPermissions {
 	// Helper to get a set's tiers
 	s := func(id string) PermissionTiers { return GetSetByID(id).Permissions }
-	empty := func() ToolPermission { return ToolPermission{Common: []string{}, Permissive: []string{}, YOLO: []string{}} }
+	empty := func() ToolPermission {
+		return ToolPermission{Common: []string{}, Permissive: []string{}, YOLO: []string{}}
+	}
 
 	return &ClaudeFuPermissions{
 		Version: 2,
 		ToolPermissions: map[string]ToolPermission{
-			// Claude Built-in: common + permissive ON
+			// Claude Built-in: enable the everyday read-only tools, write tools,
+			// task-list quartet, and the MCP-wait guard. LSP, Worktree, and Workflow
+			// live in the catalog (sets.go) but are intentionally OFF by default —
+			// opt-in from the Tools splash.
 			"claude-builtin": {
-				Common:     s("claude-builtin").Common,
-				Permissive: s("claude-builtin").Permissive,
-				YOLO:       []string{},
+				Common: []string{
+					"Read", "Glob", "Grep", "WebSearch", "WebFetch",
+					"WaitForMcpServers",
+					"TaskCreate", "TaskGet", "TaskList", "TaskUpdate", "TaskStop",
+					// "LSP" omitted — opt-in (needs a language-server plugin)
+				},
+				Permissive: []string{
+					"Write", "Edit", "NotebookEdit",
+					"Agent", "Skill", "EnterPlanMode",
+					// "EnterWorktree"/"ExitWorktree"/"Workflow" omitted — opt-in
+				},
+				YOLO: []string{},
 			},
 			// Files: common + permissive ON (cp/mv/mkdir/sed are safe)
 			"files": {
@@ -167,6 +181,7 @@ func (m *Manager) LoadGlobalPermissions() (*ClaudeFuPermissions, error) {
 		return nil, err
 	}
 	MigrateCustomToBuiltIn(perms)
+	MigrateRenamedBuiltinTools(perms)
 	return perms, nil
 }
 
@@ -197,6 +212,7 @@ func (m *Manager) LoadAgentPermissions(agentFolder string) (*ClaudeFuPermissions
 		return nil, err
 	}
 	MigrateCustomToBuiltIn(perms)
+	MigrateRenamedBuiltinTools(perms)
 	return perms, nil
 }
 
@@ -411,12 +427,12 @@ type v1ToolPermission struct {
 
 // v1ClaudeFuPermissions is the old format structure
 type v1ClaudeFuPermissions struct {
-	Version               int                          `json:"version"`
-	InheritFromGlobal     bool                         `json:"inheritFromGlobal,omitempty"`
-	ToolPermissions       map[string]v1ToolPermission  `json:"toolPermissions"`
-	AdditionalDirectories []string                     `json:"additionalDirectories"`
-	CustomBashPermissions []string                     `json:"customBashPermissions"`
-	CustomDenyList        []string                     `json:"customDenyList"`
+	Version               int                         `json:"version"`
+	InheritFromGlobal     bool                        `json:"inheritFromGlobal,omitempty"`
+	ToolPermissions       map[string]v1ToolPermission `json:"toolPermissions"`
+	AdditionalDirectories []string                    `json:"additionalDirectories"`
+	CustomBashPermissions []string                    `json:"customBashPermissions"`
+	CustomDenyList        []string                    `json:"customDenyList"`
 }
 
 // migrateV1ToV2 converts v1 level-based format to v2 explicit arrays format
@@ -464,7 +480,7 @@ func (m *Manager) migrateV1ToV2(data []byte) (*ClaudeFuPermissions, error) {
 			v2Tool.Permissive = append(v2Tool.Permissive, set.Permissions.Permissive...)
 		case LevelCommon:
 			v2Tool.Common = append(v2Tool.Common, set.Permissions.Common...)
-		// LevelNone: all arrays stay empty
+			// LevelNone: all arrays stay empty
 		}
 
 		// Apply deny list: remove denied tools from arrays
@@ -756,6 +772,61 @@ func toSet(slice []string) map[string]bool {
 		m[s] = true
 	}
 	return m
+}
+
+// MigrateRenamedBuiltinTools rewrites the "claude-builtin" tool set in-place to
+// track Claude Code CLI tool renames/removals, so existing saved permission files
+// keep working without a manual re-check in the Tools splash:
+//   - "Task"      → "Agent"   (subagent tool renamed, Claude Code 2.1.90+)
+//   - "TodoWrite" → TaskCreate/TaskGet/TaskList/TaskUpdate/TaskStop
+//     (TodoWrite disabled by default in Claude Code v2.1.142)
+//   - "KillShell", "TaskOutput" → dropped (removed / deprecated upstream)
+//
+// Mutates perms in-place. Runs on every load alongside MigrateCustomToBuiltIn, so
+// corrected names reach the --allowedTools compile step even before a re-save.
+func MigrateRenamedBuiltinTools(perms *ClaudeFuPermissions) {
+	if perms == nil || perms.ToolPermissions == nil {
+		return
+	}
+	tp, ok := perms.ToolPermissions["claude-builtin"]
+	if !ok {
+		return
+	}
+	tp.Common = renameBuiltinTools(tp.Common)
+	tp.Permissive = renameBuiltinTools(tp.Permissive)
+	tp.YOLO = renameBuiltinTools(tp.YOLO)
+	perms.ToolPermissions["claude-builtin"] = tp
+}
+
+// renameBuiltinTools applies the tool rename/removal map to one tier, de-duping
+// while preserving order. Unknown tools pass through unchanged.
+func renameBuiltinTools(tools []string) []string {
+	out := []string{}
+	seen := map[string]bool{}
+	add := func(t string) {
+		if t == "" || seen[t] {
+			return
+		}
+		seen[t] = true
+		out = append(out, t)
+	}
+	for _, t := range tools {
+		switch t {
+		case "Task":
+			add("Agent")
+		case "TodoWrite":
+			add("TaskCreate")
+			add("TaskGet")
+			add("TaskList")
+			add("TaskUpdate")
+			add("TaskStop")
+		case "KillShell", "TaskOutput":
+			// dropped — removed / deprecated upstream
+		default:
+			add(t)
+		}
+	}
+	return out
 }
 
 // MigrateCustomToBuiltIn moves entries from the "custom" permission set to their

@@ -5,6 +5,24 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.58] - 2026-07-11
+
+### Changed
+- **`claude-builtin` permission set modernized to current Claude Code CLI tool names** (`internal/permissions/sets.go`) — the catalog had drifted from the CLI's actual tool surface (verified against the authoritative tools-reference):
+  - `Task` → **`Agent`** (subagent tool renamed in Claude Code 2.1.90+)
+  - `TodoWrite` → **`TaskCreate`/`TaskGet`/`TaskList`/`TaskUpdate`/`TaskStop`** (TodoWrite disabled by default in CC v2.1.142, replaced by the task-list quartet)
+  - dropped **`KillShell`** and **`TaskOutput`** (removed / deprecated upstream — superseded by `TaskStop` and `Read`-on-output-file)
+  - added **`WaitForMcpServers`** (Common, ON by default), **`LSP`** (Common, off by default), **`EnterWorktree`/`ExitWorktree`/`Workflow`** (Permissive, off by default)
+  - `DefaultGlobalPermissions` switched from whole-tier enablement to an explicit enabled subset so the opt-in tools ship unchecked (`internal/permissions/manager.go`); `AddPermissionWizard.tsx` core-tools classifier updated to match.
+
+### Fixed
+- **`AgentQuery`/`SelfQuery` subprocesses could recursively spawn subagents** (`internal/mcpserver/handlers.go`) — both stateless query spawns passed `--disallowed-tools "Task"` to block subagent spawning (which triggers `tool_use ids must be unique` concurrent-API conflicts). After the CLI renamed the subagent tool `Task`→`Agent`, disallowing only `"Task"` had silently become a no-op. Now denies `"Task,Agent"` (both, for CLI-version independence).
+- **ClaudeFu MCP tools intermittently invisible to spawned agents** — the injected `--mcp-config` now sets **`"alwaysLoad": true`** on the claudefu server (`internal/providers/claudecode.go`), exempting it from MCP tool-search deferral. Tools load upfront and stay visible without a `ToolSearch` step, and spawn startup blocks until the server connects (≤5s). Belt-and-suspenders with a global `ENABLE_TOOL_SEARCH=false`, and correct even if tool search is later re-enabled.
+
+### Added
+- **`WaitForMcpServers` enabled by default + one-time existing-config migration** — with tool search disabled, `WaitForMcpServers` is Claude Code's MCP-connection latency guard (it replaces the wait `ToolSearch` otherwise performs). Now in the default template, and **migration 12** (`modernize-global-builtin-tools`, `internal/workspace/migrations.go`) modernizes the existing `global.permissions.json` on next launch — applies the tool renames on-disk and seeds `WaitForMcpServers` so it shows enabled when the Permissions window opens.
+- **Load-time built-in tool rename migration** (`internal/permissions/manager.go`) — `MigrateRenamedBuiltinTools` runs on every global + agent permission load, rewriting saved `Task`/`TodoWrite`/`KillShell`/`TaskOutput` to their current equivalents so existing agents keep subagent + task auto-approval without a manual re-check. Covered by unit + file-round-trip tests.
+
 ## [0.5.57] - 2026-07-07
 
 ### Fixed

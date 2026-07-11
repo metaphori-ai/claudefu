@@ -277,7 +277,12 @@ func (s *ClaudeCodeService) SetMCPServerPort(port int) {
 	// stream + reconnect-with-backoff) intermittently left spawned `claude --print`
 	// processes without our tool list ("No such tool available"). Must stay in sync
 	// with the streamable-HTTP endpoint served in mcpserver/server.go (/mcp).
-	s.mcpConfig = fmt.Sprintf(`{"mcpServers":{"claudefu":{"type":"http","url":"http://localhost:%d/mcp"}}}`, port)
+	// alwaysLoad:true exempts our server from MCP tool-search deferral (Claude Code
+	// v2.1.121+). Its tools load upfront and stay visible without a ToolSearch step,
+	// and startup blocks until the server connects (capped at 5s). Belt-and-suspenders
+	// with the ENABLE_TOOL_SEARCH=false global setting — and keeps the claudefu tools
+	// visible even if tool search is ever re-enabled globally.
+	s.mcpConfig = fmt.Sprintf(`{"mcpServers":{"claudefu":{"type":"http","url":"http://localhost:%d/mcp","alwaysLoad":true}}}`, port)
 }
 
 // ClearMCPConfig disables MCP config injection

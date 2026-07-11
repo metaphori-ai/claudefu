@@ -74,15 +74,28 @@ func claudeBuiltinSet() PermissionSet {
 		Description: "Core Claude Code tools (excluding Bash - see other sets for Bash patterns)",
 		Permissions: PermissionTiers{
 			Common: []string{
-				// Read-only tools - safe to always enable
+				// Read-only tools — safe to always enable
 				"Read", "Glob", "Grep", "WebSearch", "WebFetch",
-				"LSP", "TodoWrite", "TaskOutput", "KillShell",
+				// Blocks until connecting MCP servers are ready. Only exposed by the
+				// CLI when ENABLE_TOOL_SEARCH is off (otherwise ToolSearch handles the
+				// wait) — guards spawns against MCP-handshake latency.
+				"WaitForMcpServers",
+				// Task-list quartet + stop. Replaced "TodoWrite", which Claude Code
+				// disabled by default in v2.1.142.
+				"TaskCreate", "TaskGet", "TaskList", "TaskUpdate", "TaskStop",
+				// Available but OFF by default (opt-in via DefaultGlobalPermissions):
+				// LSP is inert until a language-server plugin is installed.
+				"LSP",
 			},
 			Permissive: []string{
 				// Write/modify tools - can change files
 				"Write", "Edit", "NotebookEdit",
-				// Agent/workflow tools
-				"Task", "Skill", "EnterPlanMode",
+				// Agent/workflow tools. "Agent" replaced the old "Task" subagent tool
+				// (Claude Code 2.1.90+).
+				"Agent", "Skill", "EnterPlanMode",
+				// Available but OFF by default (opt-in via DefaultGlobalPermissions):
+				// git-worktree isolation + dynamic multi-subagent workflows.
+				"EnterWorktree", "ExitWorktree", "Workflow",
 			},
 			YOLO: []string{
 				// Blanket Bash - typically users should use specific sets

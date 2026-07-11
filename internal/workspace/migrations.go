@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"claudefu/internal/permissions"
 )
 
 // Migration represents a single sequential data migration.
@@ -36,6 +38,7 @@ var allMigrations = []Migration{
 	{9, "add-agent-type-to-schema", migrateAddAgentTypeToSchema},
 	{10, "add-agent-model-attrs-to-schema", migrateAddAgentModelAttrs},
 	{11, "add-agent-default-load-turns-to-schema", migrateAddAgentDefaultLoadTurns},
+	{12, "modernize-global-builtin-tools", migrateModernizeGlobalBuiltinTools},
 }
 
 // RunMigrations runs all pending migrations in order.
@@ -250,7 +253,7 @@ func migrateAgentsCamelCaseToMeta(configPath string, m *Manager) error {
 	}
 
 	var rawData struct {
-		Version int                                `json:"version"`
+		Version int                               `json:"version"`
 		Agents  map[string]map[string]interface{} `json:"agents"`
 	}
 	if err := json.Unmarshal(raw, &rawData); err != nil {
@@ -329,7 +332,7 @@ func migrateWorkspacesCamelCaseToMeta(configPath string, m *Manager) error {
 	}
 
 	var rawData struct {
-		Version    int                                `json:"version"`
+		Version    int                               `json:"version"`
 		Workspaces map[string]map[string]interface{} `json:"workspaces"`
 	}
 	if err := json.Unmarshal(raw, &rawData); err != nil {
@@ -745,5 +748,71 @@ func migrateAddAgentDefaultLoadTurns(configPath string, m *Manager) error {
 		return err
 	}
 	log.Printf("Migration 11: added AGENT_DEFAULT_LOAD_TURNS system attribute")
+	return nil
+}
+
+// =============================================================================
+// Migration 12: modernize the global permission file's claude-builtin tool set to
+// current Claude Code CLI tool names, and seed the WaitForMcpServers latency guard
+// so it is enabled by default for existing installs.
+//
+//   - Task      -> Agent (subagent tool renamed, Claude Code 2.1.90+)
+//   - TodoWrite -> TaskCreate/TaskGet/TaskList/TaskUpdate/TaskStop
+//                  (TodoWrite disabled by default in Claude Code v2.1.142)
+//   - KillShell, TaskOutput -> dropped (removed / deprecated upstream)
+//   - + WaitForMcpServers (guards spawns against MCP-handshake latency; especially
+//                          relevant with ENABLE_TOOL_SEARCH=false)
+//
+// One-time and global-only. Per-agent override files are modernized in-memory on
+// every load (permissions.MigrateRenamedBuiltinTools) and persist on their next
+// save; an agent that wants WaitForMcpServers enables it from its own Permissions
+// dialog (or reverts to global). Fresh installs already get all of this from
+// permissions.DefaultGlobalPermissions, so a missing file is a no-op here.
+// =============================================================================
+
+func migrateModernizeGlobalBuiltinTools(configPath string, _ *Manager) error {
+	path := filepath.Join(configPath, permissions.GlobalPermissionsFile)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // fresh install — DefaultGlobalPermissions already covers it
+		}
+		return err
+	}
+
+	var perms permissions.ClaudeFuPermissions
+	if err := json.Unmarshal(data, &perms); err != nil {
+		return fmt.Errorf("parse global.permissions.json: %w", err)
+	}
+	if perms.ToolPermissions == nil {
+		return nil
+	}
+
+	// Apply the rename/removal map (Task->Agent, TodoWrite->quartet, drop KillShell/TaskOutput).
+	permissions.MigrateRenamedBuiltinTools(&perms)
+
+	// Seed the MCP-connection latency guard into claude-builtin Common if missing.
+	if cb, ok := perms.ToolPermissions["claude-builtin"]; ok {
+		found := false
+		for _, t := range cb.Common {
+			if t == "WaitForMcpServers" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			cb.Common = append(cb.Common, "WaitForMcpServers")
+		}
+		perms.ToolPermissions["claude-builtin"] = cb
+	}
+
+	out, err := json.MarshalIndent(&perms, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, out, 0644); err != nil {
+		return err
+	}
+	log.Printf("Migration 12: modernized global claude-builtin tools + seeded WaitForMcpServers")
 	return nil
 }

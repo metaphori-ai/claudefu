@@ -180,7 +180,7 @@ export function AddPermissionWizard({
       }
 
       // Sort: Core Tools, then Bash patterns, then Others
-      const coreTools = ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash', 'Task', 'WebSearch', 'WebFetch', 'NotebookEdit', 'LSP', 'TodoWrite', 'EnterPlanMode', 'ExitPlanMode', 'AskUserQuestion', 'Skill', 'KillShell', 'TaskOutput'];
+      const coreTools = ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash', 'Agent', 'WebSearch', 'WebFetch', 'NotebookEdit', 'LSP', 'EnterPlanMode', 'ExitPlanMode', 'AskUserQuestion', 'Skill', 'WaitForMcpServers', 'TaskCreate', 'TaskGet', 'TaskList', 'TaskUpdate', 'TaskStop', 'EnterWorktree', 'ExitWorktree', 'Workflow'];
       const isCoreTool = (p: string) => coreTools.includes(p);
       const isBashPattern = (p: string) => p.startsWith('Bash(') && p.endsWith(')');
 

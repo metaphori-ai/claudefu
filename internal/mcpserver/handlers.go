@@ -138,11 +138,12 @@ func (s *MCPService) handleAgentQuery(ctx context.Context, req mcp.CallToolReque
 	// Passing MCP config caused "tool_use ids must be unique" API errors because
 	// both parent and child Claude would connect to the same MCP SSE server.
 	// The child is a stateless query - it doesn't need inter-agent tools.
-	// We also disallow Task to prevent spawning subagents (causes concurrent API conflicts).
+	// We also disallow Task/Agent (CLI renamed Task->Agent in 2.1.90+; deny both for
+	// version-independence) to prevent spawning subagents (causes concurrent API conflicts).
 	// Prepend "AgentQuery: " so session list shows these as queries, not regular sessions.
 	args := []string{
 		"--print",
-		"--disallowed-tools", "Task",
+		"--disallowed-tools", "Task,Agent",
 		"-p", "AgentQuery: " + query,
 	}
 
@@ -236,11 +237,12 @@ func (s *MCPService) handleSelfQuery(ctx context.Context, req mcp.CallToolReques
 	// Passing MCP config caused "tool_use ids must be unique" API errors because
 	// both parent and child Claude would connect to the same MCP SSE server.
 	// The child is a stateless query - it doesn't need inter-agent tools.
-	// We also disallow Task to prevent spawning subagents (causes concurrent API conflicts).
+	// We also disallow Task/Agent (CLI renamed Task->Agent in 2.1.90+; deny both for
+	// version-independence) to prevent spawning subagents (causes concurrent API conflicts).
 	// Prepend "SelfQuery: " so session list shows these as self-queries, not regular sessions.
 	args := []string{
 		"--print",
-		"--disallowed-tools", "Task",
+		"--disallowed-tools", "Task,Agent",
 		"-p", "SelfQuery: " + query,
 	}
 

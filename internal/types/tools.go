@@ -8,25 +8,26 @@ package types
 
 // Tool names as they appear in tool_use blocks
 const (
-	ToolNameEdit           = "Edit"
-	ToolNameBash           = "Bash"
-	ToolNameRead           = "Read"
-	ToolNameWrite          = "Write"
-	ToolNameGrep           = "Grep"
-	ToolNameGlob           = "Glob"
-	ToolNameTask           = "Task"
-	ToolNameTaskOutput     = "TaskOutput"
-	ToolNameKillShell      = "KillShell"
+	ToolNameEdit            = "Edit"
+	ToolNameBash            = "Bash"
+	ToolNameRead            = "Read"
+	ToolNameWrite           = "Write"
+	ToolNameGrep            = "Grep"
+	ToolNameGlob            = "Glob"
+	ToolNameTask            = "Task"  // legacy name; kept for parsing historical session JSONL
+	ToolNameAgent           = "Agent" // Claude Code 2.1.90+ renamed Task -> Agent
+	ToolNameTaskOutput      = "TaskOutput"
+	ToolNameKillShell       = "KillShell"
 	ToolNameAskUserQuestion = "AskUserQuestion"
-	ToolNameTodoWrite      = "TodoWrite"
-	ToolNameWebSearch      = "WebSearch"
-	ToolNameWebFetch       = "WebFetch"
-	ToolNameEnterPlanMode  = "EnterPlanMode"
-	ToolNameExitPlanMode   = "ExitPlanMode"
-	ToolNameNotebookEdit   = "NotebookEdit"
-	ToolNameLSP            = "LSP"
-	ToolNameSkill          = "Skill"
-	ToolNameMCPSearch      = "MCPSearch"
+	ToolNameTodoWrite       = "TodoWrite"
+	ToolNameWebSearch       = "WebSearch"
+	ToolNameWebFetch        = "WebFetch"
+	ToolNameEnterPlanMode   = "EnterPlanMode"
+	ToolNameExitPlanMode    = "ExitPlanMode"
+	ToolNameNotebookEdit    = "NotebookEdit"
+	ToolNameLSP             = "LSP"
+	ToolNameSkill           = "Skill"
+	ToolNameMCPSearch       = "MCPSearch"
 )
 
 // =============================================================================
