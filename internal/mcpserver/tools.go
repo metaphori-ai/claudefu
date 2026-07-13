@@ -297,7 +297,7 @@ func CreateMetaserverQueryTool(instruction string) mcp.Tool {
 			mcp.Description("CSV of site short_ids."),
 		),
 		mcp.WithString("levels",
-			mcp.Description("CSV of levels: debug,info,warn,error,fatal. Default: 'warn,error,fatal'."),
+			mcp.Description("CSV of levels: debug,print,info,warn,error,fatal. Default: 'warn,error,fatal'. NOTE: plain stdout printf output (no JSON/logfmt level) lands at 'print' — include it (or omit levels entirely for ALL levels) when hunting raw startup banners / printf output."),
 		),
 		mcp.WithString("run",
 			mcp.Description("Run window: 'current' (default) | 'previous' | 'last_3' / 'last_5' | 'all' | specific run_id like 'mapi-r47'. Almost always leave at 'current'."),

@@ -167,6 +167,14 @@ func (a *App) AddAgent(name, folder string) (*workspace.Agent, error) {
 		})
 	}
 
+	// Rebuild MCP tool descriptions so the new agent's slug is immediately
+	// targetable by AgentMessage/AgentQuery/AgentBroadcast — without this, a
+	// freshly-spawned claude sees a stale roster and the send fails until a
+	// workspace reload.
+	if a.mcpServer != nil {
+		a.mcpServer.RefreshAgentTools()
+	}
+
 	// Refresh Sifu permissions (adds new agent folder)
 	a.RefreshSifuPermissions()
 
@@ -298,6 +306,12 @@ func (a *App) RemoveAgent(agentID string) error {
 		})
 	}
 
+	// Rebuild MCP tool descriptions so the removed agent's slug stops being
+	// advertised to spawned claude processes.
+	if a.mcpServer != nil {
+		a.mcpServer.RefreshAgentTools()
+	}
+
 	// Refresh Sifu permissions (removed agent folder no longer needed)
 	a.RefreshSifuPermissions()
 
@@ -317,7 +331,16 @@ func (a *App) UpdateAgent(agent workspace.Agent) error {
 			// Sync slug to global registry for cross-workspace resolution
 			a.workspace.UpdateAgentSlug(agent.Folder, agent.GetSlug())
 
-			return a.workspace.SaveWorkspace(a.currentWorkspace)
+			if err := a.workspace.SaveWorkspace(a.currentWorkspace); err != nil {
+				return err
+			}
+
+			// Slug/description changes flow into the MCP tool descriptions —
+			// rebuild them so spawned claude processes see the updated roster.
+			if a.mcpServer != nil {
+				a.mcpServer.RefreshAgentTools()
+			}
+			return nil
 		}
 	}
 

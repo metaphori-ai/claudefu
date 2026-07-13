@@ -245,6 +245,40 @@ func (s *MCPService) Start() error {
 	return nil
 }
 
+// RefreshAgentTools re-registers the three roster-bearing tools (AgentQuery,
+// AgentMessage, AgentBroadcast) with the CURRENT MCP-enabled + cross-workspace
+// agent roster. Their descriptions are the only way a spawned `claude` process
+// learns which agent slugs it can target; that description is otherwise frozen
+// at Start() time, so a freshly-added agent stays invisible to the model until a
+// full workspace reload — the model then guesses an abbreviated slug and the
+// send fails with "No valid agents found".
+//
+// mcp-go's AddTool upserts by tool name and fires notifications/tools/list_changed,
+// and every ClaudeFu message spawns a fresh `claude --print` that re-fetches
+// tools/list — so re-registering just these three tools is enough for the next
+// spawn to see the current roster, WITHOUT the full-restart "No such tool"
+// spawn-race window (§ v0.5.55 transport notes).
+func (s *MCPService) RefreshAgentTools() {
+	s.mu.RLock()
+	srv := s.server
+	running := s.running
+	s.mu.RUnlock()
+	if srv == nil || !running {
+		return
+	}
+
+	agents := s.getMCPEnabledAgentInfo()
+	crossWorkspaceAgents := s.getCrossWorkspaceAgentInfo()
+	instructions := s.toolInstructions.GetInstructions()
+
+	srv.AddTool(CreateAgentQueryTool(instructions.AgentQuery, agents), s.handleAgentQuery)
+	srv.AddTool(CreateAgentMessageTool(instructions.AgentMessage, agents, crossWorkspaceAgents), s.handleAgentMessage)
+	srv.AddTool(CreateAgentBroadcastTool(instructions.AgentBroadcast, agents), s.handleAgentBroadcast)
+
+	fmt.Printf("[MCP] Refreshed agent tool descriptions (%d workspace agents, %d cross-workspace)\n",
+		len(agents), len(crossWorkspaceAgents))
+}
+
 // Stop stops the MCP server
 func (s *MCPService) Stop() {
 	s.mu.Lock()
