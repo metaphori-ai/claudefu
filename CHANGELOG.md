@@ -5,6 +5,11 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.62] - 2026-07-14
+
+### Changed
+- **Re-release of v0.5.61 — no functional changes.** The v0.5.61 build failed to sign on a second machine (missing Apple credentials in that environment), and untagging/re-tagging is disruptive in the dist pipeline. A patch bump is the clean path: same code as v0.5.61 (pbcopy UTF-8 locale fix + inbox Insert/Append split), rebuilt and re-released under a fresh tag.
+
 ## [0.5.61] - 2026-07-13
 
 ### Fixed
