@@ -5,6 +5,17 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.61] - 2026-07-13
+
+### Fixed
+- **Copy → paste corrupted non-ASCII characters (em/en dashes, smart quotes → mojibake like `—` → `‚Äö√Ñ√Æ`)** (`main.go`) — a real bug the v0.5.60 clipboard reroute exposed. Wails **v2**'s `ClipboardSetText` shells out to `pbcopy`, which decodes its stdin using the **process locale** (`LC_CTYPE`/`LANG`). A `.app` launched from Finder/Dock inherits **no** locale (unlike a terminal, which sources your shell profile), so `pbcopy` fell back to a legacy encoding (Mac Roman) and mangled our UTF-8 bytes. Routing all copies through `ClipboardSetText` (v0.5.60) made every copy hit that path. Fix: seed `LC_CTYPE=UTF-8` at process start **only when no locale is set**, so `pbcopy` — and every locale-sensitive child (including spawned `claude`) — treats UTF-8 correctly, without overriding a real user locale. (Wails **v3**'s `Clipboard.SetText` doesn't shell out to `pbcopy`, so ta-sadhana never hit this.)
+
+### Changed
+- **Inbox "Inject into Prompt" split into "Insert" and "Append"** (`frontend/src/components/InboxDialog.tsx`, `Sidebar.tsx`, `ChatView.tsx`) — the single button always prepended and then closed the dialog, so collecting several messages into one prompt was impossible.
+  - **Insert** (outline button) — prepends the message at the **start** of the prompt, then closes the dialog.
+  - **Append** (filled button) — adds the message to the **end** of the prompt and **keeps the inbox open**, so you can click through multiple messages and collect them into one prompt.
+  - The mode threads through both the same-agent DOM event (`claudefu:inject-into-prompt`) and the cross-agent `localStorage` handoff (`claudefu:pendingInject`); a cross-agent send switches the view, so it always lands as a single insert on arrival.
+
 ## [0.5.60] - 2026-07-13
 
 ### Fixed

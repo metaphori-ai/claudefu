@@ -123,6 +123,17 @@ func parseCLIArgs() *CLIArgs {
 }
 
 func main() {
+	// macOS clipboard/UTF-8 fix: Wails v2's ClipboardSetText shells out to
+	// `pbcopy`, which decodes its stdin using the PROCESS locale (LC_CTYPE/LANG).
+	// A .app launched from Finder or the Dock inherits NO locale, so pbcopy falls
+	// back to a legacy encoding (Mac Roman) and mangles UTF-8 — em/en dashes and
+	// smart quotes paste as mojibake (— → "‚Äö√Ñ√Æ"). Seed a UTF-8 ctype so pbcopy
+	// (and any other locale-sensitive child) treats our UTF-8 bytes correctly.
+	// Only when nothing is set, so a real user locale is never overridden.
+	if os.Getenv("LC_ALL") == "" && os.Getenv("LC_CTYPE") == "" && os.Getenv("LANG") == "" {
+		_ = os.Setenv("LC_CTYPE", "UTF-8")
+	}
+
 	// Parse CLI args before Wails starts (e.g., `claudefu .` or `claudefu /path --workspace "name"`)
 	cliArgs := parseCLIArgs()
 

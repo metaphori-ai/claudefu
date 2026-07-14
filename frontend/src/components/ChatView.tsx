@@ -304,7 +304,11 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
       const detail = (e as CustomEvent).detail;
       if (detail?.text && inputAreaRef.current) {
         const currentText = inputAreaRef.current.getValue() || '';
-        const newText = currentText ? detail.text + currentText : detail.text;
+        // 'append' → add to the end (collect several messages); anything else
+        // ('insert' / legacy undefined) → prepend at the start.
+        const newText = detail.mode === 'append'
+          ? (currentText ? currentText + '\n' + detail.text : detail.text)
+          : (currentText ? detail.text + currentText : detail.text);
         inputAreaRef.current.setValue(newText);
         inputAreaRef.current.focus();
       }
@@ -329,14 +333,16 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
     try {
       const raw = localStorage.getItem('claudefu:pendingInject');
       if (raw) {
-        const { agentId: targetId, text } = JSON.parse(raw);
+        const { agentId: targetId, text, mode } = JSON.parse(raw);
         if (targetId === agentId && text) {
           localStorage.removeItem('claudefu:pendingInject');
           // Use rAF to ensure InputArea ref is ready after mount
           requestAnimationFrame(() => {
             if (inputAreaRef.current) {
               const currentText = inputAreaRef.current.getValue() || '';
-              const newText = currentText ? text + currentText : text;
+              const newText = mode === 'append'
+                ? (currentText ? currentText + '\n' + text : text)
+                : (currentText ? text + currentText : text);
               inputAreaRef.current.setValue(newText);
               inputAreaRef.current.focus();
             }

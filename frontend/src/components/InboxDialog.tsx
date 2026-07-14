@@ -10,7 +10,7 @@ interface InboxDialogProps {
   agentName: string;
   messages: InboxMessage[];
   selectedSessionId: string | null;
-  onInject: (messageId: string) => void;
+  onInject: (messageId: string, mode: 'insert' | 'append') => void;
   onDelete: (messageId: string) => void;
   onMarkRead: (messageId: string) => void;
   onClose: () => void;
@@ -305,10 +305,31 @@ export function InboxDialog({
                     'Copy'
                   )}
                 </button>
+                {/* Insert = prepend at start of prompt, then close.
+                    Append = add to end of prompt, keep dialog open so you can
+                    click through several messages and collect them into one prompt. */}
                 <button
-                  onClick={() => onInject(selectedMessage.id)}
+                  onClick={() => onInject(selectedMessage.id, 'insert')}
                   disabled={!selectedSessionId}
-                  title={!selectedSessionId ? 'Select a session first' : 'Inject into current session'}
+                  title={!selectedSessionId ? 'Select a session first' : 'Insert at the START of the prompt, then close'}
+                  style={{
+                    padding: '0.5rem 1rem',
+                    borderRadius: '6px',
+                    border: '1px solid #8b5cf6',
+                    background: 'transparent',
+                    color: selectedSessionId ? '#c4b5fd' : '#666',
+                    fontSize: '0.85rem',
+                    cursor: selectedSessionId ? 'pointer' : 'not-allowed',
+                    fontWeight: 500,
+                    opacity: selectedSessionId ? 1 : 0.5,
+                  }}
+                >
+                  Insert
+                </button>
+                <button
+                  onClick={() => onInject(selectedMessage.id, 'append')}
+                  disabled={!selectedSessionId}
+                  title={!selectedSessionId ? 'Select a session first' : 'Append to the END of the prompt (inbox stays open — collect multiple)'}
                   style={{
                     padding: '0.5rem 1rem',
                     borderRadius: '6px',
@@ -320,7 +341,7 @@ export function InboxDialog({
                     fontWeight: 500,
                   }}
                 >
-                  Inject into Prompt
+                  Append
                 </button>
               </div>
             </>

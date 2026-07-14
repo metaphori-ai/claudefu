@@ -408,8 +408,11 @@ export function Sidebar({
     ? agents.find(a => a.id === inboxDialogAgentId) || null
     : null;
 
-  // Handle injecting an inbox message into the prompt InputArea
-  const handleInjectMessage = async (messageId: string) => {
+  // Handle injecting an inbox message into the prompt InputArea.
+  // mode 'insert' → prepend at the start of the prompt, then close the dialog.
+  // mode 'append' → add to the end of the prompt and KEEP the dialog open, so
+  //   the user can click through several messages and collect them into one prompt.
+  const handleInjectMessage = async (messageId: string, mode: 'insert' | 'append') => {
     if (!inboxDialogAgentId) return;
 
     // Find the message in frontend state
@@ -420,13 +423,15 @@ export function Sidebar({
     const injectText = `[Message from ${msg.fromAgentName} at ${msg.timestamp}]\n${msg.message}\n---\n`;
 
     if (inboxDialogAgentId !== selectedAgentId) {
-      // Inbox belongs to a different agent — switch to it first, store pending inject
-      localStorage.setItem('claudefu:pendingInject', JSON.stringify({ agentId: inboxDialogAgentId, text: injectText }));
+      // Inbox belongs to a different agent — switch to it first, store pending inject.
+      // (Append-collect is inherently a same-agent flow; a cross-agent send switches
+      // the view, so it always behaves as a single insert on arrival.)
+      localStorage.setItem('claudefu:pendingInject', JSON.stringify({ agentId: inboxDialogAgentId, text: injectText, mode }));
       onAgentSelect(inboxDialogAgentId);
     } else {
       // Same agent — dispatch directly to active ChatView
       window.dispatchEvent(new CustomEvent('claudefu:inject-into-prompt', {
-        detail: { text: injectText }
+        detail: { text: injectText, mode }
       }));
     }
 
@@ -440,8 +445,10 @@ export function Sidebar({
       }
     }
 
-    // Close the inbox dialog
-    closeInboxDialog();
+    // Insert closes the dialog; Append keeps it open so more messages can be collected.
+    if (mode === 'insert') {
+      closeInboxDialog();
+    }
   };
 
   // Handle deleting an inbox message
