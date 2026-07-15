@@ -5,6 +5,18 @@ import { DialogBase } from './DialogBase';
 
 type InboxMessage = mcpserver.InboxMessage;
 
+// Spin keyframes for the refresh icon (locally injected, matching the
+// convention used by ToolCallBlock / SessionsDialog).
+const injectSpinStyles = () => {
+  const styleId = 'inboxdialog-spin-styles';
+  if (typeof document !== 'undefined' && !document.getElementById(styleId)) {
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = `@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`;
+    document.head.appendChild(style);
+  }
+};
+
 interface InboxDialogProps {
   isOpen: boolean;
   agentName: string;
@@ -13,6 +25,7 @@ interface InboxDialogProps {
   onInject: (messageId: string, mode: 'insert' | 'append') => void;
   onDelete: (messageId: string) => void;
   onMarkRead: (messageId: string) => void;
+  onRefresh?: () => Promise<void> | void;  // rescan spool + re-fetch messages
   onClose: () => void;
 }
 
@@ -24,10 +37,26 @@ export function InboxDialog({
   onInject,
   onDelete,
   onMarkRead,
+  onRefresh,
   onClose,
 }: InboxDialogProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    if (!onRefresh || isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      await onRefresh();
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    injectSpinStyles();
+  }, []);
 
   // Clear copied state after animation
   useEffect(() => {
@@ -88,11 +117,44 @@ export function InboxDialog({
     </>
   );
 
+  // Refresh button: triggers a spool rescan (same pass as the startup scan) so
+  // newly-synced messages/read-markers are picked up without an app restart.
+  const headerActions = onRefresh ? (
+    <button
+      onClick={handleRefresh}
+      disabled={isRefreshing}
+      title="Rescan spool for new messages and read markers"
+      style={{
+        background: 'none',
+        border: 'none',
+        color: '#888',
+        cursor: isRefreshing ? 'default' : 'pointer',
+        padding: '0.25rem',
+        display: 'flex',
+        alignItems: 'center',
+        opacity: isRefreshing ? 0.5 : 0.7,
+      }}
+      onMouseEnter={(e) => { if (!isRefreshing) e.currentTarget.style.opacity = '1'; }}
+      onMouseLeave={(e) => { if (!isRefreshing) e.currentTarget.style.opacity = '0.7'; }}
+    >
+      <svg
+        width="16" height="16" viewBox="0 0 24 24" fill="none"
+        stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+        style={isRefreshing ? { animation: 'spin 1s linear infinite' } : undefined}
+      >
+        <polyline points="23 4 23 10 17 10" />
+        <polyline points="1 20 1 14 7 14" />
+        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+      </svg>
+    </button>
+  ) : undefined;
+
   return (
     <DialogBase
       isOpen={isOpen}
       onClose={onClose}
       title={title}
+      headerActions={headerActions}
       width="900px"
       height="700px"
     >

@@ -346,67 +346,40 @@ func (s *MCPService) handleAgentMessage(ctx context.Context, req mcp.CallToolReq
 			continue
 		}
 
-		// Find specific agent (must be MCP-enabled in current workspace)
-		agent := s.findMCPEnabledAgent(identifier)
-		if agent == nil {
-			// Cross-workspace fallback: check global registry for AGENT_CROSS_WORKSPACE=true
-			if s.manager != nil {
-				if info, folder := s.manager.FindAgentBySlug(identifier); info != nil {
-					flagVal := info.Meta["AGENT_CROSS_WORKSPACE"]
-					fmt.Printf("[MCP:AgentMessage] Registry lookup '%s': id=%s folder=%s AGENT_CROSS_WORKSPACE=%q\n",
-						identifier, info.ID[:8], folder, flagVal)
-					if strings.ToLower(flagVal) == "true" {
-						// Cross-workspace message: write to spool (JSON file)
-						// instead of direct SQLite. Syncthing replicates the
-						// spool file, the receiver's SpoolManager imports it.
-						if s.spool == nil {
-							fmt.Printf("[MCP:AgentMessage] ERROR: spool manager not initialized\n")
-							notFound = append(notFound, identifier)
-							continue
-						}
-						spoolMsg := InboxMessage{
-							ID:            uuid.New().String(),
-							FromAgentID:   "",
-							FromAgentName: fromAgent,
-							ToAgentID:     info.ID,
-							Message:       message,
-							Priority:      priority,
-							Timestamp:     time.Now(),
-							Read:          false,
-						}
-						if err := s.spool.WriteMessage(info.ID, spoolMsg); err != nil {
-							fmt.Printf("[MCP:AgentMessage] Failed to write spool file: %v\n", err)
-							notFound = append(notFound, identifier)
-							continue
-						}
-						fmt.Printf("[MCP:AgentMessage] Cross-workspace spool write: %s -> %s\n", identifier, info.ID[:8])
-						sentTo = append(sentTo, info.GetSlug())
-						continue
-					}
-					fmt.Printf("[MCP:AgentMessage] AGENT_CROSS_WORKSPACE not enabled for '%s' — enable in Workspaces & Agents > Cross-Workspace tab\n", identifier)
-				} else {
-					fmt.Printf("[MCP:AgentMessage] Registry lookup '%s': NOT FOUND in agents.json\n", identifier)
-				}
+		// Resolve the target to a stable agent ID + slug. Delivery does NOT
+		// depend on the recipient being in the sender's active workspace, nor on
+		// any AGENT_CROSS_WORKSPACE flag — a valid agent name (registry slug) is
+		// sufficient. Prefer the active-workspace agent (respects per-agent MCP
+		// enable), then fall back to a global registry lookup by slug.
+		var agentID, slug string
+		if agent := s.findMCPEnabledAgent(identifier); agent != nil {
+			agentID, slug = agent.ID, agent.GetSlug()
+		} else if s.manager != nil {
+			if info, folder := s.manager.FindAgentBySlug(identifier); info != nil {
+				agentID, slug = info.ID, info.GetSlug()
+				fmt.Printf("[MCP:AgentMessage] Registry resolve '%s' -> id=%s folder=%s\n", identifier, info.ID[:8], folder)
 			}
-			fmt.Printf("[MCP:AgentMessage] Agent not found: %s\n", identifier)
+		}
+		if agentID == "" {
+			fmt.Printf("[MCP:AgentMessage] Agent not found in workspace or registry: %s\n", identifier)
 			notFound = append(notFound, identifier)
 			continue
 		}
 
-		// Add to inbox (this machine's own copy — instant local UI update)
-		fmt.Printf("[MCP:AgentMessage] Adding message to inbox for agent: %s (ID: %s)\n", agent.GetSlug(), agent.ID)
-		msg := s.inbox.AddMessage(agent.ID, "", fromAgent, message, priority)
-		s.emitInboxUpdate(agent.ID)
-		// Mirror to the spool so OTHER machines ingest this message too. The
-		// sender's own SpoolManager skips its own writes (isOwnWrite), so no
-		// self-reimport. Reusing msg (same ID) keeps cross-machine import
+		// Deliver uniformly: write this machine's local copy (instant UI where the
+		// agent is visible) AND mirror to the spool so every OTHER machine ingests
+		// it. The sender's own SpoolManager skips its own writes (isOwnWrite), so
+		// no self-reimport; reusing the same message ID keeps cross-machine import
 		// idempotent — every machine ends up with exactly one copy.
+		fmt.Printf("[MCP:AgentMessage] Delivering to agent: %s (ID: %s)\n", slug, agentID)
+		msg := s.inbox.AddMessage(agentID, "", fromAgent, message, priority)
+		s.emitInboxUpdate(agentID)
 		if s.spool != nil {
 			if err := s.spool.WriteMessage(msg.ToAgentID, msg); err != nil {
-				fmt.Printf("[MCP:AgentMessage] Spool mirror write failed for %s: %v\n", agent.GetSlug(), err)
+				fmt.Printf("[MCP:AgentMessage] Spool mirror write failed for %s: %v\n", slug, err)
 			}
 		}
-		sentTo = append(sentTo, agent.GetSlug())
+		sentTo = append(sentTo, slug)
 	}
 
 	// Build response

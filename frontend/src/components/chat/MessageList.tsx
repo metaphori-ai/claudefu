@@ -14,7 +14,7 @@ interface MessageListProps {
   onScrollToBottom: () => void;
   onScrollToTop: () => void;
   onCompactionClick: (content: string) => void;
-  onViewToolDetails: (toolCall: ContentBlock, result?: ContentBlock) => void;
+  onViewToolDetails: (toolCall: ContentBlock, result?: ContentBlock, timestamp?: string) => void;
   onQuestionAnswer?: (toolUseId: string, questions: any[], answers: Record<string, string>) => void;
   onQuestionSkip?: (toolUseId: string) => void;
   onAddPermission?: (toolName: string, command?: string) => void;

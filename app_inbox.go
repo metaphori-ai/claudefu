@@ -41,12 +41,17 @@ func (a *App) GetInboxTotalCount(agentID string) int {
 	return a.mcpServer.GetInbox().GetTotalCount(agentID)
 }
 
-// MarkInboxMessageRead marks an inbox message as read
+// MarkInboxMessageRead marks an inbox message as read, and propagates the
+// read state to other machines via a spool read-marker.
 func (a *App) MarkInboxMessageRead(agentID, messageID string) bool {
 	if a.mcpServer == nil {
 		return false
 	}
-	return a.mcpServer.GetInbox().MarkRead(agentID, messageID)
+	marked := a.mcpServer.GetInbox().MarkRead(agentID, messageID)
+	if marked {
+		a.mcpServer.WriteReadMarker(agentID, messageID)
+	}
+	return marked
 }
 
 // DeleteInboxMessage removes an inbox message
@@ -97,8 +102,10 @@ func (a *App) InjectInboxMessage(agentID, sessionID, messageID string) error {
 		return err
 	}
 
-	// Mark as read and delete after injection
-	a.mcpServer.GetInbox().MarkRead(agentID, messageID)
+	// Mark as read (propagate to other machines) and delete locally after injection.
+	if a.mcpServer.GetInbox().MarkRead(agentID, messageID) {
+		a.mcpServer.WriteReadMarker(agentID, messageID)
+	}
 	a.mcpServer.GetInbox().DeleteMessage(agentID, messageID)
 
 	// Emit updated count
@@ -113,6 +120,24 @@ func (a *App) InjectInboxMessage(agentID, sessionID, messageID string) error {
 	return nil
 }
 
+// SpoolRescanResult reports what an on-demand spool rescan picked up.
+type SpoolRescanResult struct {
+	Imported    int `json:"imported"`    // messages newly imported into local inboxes
+	ReadApplied int `json:"readApplied"` // read markers newly applied
+}
+
+// RescanInboxSpool triggers the same spool scan that runs at startup — imports
+// any pending messages and applies any pending read markers — without restarting
+// the app. Bound to the Inbox dialog's refresh button. Per-import mcp:inbox
+// events fire from the spool manager itself, so badges refresh automatically.
+func (a *App) RescanInboxSpool() SpoolRescanResult {
+	if a.mcpServer == nil {
+		return SpoolRescanResult{}
+	}
+	imported, readApplied := a.mcpServer.RescanSpool()
+	return SpoolRescanResult{Imported: imported, ReadApplied: readApplied}
+}
+
 // GetMCPServerPort returns the port the MCP server is running on
 func (a *App) GetMCPServerPort() int {
 	if a.mcpServer == nil {
@@ -121,10 +146,23 @@ func (a *App) GetMCPServerPort() int {
 	return a.mcpServer.GetPort()
 }
 
-// MarkAllInboxRead marks all inbox messages for an agent as read
+// MarkAllInboxRead marks all inbox messages for an agent as read, and writes a
+// read-marker for each previously-unread message so other machines follow suit.
 func (a *App) MarkAllInboxRead(agentID string) {
-	if a.mcpServer != nil {
-		a.mcpServer.GetInbox().MarkAllRead(agentID)
+	if a.mcpServer == nil {
+		return
+	}
+	// Capture the currently-unread IDs BEFORE marking, so we only propagate
+	// the messages this action actually changed.
+	var unreadIDs []string
+	for _, m := range a.mcpServer.GetInbox().GetMessages(agentID) {
+		if !m.Read {
+			unreadIDs = append(unreadIDs, m.ID)
+		}
+	}
+	a.mcpServer.GetInbox().MarkAllRead(agentID)
+	for _, id := range unreadIDs {
+		a.mcpServer.WriteReadMarker(agentID, id)
 	}
 }
 

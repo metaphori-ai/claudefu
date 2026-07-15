@@ -21,6 +21,9 @@ interface ContentBlock {
 interface ToolDetailPaneProps {
   toolCall: ContentBlock | null;
   toolResult: ContentBlock | null;
+  // Timestamp of the message that owns this tool call — used to reproduce the
+  // Inbox inject format verbatim in the AgentMessage Copy.
+  toolTimestamp?: string;
   isOpen: boolean;
   onClose: () => void;
   // Context for loading subagent conversations
@@ -54,6 +57,20 @@ function getToolConfig(toolName: string) {
 
 function isAgentTool(name?: string) {
   return name === 'Task' || name === 'Agent';
+}
+
+// MCP tools arrive namespaced on the wire as `mcp__{server}__{Tool}`
+// (e.g. mcp__claudefu__AgentMessage). Strip the namespace to match the bare
+// tool name used in the MCP tool definitions and settings UI.
+function bareToolName(name?: string): string {
+  if (!name) return '';
+  const idx = name.lastIndexOf('__');
+  return idx >= 0 ? name.slice(idx + 2) : name;
+}
+
+function isAgentMessageTool(name?: string) {
+  const bare = bareToolName(name);
+  return bare === 'AgentMessage' || bare === 'AgentBroadcast';
 }
 
 function formatInput(toolName: string, input: any): string {
@@ -121,13 +138,22 @@ function contentToString(content: any): string {
   return JSON.stringify(content);
 }
 
-export function ToolDetailPane({ toolCall, toolResult, isOpen, onClose, agentID, sessionID }: ToolDetailPaneProps) {
+export function ToolDetailPane({ toolCall, toolResult, toolTimestamp, isOpen, onClose, agentID, sessionID }: ToolDetailPaneProps) {
   const [subagentMessages, setSubagentMessages] = useState<types.Message[]>([]);
   const [loadingSubagent, setLoadingSubagent] = useState(false);
   const [subagentExpanded, setSubagentExpanded] = useState(false);
   const [subagentError, setSubagentError] = useState<string | null>(null);
   const [subagentStatus, setSubagentStatus] = useState<'idle' | 'running' | 'completed'>('idle');
+  const [messageCopied, setMessageCopied] = useState(false);
   const subagentScrollRef = useRef<HTMLDivElement>(null);
+
+  // Clear the copied state after the same 2s window the Inbox uses
+  useEffect(() => {
+    if (messageCopied) {
+      const timer = setTimeout(() => setMessageCopied(false), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [messageCopied]);
 
   // Auto-scroll subagent conversation to bottom when new messages arrive
   useEffect(() => {
@@ -191,6 +217,7 @@ export function ToolDetailPane({ toolCall, toolResult, isOpen, onClose, agentID,
     setSubagentMessages([]);
     setSubagentStatus('idle');
     setSubagentError(null);
+    setMessageCopied(false);
   }, [toolCall?.id]);
 
   // Load subagent conversation on demand (for completed subagents)
@@ -350,6 +377,91 @@ export function ToolDetailPane({ toolCall, toolResult, isOpen, onClose, agentID,
                 </ReactMarkdown>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Message Section (for AgentMessage / AgentBroadcast) — renders the sent
+          message the same way the Inbox renders a received one (markdown-content
+          + ReactMarkdown), with the Inbox's Copy button, so it can be copied and
+          pasted to the recipient agent manually. */}
+      {isAgentMessageTool(toolCall.name) && toolCall.input?.message && (
+        <div style={{ marginTop: '1.5rem' }}>
+          <h3 style={{
+            fontSize: '0.75rem',
+            fontWeight: 600,
+            color: '#666',
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em',
+            marginBottom: '0.75rem'
+          }}>
+            Message
+          </h3>
+          <div style={{
+            background: '#1a1a1a',
+            border: '1px solid #333',
+            borderRadius: '8px',
+            padding: '1rem',
+            overflow: 'auto',
+            maxHeight: '500px',
+            textAlign: 'left',
+          }}>
+            <div
+              className="markdown-content"
+              style={{
+                color: '#ccc',
+                fontSize: '0.7rem',
+                lineHeight: 1.25,
+                textAlign: 'left',
+              }}
+            >
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {toolCall.input.message}
+              </ReactMarkdown>
+            </div>
+          </div>
+
+          {/* Actions — same shape as the Inbox message actions */}
+          <div style={{
+            marginTop: '0.75rem',
+            display: 'flex',
+            gap: '0.75rem',
+            justifyContent: 'flex-end',
+          }}>
+            <button
+              onClick={() => {
+                // Byte-for-byte the Inbox inject format (Sidebar.tsx handleInjectMessage):
+                //   `[Message from ${msg.fromAgentName} at ${msg.timestamp}]\n${msg.message}\n---\n`
+                // Raw markdown body — never the rendered output.
+                const injectText = `[Message from ${toolCall.input.from_agent} at ${toolTimestamp}]\n${toolCall.input.message}\n---\n`;
+                navigator.clipboard.writeText(injectText);
+                setMessageCopied(true);
+              }}
+              style={{
+                padding: '0.5rem 1rem',
+                borderRadius: '6px',
+                border: '1px solid #444',
+                background: messageCopied ? '#16a34a22' : 'transparent',
+                color: messageCopied ? '#22c55e' : '#888',
+                fontSize: '0.85rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              {messageCopied ? (
+                <>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  Copied!
+                </>
+              ) : (
+                'Copy'
+              )}
+            </button>
           </div>
         </div>
       )}

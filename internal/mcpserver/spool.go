@@ -63,6 +63,7 @@ const spoolSweepInterval = 6 * time.Hour
 // its own copy comes from the direct SQLite write at send time.
 type SpoolManager struct {
 	configPath string // e.g. ~/.claudefu/inbox/spool
+	readPath   string // e.g. ~/.claudefu/inbox/spool-read (read-state markers)
 	inbox      *InboxManager
 	emitFunc   func(types.EventEnvelope)
 
@@ -113,8 +114,13 @@ func NewSpoolManager(configPath string, inbox *InboxManager, emitFunc func(types
 	claudefuRoot := filepath.Dir(filepath.Dir(configPath))
 	seenPath := filepath.Join(claudefuRoot, "local", "spool-seen-"+hostname+".json")
 
+	// Read-state markers live in a sibling dir so message import and read import
+	// stay cleanly separable while sharing the same watcher/seen/TTL machinery.
+	readPath := filepath.Join(filepath.Dir(configPath), "spool-read")
+
 	return &SpoolManager{
 		configPath: configPath,
+		readPath:   readPath,
 		inbox:      inbox,
 		emitFunc:   emitFunc,
 		hostname:   hostname,
@@ -185,6 +191,51 @@ func (sm *SpoolManager) WriteMessage(toAgentID string, msg InboxMessage) error {
 	return nil
 }
 
+// readMarker is the payload of a spool-read file: "message X was read". Its
+// content is identical on every machine that reads the same message, so
+// Syncthing never conflicts on it — the same property that makes the message
+// spool conflict-free.
+type readMarker struct {
+	ToAgentID string `json:"toAgentId"`
+	MessageID string `json:"messageId"`
+}
+
+// WriteReadMarker drops a read-state marker into the recipient's spool-read dir
+// so every machine can mark the same message read. Idempotent by design:
+// duplicate markers apply the same UPDATE and are de-duplicated by the seen index.
+//
+// Filename: {timestamp}--{hostname}--read--{messageID}.json — four "--"-separated
+// fields so isOwnWrite (which reads field[1]) and parseSpoolTimestamp (field[0])
+// both work unchanged.
+func (sm *SpoolManager) WriteReadMarker(toAgentID, msgID string) error {
+	if toAgentID == "" || msgID == "" {
+		return fmt.Errorf("WriteReadMarker: toAgentID and msgID required")
+	}
+	dir := filepath.Join(sm.readPath, toAgentID)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("create spool-read dir: %w", err)
+	}
+	filename := fmt.Sprintf("%s--%s--read--%s.json",
+		time.Now().UTC().Format(spoolTSLayout),
+		sm.hostname,
+		sanitizeForFilename(msgID),
+	)
+	path := filepath.Join(dir, filename)
+	raw, err := json.Marshal(readMarker{ToAgentID: toAgentID, MessageID: msgID})
+	if err != nil {
+		return fmt.Errorf("marshal read marker: %w", err)
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, raw, 0644); err != nil {
+		return fmt.Errorf("write read-marker tmp: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("rename read-marker: %w", err)
+	}
+	return nil
+}
+
 // isOwnWrite returns true if the filename indicates it was written by this
 // machine (hostname matches). Deterministic — no race windows, no timers.
 // Works across process restarts too.
@@ -212,9 +263,12 @@ func (sm *SpoolManager) Start(ctx context.Context) error {
 	// Load the per-machine seen index (best-effort).
 	sm.seen.load()
 
-	// Ensure base spool dir exists
+	// Ensure base spool dirs exist (message spool + read-marker spool)
 	if err := os.MkdirAll(sm.configPath, 0755); err != nil {
 		return fmt.Errorf("create spool base dir: %w", err)
+	}
+	if err := os.MkdirAll(sm.readPath, 0755); err != nil {
+		return fmt.Errorf("create spool-read base dir: %w", err)
 	}
 
 	sm.ctx, sm.cancel = context.WithCancel(ctx)
@@ -226,19 +280,19 @@ func (sm *SpoolManager) Start(ctx context.Context) error {
 	}
 	sm.watcher = w
 
-	// Watch the base spool dir. We'll add per-recipient subdirs as they appear.
-	if err := sm.watcher.Add(sm.configPath); err != nil {
-		return fmt.Errorf("watch spool base dir: %w", err)
-	}
-
-	// Walk existing recipient subdirs and watch each
-	entries, err := os.ReadDir(sm.configPath)
-	if err == nil {
-		for _, entry := range entries {
-			if entry.IsDir() {
-				subdir := filepath.Join(sm.configPath, entry.Name())
-				if err := sm.watcher.Add(subdir); err != nil {
-					fmt.Printf("[MCP:Spool] Warning: watch subdir %s: %v\n", subdir, err)
+	// Watch both base dirs. We'll add per-recipient subdirs as they appear.
+	for _, base := range []string{sm.configPath, sm.readPath} {
+		if err := sm.watcher.Add(base); err != nil {
+			return fmt.Errorf("watch spool base dir %s: %w", base, err)
+		}
+		// Walk existing recipient subdirs and watch each
+		if entries, err := os.ReadDir(base); err == nil {
+			for _, entry := range entries {
+				if entry.IsDir() {
+					subdir := filepath.Join(base, entry.Name())
+					if err := sm.watcher.Add(subdir); err != nil {
+						fmt.Printf("[MCP:Spool] Warning: watch subdir %s: %v\n", subdir, err)
+					}
 				}
 			}
 		}
@@ -252,6 +306,9 @@ func (sm *SpoolManager) Start(ctx context.Context) error {
 	imported := sm.ScanAndImport()
 	if imported > 0 {
 		fmt.Printf("[MCP:Spool] Startup scan imported %d pending messages\n", imported)
+	}
+	if applied := sm.scanReadMarkers(); applied > 0 {
+		fmt.Printf("[MCP:Spool] Startup scan applied %d read markers\n", applied)
 	}
 
 	// Reap expired files now, then periodically.
@@ -321,8 +378,11 @@ func (sm *SpoolManager) sweepLoop() {
 	}
 }
 
-// handleEvent dispatches a single fsnotify event.
+// handleEvent dispatches a single fsnotify event. Files under readPath are
+// read-state markers; everything else is a message.
 func (sm *SpoolManager) handleEvent(event fsnotify.Event) {
+	underRead := strings.HasPrefix(event.Name, sm.readPath)
+
 	// New directory: watch it (for new recipient subdirs)
 	if event.Op&fsnotify.Create != 0 {
 		if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
@@ -330,27 +390,34 @@ func (sm *SpoolManager) handleEvent(event fsnotify.Event) {
 				fmt.Printf("[MCP:Spool] Warning: watch new subdir %s: %v\n", event.Name, err)
 			}
 			// Also scan it immediately in case files arrived with the dir
-			sm.scanAndImportDir(event.Name)
+			if underRead {
+				sm.scanReadDir(event.Name)
+			} else {
+				sm.scanAndImportDir(event.Name)
+			}
 			return
 		}
 	}
 
 	// JSON file created/written: debounce, then import
-	if strings.HasSuffix(event.Name, ".json") {
-		if event.Op&(fsnotify.Create|fsnotify.Write) != 0 {
-			sm.debounceImport(event.Name)
+	if strings.HasSuffix(event.Name, ".json") && event.Op&(fsnotify.Create|fsnotify.Write) != 0 {
+		if underRead {
+			sm.debounce(event.Name, sm.importReadMarker)
+		} else {
+			sm.debounce(event.Name, sm.importFile)
 		}
 	}
 }
 
-// debounceImport waits briefly after the last write before importing, so we
-// don't race with Syncthing writing the file in chunks.
-func (sm *SpoolManager) debounceImport(path string) {
+// debounce waits briefly after the last write before running importer(path), so
+// we don't race with Syncthing writing the file in chunks. Shared by message
+// import (importFile) and read-marker import (importReadMarker).
+func (sm *SpoolManager) debounce(path string, importer func(string) bool) {
 	// Skip files written by this machine — they're for other machines to consume
 	if sm.isOwnWrite(path) {
 		return
 	}
-	// Cheap early skip: already imported on this machine.
+	// Cheap early skip: already processed on this machine.
 	if sm.seen.has(filepath.Base(path)) {
 		return
 	}
@@ -366,8 +433,22 @@ func (sm *SpoolManager) debounceImport(path string) {
 		sm.mu.Lock()
 		delete(sm.pending, path)
 		sm.mu.Unlock()
-		sm.importFile(path)
+		importer(path)
 	})
+}
+
+// Rescan runs the same pass as the startup scan on demand: import any pending
+// spool messages, then apply any pending read markers. Returns (messages
+// imported, read markers applied). Safe to call anytime — both passes are
+// idempotent and skip seen/own files cheaply. Triggered by the Inbox refresh
+// button so newly-synced files can be picked up without an app restart.
+func (sm *SpoolManager) Rescan() (int, int) {
+	imported := sm.ScanAndImport()
+	readApplied := sm.scanReadMarkers()
+	if imported > 0 || readApplied > 0 {
+		fmt.Printf("[MCP:Spool] Manual rescan imported %d messages, applied %d read markers\n", imported, readApplied)
+	}
+	return imported, readApplied
 }
 
 // ScanAndImport walks the entire spool directory and imports all pending files.
@@ -495,21 +576,131 @@ func (sm *SpoolManager) importFile(path string) bool {
 	return true
 }
 
-// sweepExpired deletes spool files older than spoolTTL and prunes stale entries
-// from the seen index. Any machine may run this; deletions propagate via Syncthing.
+// scanReadMarkers walks the entire spool-read tree and applies all pending
+// read markers. Returns the count applied.
+func (sm *SpoolManager) scanReadMarkers() int {
+	count := 0
+	entries, err := os.ReadDir(sm.readPath)
+	if err != nil {
+		return 0
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			count += sm.scanReadDir(filepath.Join(sm.readPath, entry.Name()))
+		}
+	}
+	return count
+}
+
+// scanReadDir applies all read markers in a single recipient subdir.
+func (sm *SpoolManager) scanReadDir(dir string) int {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0
+	}
+	count := 0
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		if sm.seen.has(entry.Name()) {
+			continue
+		}
+		path := filepath.Join(dir, entry.Name())
+		if sm.isOwnWrite(path) {
+			continue
+		}
+		if sm.importReadMarker(path) {
+			count++
+		}
+	}
+	return count
+}
+
+// importReadMarker reads a spool-read file and marks the referenced message read
+// in the local SQLite. Returns true on a fresh application.
+//
+// Ordering: if the message hasn't been imported yet (MarkRead affects 0 rows),
+// the marker is LEFT un-seen so a later scan re-applies it once the message
+// arrives. Otherwise it's recorded in the seen index and left in place for the
+// TTL sweep — mirroring the message-import contract.
+func (sm *SpoolManager) importReadMarker(path string) bool {
+	base := filepath.Base(path)
+	if sm.seen.has(base) {
+		return false
+	}
+
+	agentID := filepath.Base(filepath.Dir(path))
+	if !sm.isKnownAgent(agentID) {
+		return false // registry may catch up, or TTL sweep reaps it
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	var rm readMarker
+	if err := json.Unmarshal(raw, &rm); err != nil {
+		fmt.Printf("[MCP:Spool] Unparseable read marker %s: %v — leaving for retry\n", base, err)
+		return false
+	}
+	if rm.MessageID == "" {
+		return false
+	}
+	toAgentID := rm.ToAgentID
+	if toAgentID == "" {
+		toAgentID = agentID
+	}
+
+	// MarkRead returns true only if the message row exists (was found). If the
+	// message hasn't been imported yet, leave the marker un-seen for a retry.
+	if !sm.inbox.MarkRead(toAgentID, rm.MessageID) {
+		return false
+	}
+
+	sm.seen.add(base)
+	sm.seen.flush()
+
+	// Refresh the badge on this machine.
+	if sm.emitFunc != nil {
+		sm.emitFunc(types.EventEnvelope{
+			AgentID:   toAgentID,
+			EventType: "mcp:inbox",
+			Payload: map[string]any{
+				"unreadCount": sm.inbox.GetUnreadCount(toAgentID),
+				"totalCount":  sm.inbox.GetTotalCount(toAgentID),
+			},
+		})
+	}
+	return true
+}
+
+// sweepExpired deletes spool files older than spoolTTL (across both the message
+// and read-marker trees) and prunes stale entries from the seen index. Any
+// machine may run this; deletions propagate via Syncthing.
 func (sm *SpoolManager) sweepExpired() {
 	cutoff := time.Now().Add(-spoolTTL)
-	removed := 0
+	removed := sm.sweepRoot(sm.configPath, cutoff) + sm.sweepRoot(sm.readPath, cutoff)
 
-	entries, err := os.ReadDir(sm.configPath)
+	sm.seen.prune(cutoff)
+	if removed > 0 {
+		fmt.Printf("[MCP:Spool] Sweep removed %d spool files older than %s\n", removed, spoolTTL)
+	}
+}
+
+// sweepRoot removes expired .json files under a single spool root. Returns the
+// number of files removed.
+func (sm *SpoolManager) sweepRoot(root string, cutoff time.Time) int {
+	removed := 0
+	entries, err := os.ReadDir(root)
 	if err != nil {
-		return
+		return 0
 	}
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
 		}
-		subdir := filepath.Join(sm.configPath, entry.Name())
+		subdir := filepath.Join(root, entry.Name())
 		files, err := os.ReadDir(subdir)
 		if err != nil {
 			continue
@@ -527,11 +718,7 @@ func (sm *SpoolManager) sweepExpired() {
 			}
 		}
 	}
-
-	sm.seen.prune(cutoff)
-	if removed > 0 {
-		fmt.Printf("[MCP:Spool] Sweep removed %d spool files older than %s\n", removed, spoolTTL)
-	}
+	return removed
 }
 
 // parseSpoolTimestamp extracts the leading timestamp field from a spool filename.

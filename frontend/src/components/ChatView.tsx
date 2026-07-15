@@ -159,6 +159,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
   const [compactionContent, setCompactionContent] = useState<string | null>(null);
   const [selectedToolCall, setSelectedToolCall] = useState<ContentBlock | null>(null);
   const [selectedToolResult, setSelectedToolResult] = useState<ContentBlock | null>(null);
+  const [selectedToolTimestamp, setSelectedToolTimestamp] = useState<string>('');
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
@@ -568,10 +569,13 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
     }
   }, [initialMessage, isLoading, initialLoadDone, agentId, sessionId, planningMode, addPendingMessage, setAgentResponding]);
 
-  // Handle viewing tool details
-  const handleViewToolDetails = (toolCall: ContentBlock, result?: ContentBlock) => {
+  // Handle viewing tool details. The timestamp comes from the owning message —
+  // ToolDetailPane needs it to reproduce the Inbox inject format verbatim
+  // ("[Message from {agent} at {timestamp}]").
+  const handleViewToolDetails = (toolCall: ContentBlock, result?: ContentBlock, timestamp?: string) => {
     setSelectedToolCall(toolCall);
     setSelectedToolResult(result || null);
+    setSelectedToolTimestamp(timestamp || '');
   };
 
   // Handle answering a pending question
@@ -1005,10 +1009,12 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
       <ToolDetailPane
         toolCall={selectedToolCall}
         toolResult={selectedToolResult}
+        toolTimestamp={selectedToolTimestamp}
         isOpen={!!selectedToolCall}
         onClose={() => {
           setSelectedToolCall(null);
           setSelectedToolResult(null);
+          setSelectedToolTimestamp('');
         }}
         agentID={agentId}
         sessionID={sessionId}

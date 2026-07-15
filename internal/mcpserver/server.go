@@ -349,6 +349,27 @@ func (s *MCPService) LoadInbox(agentIDs []string) error {
 	return s.inbox.LoadAgents(agentIDs)
 }
 
+// WriteReadMarker propagates a local mark-read to other machines via the spool.
+// Best-effort: a failure only means the read state stays machine-local.
+func (s *MCPService) WriteReadMarker(agentID, messageID string) {
+	if s.spool == nil {
+		return
+	}
+	if err := s.spool.WriteReadMarker(agentID, messageID); err != nil {
+		fmt.Printf("[MCP:Spool] read-marker write failed for msg %s: %v\n", messageID, err)
+	}
+}
+
+// RescanSpool triggers an on-demand spool scan (messages + read markers) —
+// the same pass that runs at startup. Returns (messages imported, read
+// markers applied).
+func (s *MCPService) RescanSpool() (int, int) {
+	if s.spool == nil {
+		return 0, 0
+	}
+	return s.spool.Rescan()
+}
+
 // LoadBacklog opens per-agent backlog databases for the given agent IDs.
 func (s *MCPService) LoadBacklog(agentIDs []string) error {
 	return s.backlog.LoadAgents(agentIDs)

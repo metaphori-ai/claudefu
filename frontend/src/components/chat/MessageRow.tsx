@@ -14,7 +14,7 @@ interface MessageRowProps {
   globalToolResultMap: Map<string, ContentBlock>;
   globalPendingQuestionMap: Map<string, PendingQuestion>;
   onCompactionClick: (content: string) => void;
-  onViewToolDetails: (toolCall: ContentBlock, result?: ContentBlock) => void;
+  onViewToolDetails: (toolCall: ContentBlock, result?: ContentBlock, timestamp?: string) => void;
   onQuestionAnswer?: (toolUseId: string, questions: any[], answers: Record<string, string>) => void;
   onQuestionSkip?: (toolUseId: string) => void;
   onAddPermission?: (toolName: string, command?: string) => void;
@@ -434,7 +434,7 @@ export function MessageRow({
                   fallbackContent={message.content}
                   globalToolResultMap={globalToolResultMap}
                   globalPendingQuestionMap={globalPendingQuestionMap}
-                  onViewToolDetails={onViewToolDetails}
+                  onViewToolDetails={(tc, res) => onViewToolDetails(tc, res, message.timestamp)}
                   onQuestionAnswer={onQuestionAnswer}
                   onQuestionSkip={onQuestionSkip}
                   onAddPermission={onAddPermission}

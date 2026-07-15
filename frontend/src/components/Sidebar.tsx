@@ -11,6 +11,7 @@ import {
   GetInboxTotalCount,
   MarkInboxMessageRead,
   DeleteInboxMessage,
+  RescanInboxSpool,
   NewSession,
   RemoveAgent,
   GetBacklogCount,
@@ -348,6 +349,21 @@ export function Sidebar({
       openInboxDialog(agent.id, messages || []);
     } catch (err) {
       console.error('Failed to load inbox messages:', err);
+    }
+  };
+
+  // Refresh the open inbox: rescan the spool (same pass as the startup scan —
+  // imports pending messages + applies read markers), then re-fetch this
+  // agent's messages so the dialog reflects anything newly imported.
+  const handleRefreshInbox = async () => {
+    if (!inboxDialogAgentId) return;
+    try {
+      const result = await RescanInboxSpool();
+      console.log(`[Inbox] Spool rescan: ${result.imported} imported, ${result.readApplied} read markers applied`);
+      const messages = await GetInboxMessages(inboxDialogAgentId);
+      openInboxDialog(inboxDialogAgentId, messages || []);
+    } catch (err) {
+      console.error('Failed to refresh inbox:', err);
     }
   };
 
@@ -726,6 +742,7 @@ export function Sidebar({
           onInject={handleInjectMessage}
           onDelete={handleDeleteInboxMessage}
           onMarkRead={handleMarkInboxRead}
+          onRefresh={handleRefreshInbox}
           onClose={closeInboxDialog}
         />
       )}
