@@ -5,6 +5,11 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.64] - 2026-07-24
+
+### Added
+- **Opus 5 in the model picker and env-var dropdowns** (`frontend/src/components/chat/modelCatalog.ts`) — added `claude-opus-5` and `claude-opus-5[1m]` to `MODEL_CATALOG` (top of the Opus block, `family: 'opus'`, full five-level effort incl. `xhigh`, the `[1m]` variant flagged 1M context). Because the catalog is the single source of truth, the entries flow automatically into the input-composer ModelSelector ("Specific Versions"), the EffortSelector's level set, and the auto-derived `ENV_ANY_MODEL_OPTIONS` (used by `ANTHROPIC_MODEL` / `CLAUDE_CODE_SUBAGENT_MODEL`). Also added both IDs to the hardcoded `ENV_OPUS_MODEL_OPTIONS` (the `ANTHROPIC_DEFAULT_OPUS_MODEL` dropdown, which is not auto-derived), and refreshed the `best` alias tooltip to name Opus 5 as the current most-capable model. Model strings pass to `--model` verbatim, so no backend change was needed.
+
 ## [0.5.63] - 2026-07-15
 
 ### Fixed
