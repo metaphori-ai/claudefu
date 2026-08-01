@@ -190,7 +190,10 @@ func migratePopulateWorkspaceRegistry(configPath string, m *Manager) error {
 
 	changed := false
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+		// Must skip Syncthing conflict copies: this loop derives the workspace ID
+		// from the FILENAME, so a "ws-x.sync-conflict-{date}-{device}.json" copy would
+		// register a phantom workspace under that whole string as its ID.
+		if entry.IsDir() || !isCanonicalWorkspaceFile(entry.Name()) {
 			continue
 		}
 

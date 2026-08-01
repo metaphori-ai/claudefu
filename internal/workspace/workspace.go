@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -583,6 +584,28 @@ func HasAgentWithFolder(ws *Workspace, folder string) bool {
 	return false
 }
 
+// isCanonicalWorkspaceFile reports whether a workspaces/ directory entry is a real
+// workspace file rather than a Syncthing conflict copy, a dotfile, or another stray.
+//
+// Every writer upholds one invariant: a workspace lives at exactly "{id}.json"
+// (SaveWorkspace, GetWorkspace, and DeleteWorkspace all build the path that way).
+// Syncthing breaks that invariant by construction — it renames a losing copy to
+// "{base}.sync-conflict-{date}-{device}.json", which still ends in ".json" and so
+// slipped past a suffix-only filter. Because the copy keeps the SAME "id" field
+// inside, each one surfaced as another workspace sharing that ID: N duplicate rows
+// in the workspace menu, every one of them matching currentWorkspaceId and so every
+// one rendering highlighted. (Same failure shape as the inbox .db conflicts retired
+// in v0.5.63 — Syncthing cannot merge these files, so we must ignore its copies.)
+func isCanonicalWorkspaceFile(name string) bool {
+	if !strings.HasSuffix(name, ".json") {
+		return false
+	}
+	if strings.HasPrefix(name, ".") {
+		return false // .DS_Store and friends
+	}
+	return !strings.Contains(name, ".sync-conflict-")
+}
+
 // GetAllWorkspaces returns all workspaces from the workspaces folder
 func (m *Manager) GetAllWorkspaces() ([]WorkspaceSummary, error) {
 	workspacesDir := filepath.Join(m.configPath, "workspaces")
@@ -596,7 +619,7 @@ func (m *Manager) GetAllWorkspaces() ([]WorkspaceSummary, error) {
 
 	workspaces := []WorkspaceSummary{}  // Initialize as empty slice, not nil (nil becomes JSON null)
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+		if entry.IsDir() || !isCanonicalWorkspaceFile(entry.Name()) {
 			continue
 		}
 
@@ -608,6 +631,13 @@ func (m *Manager) GetAllWorkspaces() ([]WorkspaceSummary, error) {
 
 		var ws Workspace
 		if err := json.Unmarshal(data, &ws); err != nil {
+			continue
+		}
+
+		// Enforce the filename↔id invariant. A copy whose inner id disagrees with its
+		// filename would duplicate a real workspace in the list; filenames are unique
+		// within a directory, so this also guarantees IDs are unique here.
+		if entry.Name() != ws.ID+".json" {
 			continue
 		}
 
@@ -856,6 +886,28 @@ func (m *Manager) SaveWorkspace(ws *Workspace) error {
 	}
 
 	wsPath := filepath.Join(m.configPath, "workspaces", ws.ID+".json")
+
+	// Skip byte-identical rewrites — the Syncthing-conflict guard.
+	//
+	// loadCurrentWorkspace() calls SaveWorkspace on EVERY app open and workspace
+	// switch, to persist whatever the schema upgrade + registry reconciliation
+	// produced. But those only change something on the rare launch where a migration
+	// actually applies, so the overwhelmingly common case rewrites identical bytes.
+	// That is not free: the atomic tmp+rename below replaces the file with a new
+	// inode and a fresh mtime, which Syncthing records as a modification — on each
+	// machine, independently. Two machines that merely OPENED the app while unable to
+	// reach each other (laptop off the home network) therefore reconnect with
+	// divergent change records for a file whose contents never differed, and
+	// Syncthing forks a .sync-conflict-* copy. Comparing before writing removes the
+	// redundant write, and with it the conflict opportunity.
+	//
+	// Deliberately compares CONTENT, not mtime/size: content equality is the only
+	// thing that makes skipping safe. A read error (missing file, first save)
+	// falls through to the write.
+	if existing, readErr := os.ReadFile(wsPath); readErr == nil && bytes.Equal(existing, data) {
+		return nil
+	}
+
 	fmt.Printf("[DEBUG] SaveWorkspace: writing %d agents to %s (%d bytes)\n", len(disk.Agents), wsPath, len(data))
 	// Atomic write: tmp + rename so a torn write can't corrupt the workspace file.
 	tmp := wsPath + ".tmp"
