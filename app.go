@@ -446,6 +446,15 @@ func (a *App) initializeClaude() {
 		}
 	}
 
+	// Wire the OAuth pool's default key into the service environment: spawns
+	// with no per-spawn override (MCP AgentQuery/SelfQuery via BuildEnv, slash
+	// commands without a sticky key) authenticate with the pool's best
+	// available rotation key. Empty pool / no rotation keys → provider returns
+	// "" and legacy env behavior is untouched.
+	if a.oauthKeys != nil {
+		a.claude.SetOAuthTokenProvider(a.oauthKeys.DefaultKey)
+	}
+
 	// Set up emit function for debug info (CLI commands)
 	a.claude.SetEmitFunc(func(eventType string, data map[string]any) {
 		wailsrt.EventsEmit(a.ctx, eventType, data)

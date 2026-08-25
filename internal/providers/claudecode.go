@@ -238,6 +238,14 @@ type ClaudeCodeService struct {
 	envVars   map[string]string
 	envVarsMu sync.RWMutex
 
+	// Optional OAuth pool default-token provider (returns label + token, or
+	// empty strings when no rotation keys exist). Consulted by
+	// buildEnvironment so spawns WITHOUT per-spawn overrides — MCP
+	// AgentQuery/SelfQuery (via BuildEnv), slash commands, service NewSession —
+	// authenticate with the pool's best available key instead of a stale
+	// legacy CLAUDE_CODE_OAUTH_TOKEN env var. Guarded by envVarsMu.
+	oauthTokenProvider func() (label, token string)
+
 	// Process tracking for cancellation support
 	activeProcs   map[string]*exec.Cmd // sessionID -> running command
 	activeProcsMu sync.RWMutex
@@ -304,6 +312,15 @@ func (s *ClaudeCodeService) SetEmitFunc(emitFunc func(eventType string, data map
 	s.emitFunc = emitFunc
 }
 
+// SetOAuthTokenProvider wires the OAuth pool's default-key resolver into the
+// service environment. The provider must be cheap and side-effect free — it
+// runs on every spawn.
+func (s *ClaudeCodeService) SetOAuthTokenProvider(fn func() (label, token string)) {
+	s.envVarsMu.Lock()
+	defer s.envVarsMu.Unlock()
+	s.oauthTokenProvider = fn
+}
+
 // buildEnvironment creates the environment slice for exec.Cmd.
 // It merges the parent process environment with the user's shell PATH and custom vars.
 // On macOS, GUI apps inherit a minimal PATH from launchd — this ensures spawned Claude
@@ -314,8 +331,18 @@ func (s *ClaudeCodeService) buildEnvironment() []string {
 
 	resolvedPATH := GetShellPATH()
 
-	// If no shell PATH and no custom vars, inherit parent env as-is
-	if resolvedPATH == "" && len(s.envVars) == 0 {
+	// OAuth pool default token (empty when no pool / no rotation keys).
+	// Precedence: custom envVars < pool default < per-spawn extraEnv
+	// (buildEnvironmentWith) — the pool overrides a stale legacy
+	// CLAUDE_CODE_OAUTH_TOKEN in LocalEnvVars, and the rotation-selected
+	// per-spawn key overrides the pool default.
+	var poolLabel, poolToken string
+	if s.oauthTokenProvider != nil {
+		poolLabel, poolToken = s.oauthTokenProvider()
+	}
+
+	// If no shell PATH, no custom vars, and no pool token, inherit parent env as-is
+	if resolvedPATH == "" && len(s.envVars) == 0 && poolToken == "" {
 		return nil
 	}
 
@@ -341,6 +368,13 @@ func (s *ClaudeCodeService) buildEnvironment() []string {
 		}
 	} else {
 		fmt.Printf("[DEBUG] buildEnvironment: no custom env vars to inject\n")
+	}
+
+	// Pool default OAuth token — after custom vars so the managed pool wins
+	// over any leftover manually-set token.
+	if poolToken != "" {
+		fmt.Printf("[OAUTH] buildEnvironment: pool default key %q\n", poolLabel)
+		env = replaceOrAppendEnv(env, "CLAUDE_CODE_OAUTH_TOKEN", poolToken)
 	}
 
 	return env
@@ -892,7 +926,10 @@ func (s *ClaudeCodeService) NewSession(folder, model, effort string) (string, er
 // RunSlashCommand executes a Claude CLI slash command and returns the output.
 // Uses `claude -p --resume {sessionId} {command}` to pass through slash commands.
 // Output is returned with ANSI escape codes stripped.
-func (s *ClaudeCodeService) RunSlashCommand(folder, sessionId, command string) (string, error) {
+// extraEnv carries the session's sticky OAuth pool key so e.g. /compact
+// (which re-reads the whole conversation) runs on the account whose prompt
+// cache already holds it; nil = service env (incl. pool default).
+func (s *ClaudeCodeService) RunSlashCommand(folder, sessionId, command string, extraEnv map[string]string) (string, error) {
 	if folder == "" {
 		return "", fmt.Errorf("folder is required")
 	}
@@ -915,7 +952,7 @@ func (s *ClaudeCodeService) RunSlashCommand(folder, sessionId, command string) (
 
 	cmd := ShellWrappedCommand(s.ctx, path, args...)
 	cmd.Dir = folder
-	cmd.Env = s.buildEnvironment()
+	cmd.Env = s.buildEnvironmentWith(extraEnv)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

@@ -529,6 +529,25 @@ func (m *Manager) ResolveForSend(sessionID, spec string) (keyID, token, mode str
 	return k.ID, k.Token, ModeAuto
 }
 
+// DefaultKey returns the pool's current best rotation key (label + token) by
+// the canonical auto sort, WITHOUT recording stickiness or usage. Used as the
+// service-level default for spawns that have no ClaudeFu session context (MCP
+// AgentQuery/SelfQuery). Read-only and deterministic: repeated calls return
+// the same key until limit state or the weekly ordering changes — which gives
+// those spawns CLAUDE.md-context cache continuity on one account for free.
+// Returns ("", "") when no keys are in rotation (legacy env behavior applies).
+func (m *Manager) DefaultKey() (label, token string) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if !m.hasRotationLocked() {
+		return "", ""
+	}
+	if k := m.selectAutoLocked(time.Now()); k != nil {
+		return k.Label, k.Token
+	}
+	return "", ""
+}
+
 // SelectNextAfterLimit picks the next strictly-available key after the current
 // one was just limited (its fresh limit state excludes it naturally).
 // Returns ok=false when every rotation key is limited.

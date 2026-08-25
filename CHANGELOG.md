@@ -5,6 +5,11 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.67] - 2026-08-25
+
+### Changed
+- **OAuth pool now covers every claude spawn — the legacy `CLAUDE_CODE_OAUTH_TOKEN` env var is no longer needed once keys are in the pool** (`internal/providers/claudecode.go`, `internal/oauthkeys/manager.go`, `app.go`, `app_claude.go`) — v0.5.66 left MCP `AgentQuery`/`SelfQuery` and slash-command spawns on the legacy service env. All spawn paths converge on `buildEnvironment()`, so one hook closes the gap: the service now consults an OAuth token provider (`SetOAuthTokenProvider` → `oauthkeys.Manager.DefaultKey`) and injects the pool's best available rotation key **after** custom env vars (the managed pool overrides a stale manually-set token during migration) and **before** per-spawn overrides (the rotation/sticky key still wins). `DefaultKey` is read-only against the canonical auto sort — no stickiness or usage recording — and therefore deterministic: repeated MCP spawns ride the same account until limit state changes, which gives their CLAUDE.md-context loads prompt-cache continuity for free. Slash commands go one better: `App.RunSlashCommand` resolves the **session's sticky key** and passes it per-spawn, so `/compact` — which re-reads the entire conversation — runs on the account whose cache already holds it. `NewSession` needed nothing (it's the instant JSONL write from v0.3.21; no claude spawn, no auth). Provider paths don't parse 429s themselves; a key benched by the chat flow is simply skipped on the next provider consult. Empty pool / no rotation keys → provider returns empty and pre-pool behavior is untouched end to end.
+
 ## [0.5.66] - 2026-08-25
 
 ### Added

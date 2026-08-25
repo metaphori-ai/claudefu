@@ -398,7 +398,11 @@ func (a *App) RunSlashCommand(agentID, sessionID, command string) (string, error
 	}
 
 	// Run the slash command via Claude CLI
-	output, err := a.claude.RunSlashCommand(agent.Folder, sessionID, command)
+	// Ride the session's sticky OAuth pool key — /compact re-reads the whole
+	// conversation, so running it on the account already holding the prompt
+	// cache matters. Falls back to the pool default / legacy env when none.
+	_, extraEnv, _ := a.resolveOAuthEnv(sessionID, "")
+	output, err := a.claude.RunSlashCommand(agent.Folder, sessionID, command, extraEnv)
 	if err != nil {
 		return "", fmt.Errorf("slash command failed: %w", err)
 	}
