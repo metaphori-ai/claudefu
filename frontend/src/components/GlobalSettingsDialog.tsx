@@ -24,6 +24,14 @@ import {
   GetHostname,
   GetMachineProxySettings,
   SaveMachineProxySettings,
+  GetOAuthKeys,
+  AddOAuthKey,
+  UpdateOAuthKey,
+  DeleteOAuthKey,
+  ClearOAuthKeyLimits,
+  ImportOAuthKeysFromEnv,
+  GetOAuthAutoContinuePrompt,
+  SetOAuthAutoContinuePrompt,
 } from '../../wailsjs/go/main/App';
 import { settings } from '../../wailsjs/go/models';
 import {
@@ -77,7 +85,32 @@ interface EnvVar {
   value: string;
 }
 
-type TabId = 'env' | 'tools' | 'directories' | 'global-claude-md' | 'default-claude-md' | 'sifu' | 'sifu-md' | 'sifu-agent-md' | 'proxy';
+type TabId = 'env' | 'oauth-keys' | 'tools' | 'directories' | 'global-claude-md' | 'default-claude-md' | 'sifu' | 'sifu-md' | 'sifu-agent-md' | 'proxy';
+
+// OAuth key pool row — mirrors the Go OAuthKeyView plus a local newToken
+// draft (the full token never round-trips; empty newToken = keep existing).
+interface OAuthKeyRow {
+  id: string;
+  label: string;
+  tokenPreview: string;
+  newToken: string;
+  inRotation: boolean;
+  weeklyResetDay: number;
+  weeklyResetTime: string;
+  sessionLimitedUntil: string;
+  weeklyLimitedUntil: string;
+  lastLimitType: string;
+  available: boolean;
+}
+
+const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function formatLimitedUntil(rfc3339: string): string {
+  if (!rfc3339) return '';
+  const d = new Date(rfc3339);
+  if (isNaN(d.getTime())) return rfc3339;
+  return d.toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+}
 
 export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogProps) {
   // Tab state
@@ -119,6 +152,13 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
   const [proxyLogging, setProxyLogging] = useState(false);
   const [proxyLogDir, setProxyLogDir] = useState('');
   const [proxyStatus, setProxyStatus] = useState<{ running: boolean; port: number; stats: any } | null>(null);
+
+  // OAuth key pool state
+  const [oauthKeys, setOauthKeys] = useState<OAuthKeyRow[]>([]);
+  const [autoContinuePrompt, setAutoContinuePrompt] = useState('');
+  const [newOauthLabel, setNewOauthLabel] = useState('');
+  const [newOauthToken, setNewOauthToken] = useState('');
+  const [oauthImportResult, setOauthImportResult] = useState<string | null>(null);
 
   // Shared state
   const [isSaving, setIsSaving] = useState(false);
@@ -235,6 +275,9 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
       setDefaultTemplateMD(defaultMD);
       setSifuTemplateMD(sifuMD);
       setSifuAgentTemplateMD(sifuAgentMD);
+
+      // OAuth key pool (non-critical)
+      try { await loadOAuthKeys(); } catch { /* ok */ }
     } catch (err) {
       console.error('Failed to load settings:', err);
       setError('Failed to load settings');
@@ -260,6 +303,17 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
       } else if (activeTab === 'sifu-agent-md') {
         await SaveSifuAgentTemplateMD(sifuAgentTemplateMD);
         setMdSaved(true);
+      } else if (activeTab === 'oauth-keys') {
+        // Persist all row edits + the auto-continue prompt. Add/delete/import
+        // are immediate (bound calls fired on click), so Save only flushes
+        // in-place edits (label, pasted token, rotation flag, weekly reset).
+        await Promise.all([
+          ...oauthKeys.map(k => UpdateOAuthKey(
+            k.id, k.label, k.newToken.trim(), k.inRotation, k.weeklyResetDay, k.weeklyResetTime,
+          )),
+          SetOAuthAutoContinuePrompt(autoContinuePrompt),
+        ]);
+        onClose();
       } else if (activeTab === 'proxy') {
         // Proxy settings saved per-machine (keyed by hostname)
         await SaveMachineProxySettings({
@@ -309,7 +363,7 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
     } finally {
       setIsSaving(false);
     }
-  }, [activeTab, envVars, globalPermissions, globalClaudeMD, defaultTemplateMD, sifuTemplateMD, sifuAgentTemplateMD, claudeCodeCommand, sifuEnabled, sifuRootFolder, proxyEnabled, proxyPort, proxyCacheFix, proxyCacheTTL, proxyLogging, proxyLogDir, onClose]);
+  }, [activeTab, envVars, globalPermissions, globalClaudeMD, defaultTemplateMD, sifuTemplateMD, sifuAgentTemplateMD, claudeCodeCommand, sifuEnabled, sifuRootFolder, proxyEnabled, proxyPort, proxyCacheFix, proxyCacheTTL, proxyLogging, proxyLogDir, oauthKeys, autoContinuePrompt, onClose]);
 
   // CMD-S to save
   useSaveShortcut(isOpen, handleSave);
@@ -362,6 +416,76 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
     if (e.key === 'Enter' && newKey.trim()) {
       e.preventDefault();
       handleAddVar();
+    }
+  };
+
+  // ---------------------------------------------------------------------------
+  // OAuth key pool handlers
+  // ---------------------------------------------------------------------------
+
+  const loadOAuthKeys = async () => {
+    const [keys, prompt] = await Promise.all([GetOAuthKeys(), GetOAuthAutoContinuePrompt()]);
+    setOauthKeys((keys || []).map(k => ({
+      id: k.id,
+      label: k.label,
+      tokenPreview: k.tokenPreview,
+      newToken: '',
+      inRotation: k.inRotation,
+      weeklyResetDay: k.weeklyResetDay,
+      weeklyResetTime: k.weeklyResetTime,
+      sessionLimitedUntil: k.sessionLimitedUntil,
+      weeklyLimitedUntil: k.weeklyLimitedUntil,
+      lastLimitType: k.lastLimitType,
+      available: k.available,
+    })));
+    setAutoContinuePrompt(prompt || '');
+  };
+
+  const updateOauthRow = (id: string, patch: Partial<OAuthKeyRow>) => {
+    setOauthKeys(rows => rows.map(r => (r.id === id ? { ...r, ...patch } : r)));
+  };
+
+  const handleAddOauthKey = async () => {
+    if (!newOauthLabel.trim() || !newOauthToken.trim()) return;
+    try {
+      await AddOAuthKey(newOauthLabel.trim(), newOauthToken.trim(), 1, '00:00');
+      setNewOauthLabel('');
+      setNewOauthToken('');
+      await loadOAuthKeys();
+    } catch (err) {
+      console.error('Failed to add OAuth key:', err);
+      setError('Failed to add OAuth key');
+    }
+  };
+
+  const handleDeleteOauthKey = async (id: string) => {
+    try {
+      await DeleteOAuthKey(id);
+      await loadOAuthKeys();
+    } catch (err) {
+      console.error('Failed to delete OAuth key:', err);
+      setError('Failed to delete OAuth key');
+    }
+  };
+
+  const handleClearOauthLimits = async (id: string) => {
+    try {
+      await ClearOAuthKeyLimits(id);
+      await loadOAuthKeys();
+    } catch (err) {
+      console.error('Failed to clear key limits:', err);
+    }
+  };
+
+  const handleImportOauthKeys = async () => {
+    try {
+      const count = await ImportOAuthKeysFromEnv();
+      setOauthImportResult(count > 0 ? `Imported ${count} key${count === 1 ? '' : 's'} from env vars` : 'No new sk-ant-oat… tokens found in env vars');
+      await loadOAuthKeys();
+      setTimeout(() => setOauthImportResult(null), 5000);
+    } catch (err) {
+      console.error('Failed to import OAuth keys:', err);
+      setError('Failed to import OAuth keys from env vars');
     }
   };
 
@@ -872,6 +996,196 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
     </div>
   );
 
+  // OAuth key pool tab — mirrors the ta-bench token table:
+  // Label | Token (paste-to-replace) | In Rotation | Limited (S/W + clear) | Weekly Reset | delete
+  const renderOAuthKeysTab = () => {
+    const inputStyle: React.CSSProperties = {
+      padding: '0.4rem 0.6rem', borderRadius: '4px', border: '1px solid #333',
+      background: '#0d0d0d', color: '#fff', fontSize: '0.78rem', fontFamily: 'monospace',
+      boxSizing: 'border-box',
+    };
+    const headerStyle: React.CSSProperties = {
+      fontSize: '0.65rem', color: '#666', textTransform: 'uppercase', letterSpacing: '0.05em',
+      fontWeight: 600,
+    };
+    const inRotationCount = oauthKeys.filter(k => k.inRotation).length;
+
+    return (
+      <div style={{ padding: '1rem', overflow: 'auto', flex: 1, textAlign: 'left' }}>
+        <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600, color: '#ccc' }}>
+          Claude Code OAuth Tokens — The Pool
+        </h3>
+        <p style={{ margin: '0.35rem 0 1rem 0', fontSize: '0.78rem', color: '#666', lineHeight: 1.5 }}>
+          One token per subscription account. <strong style={{ color: '#888' }}>Auto</strong> in the
+          key selector rides one key per session (protects the 1h prompt cache) and rotates only on a
+          429 — session limits are marked from the error's own reset clock (+2 min buffer); weekly
+          resets are set by hand here. A weekly limit benches the key until its weekly reset passes.
+          Keys out of rotation stay selectable manually.
+        </p>
+
+        {/* Auto-continue prompt */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+          <span style={{ fontSize: '0.75rem', color: '#999', whiteSpace: 'nowrap' }}>On rotation, continue with:</span>
+          <input
+            type="text"
+            value={autoContinuePrompt}
+            onChange={(e) => setAutoContinuePrompt(e.target.value)}
+            placeholder="Anthropic api flapped, continue."
+            style={{ ...inputStyle, flex: 1 }}
+          />
+        </div>
+
+        {/* Header row */}
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', padding: '0 0.25rem', marginBottom: '0.35rem' }}>
+          <div style={{ ...headerStyle, width: '19%' }}>Label</div>
+          <div style={{ ...headerStyle, width: '19%' }}>Token</div>
+          <div style={{ ...headerStyle, width: '52px', textAlign: 'center' }}>Rotate</div>
+          <div style={{ ...headerStyle, flex: 1 }}>Limited Until (local)</div>
+          <div style={{ ...headerStyle, width: '148px' }}>Weekly Reset</div>
+          <div style={{ width: '26px' }} />
+        </div>
+
+        {/* Key rows */}
+        {oauthKeys.map(k => (
+          <div key={k.id} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.4rem', padding: '0.25rem', borderRadius: '6px', background: '#111', border: '1px solid #1d1d1d', opacity: k.inRotation ? 1 : 0.75 }}>
+            <input
+              type="text"
+              value={k.label}
+              onChange={(e) => updateOauthRow(k.id, { label: e.target.value })}
+              style={{ ...inputStyle, width: '19%' }}
+            />
+            <input
+              type="text"
+              value={k.newToken}
+              onChange={(e) => updateOauthRow(k.id, { newToken: e.target.value })}
+              placeholder={k.tokenPreview || 'sk-ant-oat01-…'}
+              style={{ ...inputStyle, width: '19%', borderColor: k.newToken ? '#d97757' : '#333' }}
+              title={k.newToken ? 'New token will replace the stored one on Save' : 'Paste a token to replace the stored one'}
+            />
+            <div style={{ width: '52px', display: 'flex', justifyContent: 'center' }}>
+              <input
+                type="checkbox"
+                checked={k.inRotation}
+                onChange={(e) => updateOauthRow(k.id, { inRotation: e.target.checked })}
+                style={{ width: '16px', height: '16px', accentColor: '#d97757', cursor: 'pointer' }}
+                title={k.inRotation ? 'In rotation — Auto may pick this key' : 'Out of rotation — manual selection only'}
+              />
+            </div>
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '0.4rem', minWidth: 0 }}>
+              {!k.sessionLimitedUntil && !k.weeklyLimitedUntil ? (
+                <span style={{ fontSize: '0.72rem', color: '#3f6f4f' }}>available</span>
+              ) : (
+                <>
+                  {k.sessionLimitedUntil && (
+                    <span style={{ fontSize: '0.7rem', color: '#d9a057', background: '#d9775712', border: '1px solid #d9775733', borderRadius: '4px', padding: '0.1rem 0.35rem', whiteSpace: 'nowrap' }}
+                      title={`Session${k.lastLimitType === 'model' ? '/model' : ''} limit — benched until this passes`}>
+                      S {formatLimitedUntil(k.sessionLimitedUntil)}
+                    </span>
+                  )}
+                  {k.weeklyLimitedUntil && (
+                    <span style={{ fontSize: '0.7rem', color: '#f87171', background: '#f8717112', border: '1px solid #f8717133', borderRadius: '4px', padding: '0.1rem 0.35rem', whiteSpace: 'nowrap' }}
+                      title="Weekly limit — benched until the weekly reset passes">
+                      W {formatLimitedUntil(k.weeklyLimitedUntil)}
+                    </span>
+                  )}
+                  <button
+                    onClick={() => handleClearOauthLimits(k.id)}
+                    title="Clear limit state (use if the reset already happened)"
+                    style={{ border: 'none', background: 'transparent', color: '#666', cursor: 'pointer', fontSize: '0.75rem', padding: '0 0.2rem' }}
+                    onMouseEnter={(e) => { e.currentTarget.style.color = '#ccc'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.color = '#666'; }}
+                  >
+                    ✕
+                  </button>
+                </>
+              )}
+            </div>
+            <div style={{ width: '148px', display: 'flex', gap: '0.3rem' }}>
+              <select
+                value={k.weeklyResetDay}
+                onChange={(e) => updateOauthRow(k.id, { weeklyResetDay: parseInt(e.target.value) })}
+                style={{ ...inputStyle, width: '64px', padding: '0.4rem 0.3rem' }}
+              >
+                {WEEKDAY_LABELS.map((d, i) => <option key={d} value={i}>{d}</option>)}
+              </select>
+              <input
+                type="time"
+                value={k.weeklyResetTime}
+                onChange={(e) => updateOauthRow(k.id, { weeklyResetTime: e.target.value })}
+                style={{ ...inputStyle, width: '78px', padding: '0.35rem 0.3rem' }}
+              />
+            </div>
+            <button
+              onClick={() => handleDeleteOauthKey(k.id)}
+              title="Delete key from pool"
+              style={{ width: '26px', border: 'none', background: 'transparent', color: '#555', cursor: 'pointer', display: 'flex', justifyContent: 'center' }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = '#c53030'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = '#555'; }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+              </svg>
+            </button>
+          </div>
+        ))}
+
+        {/* Add row */}
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.75rem', padding: '0.6rem', background: '#151515', borderRadius: '8px', border: '1px solid #222' }}>
+          <input
+            type="text"
+            value={newOauthLabel}
+            onChange={(e) => setNewOauthLabel(e.target.value)}
+            placeholder="Label (e.g. ALAN_1--SU-12PM)"
+            style={{ ...inputStyle, width: '30%' }}
+          />
+          <input
+            type="text"
+            value={newOauthToken}
+            onChange={(e) => setNewOauthToken(e.target.value)}
+            placeholder="sk-ant-oat01-…"
+            style={{ ...inputStyle, flex: 1 }}
+          />
+          <button
+            onClick={handleAddOauthKey}
+            disabled={!newOauthLabel.trim() || !newOauthToken.trim()}
+            style={{
+              padding: '0.45rem 0.75rem', borderRadius: '6px', border: 'none',
+              background: newOauthLabel.trim() && newOauthToken.trim() ? '#d97757' : '#333',
+              color: newOauthLabel.trim() && newOauthToken.trim() ? '#fff' : '#666',
+              cursor: newOauthLabel.trim() && newOauthToken.trim() ? 'pointer' : 'not-allowed',
+              fontSize: '0.8rem', fontWeight: 500, whiteSpace: 'nowrap',
+            }}
+          >
+            + add token
+          </button>
+        </div>
+
+        {/* Footer: import + counts */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginTop: '0.75rem' }}>
+          <button
+            onClick={handleImportOauthKeys}
+            title="Scan this machine's env vars for sk-ant-oat… values; label naming like NAME--Tu-2AM auto-fills the weekly reset"
+            style={{
+              padding: '0.4rem 0.7rem', borderRadius: '6px', border: '1px solid #444',
+              background: 'transparent', color: '#999', cursor: 'pointer', fontSize: '0.75rem',
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#d97757'; e.currentTarget.style.color = '#d97757'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#444'; e.currentTarget.style.color = '#999'; }}
+          >
+            Import from env vars
+          </button>
+          <span style={{ fontSize: '0.75rem', color: '#666' }}>
+            {oauthKeys.length} in pool · {inRotationCount} in rotation
+          </span>
+          {oauthImportResult && (
+            <span style={{ fontSize: '0.75rem', color: '#16a34a' }}>{oauthImportResult}</span>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const renderClaudeMDTab = (mdContent: string, setMdContent: (v: string) => void, pathLabel: string) => (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* Path + view toggle */}
@@ -993,6 +1307,7 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
 
   const tabs: { id: TabId; label: string }[] = [
     { id: 'env', label: 'Environment' },
+    { id: 'oauth-keys', label: 'OAuth Keys' },
     { id: 'tools', label: 'Tools' },
     { id: 'directories', label: 'Directories' },
     { id: 'global-claude-md', label: 'Global CLAUDE.md' },
@@ -1056,6 +1371,7 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
           ) : (
             <>
               {activeTab === 'env' && renderEnvVarsTab()}
+              {activeTab === 'oauth-keys' && renderOAuthKeysTab()}
               {activeTab === 'tools' && globalPermissions && (
                 <ToolsTabContent
                   permissions={globalPermissions}

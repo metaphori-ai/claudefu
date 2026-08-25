@@ -55,6 +55,8 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
   const [selectedEffort, setSelectedEffort] = useState('');
   const [agentDefaultModel, setAgentDefaultModel] = useState('');
   const [agentDefaultEffort, setAgentDefaultEffort] = useState('');
+  // OAuth pool key: "" = Auto (backend rotates on 429), key ID = pinned.
+  const [selectedOauthKey, setSelectedOauthKey] = useState('');
   // Per-agent initial-load-turns override. Falls back to DEFAULT_INITIAL_LOAD_TURNS
   // (resolved via resolveInitialLoadTurns) when the meta value is absent/invalid.
   const [initialLoadTurns, setInitialLoadTurns] = useState<number>(() => resolveInitialLoadTurns(null));
@@ -556,7 +558,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
         scroll.scrollToBottomRAF();
 
         try {
-          await SendMessage(agentId, sessionId, initialMessage, [], planningMode, selectedModel, selectedEffort);
+          await SendMessage(agentId, sessionId, initialMessage, [], planningMode, selectedModel, selectedEffort, selectedOauthKey || 'auto');
         } catch (err) {
           // On failure, the message stays in pending state
           // Context will handle cleanup when confirmed message arrives
@@ -600,7 +602,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
   // Handle skipping a pending question
   const handleQuestionSkip = async (toolUseId: string) => {
     try {
-      await SendMessage(agentId, sessionId, "I'm skipping this question. Please continue.", [], planningMode, selectedModel, selectedEffort);
+      await SendMessage(agentId, sessionId, "I'm skipping this question. Please continue.", [], planningMode, selectedModel, selectedEffort, selectedOauthKey || 'auto');
       // Clear and reload from context
       clearContextSession(agentId, sessionId);
       await loadConversation(true); // Force reload
@@ -768,7 +770,10 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
     setIsWaitingForResponse(true);
 
     try {
-      await SendMessage(agentId, sessionId, message, backendAttachments, planningMode, selectedModel, selectedEffort);
+      // '' from the selector means explicit Auto — send the 'auto' spec so a
+      // previously pinned key is demoted back to a rotation candidate. Queued
+      // sends (QueueWatcher) pass '' = inherit the session's riding key.
+      await SendMessage(agentId, sessionId, message, backendAttachments, planningMode, selectedModel, selectedEffort, selectedOauthKey || 'auto');
       logDebug('ChatView', 'SEND_COMPLETE', { success: true });
       // Clear attachments, planning mode, and persisted draft on successful send
       setAttachments([]);
@@ -960,6 +965,8 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
           onEffortChange={setSelectedEffort}
           agentDefaultModel={agentDefaultModel}
           agentDefaultEffort={agentDefaultEffort}
+          selectedOauthKey={selectedOauthKey}
+          onOauthKeyChange={setSelectedOauthKey}
           onSaveModelAsAgentDefault={handleSaveModelAsAgentDefault}
           onSaveEffortAsAgentDefault={handleSaveEffortAsAgentDefault}
           attachments={attachments}

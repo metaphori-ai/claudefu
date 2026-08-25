@@ -346,6 +346,27 @@ func (s *ClaudeCodeService) buildEnvironment() []string {
 	return env
 }
 
+// buildEnvironmentWith merges per-spawn overrides ON TOP of the service-level
+// environment. Used by OAuth key rotation: the pool-selected
+// CLAUDE_CODE_OAUTH_TOKEN must override the LocalEnvVars one for this spawn
+// only, without mutating service state (concurrent sends for other sessions
+// keep their own keys). Merged last, so extra always wins.
+func (s *ClaudeCodeService) buildEnvironmentWith(extra map[string]string) []string {
+	env := s.buildEnvironment()
+	if len(extra) == 0 {
+		return env
+	}
+	if env == nil {
+		// buildEnvironment returns nil to mean "inherit parent env" — with
+		// per-spawn overrides we must materialize it to apply them.
+		env = os.Environ()
+	}
+	for key, value := range extra {
+		env = replaceOrAppendEnv(env, key, value)
+	}
+	return env
+}
+
 // BuildEnv is the exported accessor for buildEnvironment. MCP handlers that spawn
 // their own `claude` subprocesses (AgentQuery, SelfQuery) must use this — NOT the
 // free BuildShellEnv() function — so the spawned process inherits the same custom
@@ -551,7 +572,9 @@ func (s *ClaudeCodeService) buildPermissionArgs(folder string) []string {
 // The model parameter (alias or full ID, including "[1m]" suffix) is passed to --model verbatim;
 // empty = omit the flag entirely and let the CLI use its configured default.
 // The effort parameter (low|medium|high|xhigh|max|auto) is passed to --effort; empty = omit.
-func (s *ClaudeCodeService) SendMessage(folder, sessionId, message string, attachments []types.Attachment, planMode bool, model, effort string) error {
+// extraEnv carries per-spawn env overrides (e.g. the rotation-selected
+// CLAUDE_CODE_OAUTH_TOKEN); nil/empty = service-level env unchanged.
+func (s *ClaudeCodeService) SendMessage(folder, sessionId, message string, attachments []types.Attachment, planMode bool, model, effort string, extraEnv map[string]string) error {
 	if folder == "" {
 		return fmt.Errorf("folder is required")
 	}
@@ -576,14 +599,14 @@ func (s *ClaudeCodeService) SendMessage(folder, sessionId, message string, attac
 
 	// Always use stream-json stdin approach for robust message handling.
 	// This avoids CLI argument parsing issues with special characters (e.g., --- interpreted as option terminator).
-	return s.sendViaStdin(path, folder, sessionId, message, attachments, permissionMode, model, effort)
+	return s.sendViaStdin(path, folder, sessionId, message, attachments, permissionMode, model, effort, extraEnv)
 }
 
 // sendViaStdin sends a message (with optional attachments) via stdin using stream-json format.
 // This is the primary send method — all messages go through stdin to avoid CLI argument parsing
 // issues with special characters like --- (option terminator), quotes, backticks, etc.
 // Required flags: --input-format stream-json, --output-format stream-json, --verbose
-func (s *ClaudeCodeService) sendViaStdin(claudePath, folder, sessionId, message string, attachments []types.Attachment, permissionMode string, model, effort string) error {
+func (s *ClaudeCodeService) sendViaStdin(claudePath, folder, sessionId, message string, attachments []types.Attachment, permissionMode string, model, effort string, extraEnv map[string]string) error {
 	fmt.Printf("[DEBUG] sendViaStdin: folder=%s sessionId=%s message=%q attachments=%d\n", folder, sessionId, message, len(attachments))
 
 	// Build content blocks array
@@ -683,7 +706,7 @@ func (s *ClaudeCodeService) sendViaStdin(claudePath, folder, sessionId, message 
 
 	cmd := ShellWrappedCommand(s.ctx, claudePath, args...)
 	cmd.Dir = folder
-	cmd.Env = s.buildEnvironment() // Apply custom env vars (e.g., ANTHROPIC_BASE_URL for proxies)
+	cmd.Env = s.buildEnvironmentWith(extraEnv) // Custom env vars + per-spawn overrides (rotated OAuth key)
 	cmd.Stdin = bytes.NewReader(jsonBytes)
 
 	// Track the process for potential cancellation

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"claudefu/internal/oauthkeys"
 	"claudefu/internal/providers"
 	"claudefu/internal/types"
 	"claudefu/internal/workspace"
@@ -65,6 +66,13 @@ func parseClaudeCLIError(rawOutput string) (status int, result, resolvedModel st
 // emitResponseComplete emits the response_complete event and checks for auth/API errors.
 // userModel is what the user selected in the frontend (may be empty = Empty/Default).
 func (a *App) emitResponseComplete(agentID, sessionID, userModel string, err error) {
+	a.emitResponseCompleteWithInfo(agentID, sessionID, userModel, err, "")
+}
+
+// emitResponseCompleteWithInfo is emitResponseComplete with an optional extra
+// result block appended to the claude:api-error message — used by OAuth key
+// rotation to render the per-key reset table when every rotation key is limited.
+func (a *App) emitResponseCompleteWithInfo(agentID, sessionID, userModel string, err error, extraResult string) {
 	if a.rt == nil {
 		return
 	}
@@ -91,6 +99,12 @@ func (a *App) emitResponseComplete(agentID, sessionID, userModel string, err err
 		// through claude:api-error. The frontend dialog adapts its content based on
 		// status code and result message; one code path, one dialog.
 		status, result, resolvedModel := parseClaudeCLIError(errStr)
+		if extraResult != "" {
+			if result != "" {
+				result += "\n\n"
+			}
+			result += extraResult
+		}
 		if status != 0 || result != "" {
 			a.rt.Emit("claude:api-error", agentID, sessionID, map[string]any{
 				"status":        status,
@@ -103,14 +117,49 @@ func (a *App) emitResponseComplete(agentID, sessionID, userModel string, err err
 	a.rt.Emit("response_complete", agentID, sessionID, payload)
 }
 
+// resolveOAuthEnv resolves the OAuth key pool for a send. Returns the selected
+// key ID, the per-spawn env override carrying its token, and the send mode
+// (none/auto/pinned). ModeNone (no pool participation) preserves the legacy
+// LocalEnvVars CLAUDE_CODE_OAUTH_TOKEN behavior untouched.
+func (a *App) resolveOAuthEnv(sessionID, spec string) (keyID string, extraEnv map[string]string, mode string) {
+	if a.oauthKeys == nil {
+		return "", nil, oauthkeys.ModeNone
+	}
+	keyID, token, mode := a.oauthKeys.ResolveForSend(sessionID, spec)
+	if token == "" {
+		return "", nil, oauthkeys.ModeNone
+	}
+	return keyID, map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": token}, mode
+}
+
+// oauthKeyLabel returns a key's display label (falls back to the ID).
+func (a *App) oauthKeyLabel(id string) string {
+	if a.oauthKeys != nil {
+		if k := a.oauthKeys.GetKey(id); k != nil {
+			return k.Label
+		}
+	}
+	return id
+}
+
 // SendMessage sends a message to Claude Code, optionally with image attachments.
 // If attachments are provided, uses stdin with stream-json format.
 // If planMode is true, forces Claude into planning mode.
 // The model parameter (alias or full ID, e.g. "opus[1m]" or "claude-sonnet-4-6[1m]") is passed
 // to --model verbatim; empty = omit the flag (use CLI default).
 // The effort parameter (low|medium|high|xhigh|max|auto) is passed to --effort; empty = omit.
+// The oauthKey parameter selects an OAuth pool key: "" = Auto (rotation on 429
+// when the pool has rotation keys, legacy env behavior otherwise); a key ID =
+// pinned (that key always, no auto-rotation on limit).
 // Emits "response_complete" event when the Claude CLI process exits.
-func (a *App) SendMessage(agentID, sessionID, message string, attachments []types.Attachment, planMode bool, model, effort string) error {
+//
+// OAuth rotation flow (Auto mode only): a 429/limit error benches the current
+// key (session and weekly limits tracked separately, reset clock parsed from
+// the error's own message +2min buffer), picks the next key by nearest weekly
+// reset then nearest session reset, and resumes the turn by sending the
+// auto-continue prompt — the original message is already in the JSONL, so
+// "continue" picks it up (same as the long-standing manual practice).
+func (a *App) SendMessage(agentID, sessionID, message string, attachments []types.Attachment, planMode bool, model, effort, oauthKey string) error {
 	if a.claude == nil {
 		return fmt.Errorf("claude service not initialized")
 	}
@@ -123,20 +172,83 @@ func (a *App) SendMessage(agentID, sessionID, message string, attachments []type
 		return fmt.Errorf("agent not found: %s", agentID)
 	}
 
-	// Record send time BEFORE calling Claude - used to filter out historical context
-	// that Claude Code writes when resuming a session (those have old timestamps)
-	if a.rt != nil {
-		a.rt.SetLastSendTime(agentID, sessionID, time.Now())
+	curMsg, curAtt := message, attachments
+	rotations := 0
+	maxRotations := 0
+	if a.oauthKeys != nil {
+		maxRotations = a.oauthKeys.RotationSize() // hard cap: a misparse can never loop forever
+	}
+	var finalErr error
+	extraResult := ""
+
+	for {
+		// Record send time BEFORE calling Claude - used to filter out historical context
+		// that Claude Code writes when resuming a session (those have old timestamps)
+		if a.rt != nil {
+			a.rt.SetLastSendTime(agentID, sessionID, time.Now())
+		}
+
+		keyID, extraEnv, mode := a.resolveOAuthEnv(sessionID, oauthKey)
+
+		// Call Claude - BLOCKS until CLI process exits
+		finalErr = a.claude.SendMessage(agent.Folder, sessionID, curMsg, curAtt, planMode, model, effort, extraEnv)
+		if finalErr == nil || keyID == "" {
+			break
+		}
+
+		status, result, _ := parseClaudeCLIError(finalErr.Error())
+		limitType, resetAt, isLimit := oauthkeys.ParseLimitInfo(status, result)
+		if !isLimit {
+			break
+		}
+
+		// Bench the key that just hit the limit.
+		until := a.oauthKeys.ComputeLimitedUntil(keyID, limitType, resetAt)
+		a.oauthKeys.RecordLimit(keyID, limitType, until)
+		limitedLabel := a.oauthKeyLabel(keyID)
+		fmt.Printf("[OAUTH] key %q hit %s limit, benched until %s\n", limitedLabel, limitType, until.Format(time.RFC3339))
+		if a.rt != nil {
+			a.rt.Emit("oauth:keys-changed", agentID, sessionID, map[string]any{
+				"keyId":        keyID,
+				"limitType":    limitType,
+				"limitedUntil": until.UTC().Format(time.RFC3339),
+			})
+		}
+
+		if mode == oauthkeys.ModePinned {
+			break // pinned key hit its limit — no silent rotation, dialog shows, user swaps
+		}
+		if rotations >= maxRotations {
+			break
+		}
+
+		nextID, _, ok := a.oauthKeys.SelectNextAfterLimit(sessionID)
+		if !ok {
+			extraResult = a.oauthKeys.AllLimitedSummary()
+			break
+		}
+		rotations++
+		nextLabel := a.oauthKeyLabel(nextID)
+		fmt.Printf("[OAUTH] rotating %q -> %q, resuming with continue prompt\n", limitedLabel, nextLabel)
+		if a.rt != nil {
+			a.rt.Emit("mcp:notification", agentID, sessionID, map[string]any{
+				"type":    "warning",
+				"title":   "OAuth key rotated",
+				"message": fmt.Sprintf("%s hit its %s limit (resets %s). Continuing with %s.", limitedLabel, limitType, until.Format("Mon 3:04 PM"), nextLabel),
+			})
+		}
+
+		// Resume the turn on the fresh key. The original message is already in
+		// the session JSONL; the continue prompt picks it up.
+		curMsg = a.oauthKeys.GetAutoContinuePrompt()
+		curAtt = nil
 	}
 
-	// Call Claude - BLOCKS until CLI process exits
-	err := a.claude.SendMessage(agent.Folder, sessionID, message, attachments, planMode, model, effort)
-
-	// Emit response_complete event AFTER Claude finishes
+	// Emit response_complete event AFTER the final attempt
 	// This is the authoritative signal that the response is complete
-	a.emitResponseComplete(agentID, sessionID, model, err)
+	a.emitResponseCompleteWithInfo(agentID, sessionID, model, finalErr, extraResult)
 
-	return err
+	return finalErr
 }
 
 // NewSession creates a new Claude Code session
@@ -252,7 +364,10 @@ func (a *App) AnswerQuestion(agentID, sessionID, toolUseID string, questions []m
 
 	// Step 4: Resume the session with "question answered" to trigger Claude continuation.
 	// No model/effort override — the agent's configured default (if any) applies via the CLI.
-	err := a.claude.SendMessage(agent.Folder, sessionID, "question answered", nil, false, "", "")
+	// The session's sticky OAuth pool key (if any) rides along so the resume
+	// authenticates as the same account (cache continuity).
+	_, extraEnv, _ := a.resolveOAuthEnv(sessionID, "")
+	err := a.claude.SendMessage(agent.Folder, sessionID, "question answered", nil, false, "", "", extraEnv)
 
 	// Emit response_complete event AFTER Claude finishes (no user-selected model in this path)
 	a.emitResponseComplete(agentID, sessionID, "", err)

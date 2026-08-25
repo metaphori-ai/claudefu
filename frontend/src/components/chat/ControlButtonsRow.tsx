@@ -3,6 +3,7 @@ import { Tooltip } from '../Tooltip';
 import { AttachmentPreviewRow } from './AttachmentPreviewRow';
 import { ModelSelector } from './ModelSelector';
 import { EffortSelector } from './EffortSelector';
+import { KeySelector } from './KeySelector';
 import { getSupportedEffortLevels, getModelEntry } from './modelCatalog';
 import type { Attachment } from './types';
 
@@ -72,6 +73,9 @@ interface ControlButtonsRowProps {
   agentDefaultEffort: string;
   onSaveModelAsAgentDefault?: (modelId: string) => void | Promise<void>;
   onSaveEffortAsAgentDefault?: (level: string) => void | Promise<void>;
+  // OAuth key selection (per-agent): "" = Auto rotation, key ID = pinned
+  selectedOauthKey: string;
+  onOauthKeyChange: (keyId: string) => void;
   // Attachments to show in the spacer area
   attachments?: Attachment[];
   onAttachmentRemove?: (id: string) => void;
@@ -97,6 +101,8 @@ export function ControlButtonsRow({
   agentDefaultEffort,
   onSaveModelAsAgentDefault,
   onSaveEffortAsAgentDefault,
+  selectedOauthKey,
+  onOauthKeyChange,
   attachments = [],
   onAttachmentRemove,
   isSending = false
@@ -199,6 +205,12 @@ export function ControlButtonsRow({
           </button>
         </Tooltip>
       )}
+
+      {/* OAuth Key Selector — Auto rotation vs pinned key; hidden when pool empty */}
+      <KeySelector
+        selectedKey={selectedOauthKey}
+        onKeyChange={onOauthKeyChange}
+      />
 
       {/* Spacer area - also shows attachments if any */}
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', marginLeft: '8px' }}>

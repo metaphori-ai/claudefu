@@ -14,6 +14,7 @@ import (
 	"claudefu/internal/auth"
 	"claudefu/internal/defaults"
 	"claudefu/internal/mcpserver"
+	"claudefu/internal/oauthkeys"
 	"claudefu/internal/providers"
 	"claudefu/internal/proxy"
 	"claudefu/internal/runtime"
@@ -38,8 +39,9 @@ type App struct {
 	currentWorkspace *workspace.Workspace
 	workspaceState   *workspace.WorkspaceState // Per-machine runtime state (local/workspace-state/)
 	mcpServer        *mcpserver.MCPService
-	proxy            *proxy.Service   // Cache fix reverse proxy
-	sessionService   *session.Service // Instant session creation (no CLI wait)
+	proxy            *proxy.Service    // Cache fix reverse proxy
+	sessionService   *session.Service  // Instant session creation (no CLI wait)
+	oauthKeys        *oauthkeys.Manager // OAuth token pool + rotation state
 	terminalManager  *terminal.Manager
 	cliArgs          *CLIArgs         // CLI arguments (e.g., `claudefu .`)
 	reconciledIDs    map[string]string // oldAgentID → newAgentID from registry reconciliation
@@ -202,6 +204,9 @@ func (a *App) loadPersistedState() {
 
 	// Initialize session service (instant session creation)
 	a.sessionService = session.NewService()
+
+	// Initialize OAuth key pool (rotation across subscription accounts)
+	a.oauthKeys = oauthkeys.NewManager(sm.GetConfigPath())
 
 	// Ensure default templates exist (UPSERT: create if missing, never overwrite)
 	a.ensureDefaultTemplates()

@@ -98,7 +98,9 @@ func (a *App) InjectInboxMessage(agentID, sessionID, messageID string) error {
 	formattedMsg := fmt.Sprintf("[Message from %s]\n\n%s", msg.FromAgentName, msg.Message)
 
 	// Send to Claude session — no model/effort override, use the agent's configured default.
-	if err := a.claude.SendMessage(agent.Folder, sessionID, formattedMsg, nil, false, "", ""); err != nil {
+	// The session's sticky OAuth pool key (if any) rides along for cache continuity.
+	_, extraEnv, _ := a.resolveOAuthEnv(sessionID, "")
+	if err := a.claude.SendMessage(agent.Folder, sessionID, formattedMsg, nil, false, "", "", extraEnv); err != nil {
 		return err
 	}
 
