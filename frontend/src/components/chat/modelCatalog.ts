@@ -53,10 +53,13 @@ export const MODEL_CATALOG: ModelEntry[] = [
   { id: 'haiku',     label: 'haiku',            group: 'alias', family: 'haiku',  effortLevels: EFFORT_NONE },
 
   // ---------- Explicit — Fable ----------
-  // Anthropic's most capable widely released model (GA 2026-06-09). 1M context by
-  // default (no 200K/[1m] split), always-on adaptive thinking, full five-level effort
-  // (default high). Explicit ID only — no `fable` alias.
-  { id: 'claude-fable-5',         label: 'Fable',            group: 'explicit', family: 'fable',  effortLevels: EFFORT_FULL, contextOneMillion: true, description: "Anthropic's most capable widely released model. 1M context, always-on adaptive thinking, effort default high." },
+  // Anthropic's most capable widely released models. 1M context by default (no
+  // 200K/[1m] split), always-on adaptive thinking, full five-level effort
+  // (default high). Explicit IDs only — no `fable` alias.
+  // Fable 5.1 (GA 2026-09-01): same $10/$50 pricing as Fable 5 with cache reads
+  // at a quarter of the cost; stronger long-running agentic coding.
+  { id: 'claude-fable-5-1',       label: 'Fable 5.1',        group: 'explicit', family: 'fable',  effortLevels: EFFORT_FULL, contextOneMillion: true, description: "Anthropic's most capable widely released model (successor to Fable 5). 1M context, always-on adaptive thinking, effort default high; cache reads at a quarter of Fable 5's price." },
+  { id: 'claude-fable-5',         label: 'Fable 5',          group: 'explicit', family: 'fable',  effortLevels: EFFORT_FULL, contextOneMillion: true, description: 'Previous Fable generation. 1M context, always-on adaptive thinking, effort default high.' },
 
   // ---------- Explicit — Opus ----------
   // Opus 5 (GA): 1M-native context, drop-in at Opus 4.8 pricing. Claude Code still

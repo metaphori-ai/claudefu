@@ -5,6 +5,11 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.68] - 2026-09-01
+
+### Added
+- **Claude Fable 5.1 in the model picker** (`frontend/src/components/chat/modelCatalog.ts`) — added `claude-fable-5-1` (released 2026-09-01) to `MODEL_CATALOG` at the top of the Fable block: `family: 'fable'`, full five-level effort incl. `xhigh` (default `high`), `contextOneMillion` with no 200K/`[1m]` split (1M is native, matching the Fable 5 pattern), always-on adaptive thinking. Same $10/$50 pricing as Fable 5 with cache reads at a quarter of the cost ($0.25/MTok) — noted in the tooltip since cache economics are why the OAuth rotation's Auto mode rides one key per session. Because the catalog is the single source of truth, the entry flows automatically into the ModelSelector "Specific Versions" list, the EffortSelector level set, InputArea's ctx-window chip, and the auto-derived `ENV_ANY_MODEL_OPTIONS` (`ANTHROPIC_MODEL` / `CLAUDE_CODE_SUBAGENT_MODEL` dropdowns). The existing `claude-fable-5` entry was relabeled "Fable" → "Fable 5" to disambiguate. Model strings pass to `--model` verbatim, so no backend change; the 429 limit parser already matches "Fable limit" messages case-insensitively, so 5.1 limits classify unchanged. (User-config side, outside the repo: all 25 `AGENT_MODEL: claude-fable-5` values in `~/.claudefu/agents.json` were migrated to `claude-fable-5-1` in the same pass.)
+
 ## [0.5.67] - 2026-08-25
 
 ### Changed
