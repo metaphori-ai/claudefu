@@ -5,6 +5,14 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.70] - 2026-09-03
+
+### Added
+- **OAuth rotation decision log** (`internal/oauthkeys/log.go`, `manager.go`, `app_claude.go`) — `~/.claudefu/oauth-rotation-{hostname}.log`, an append-only audit trail of every pool decision. Follows the `env-vars-{hostname}.json` precedent: it lives in the synced config root so every machine's decisions are visible everywhere, but the hostname in the filename means exactly one writer per file — append-only with a single writer can never produce a Syncthing conflict. Tokens are never written. Each resolve logs the decision *and its reason* (`STICKY(auto|pinned)`, `AUTO-PICK` with the full candidate order plus who's benched and until when, `sticky X is LIMITED → re-select`, `PINNED`, `NONE(reason)`); each 429 logs the agent slug, short session ID, key, mode, parsed reset clock, and the raw CLI text; each rotation logs `FROM → TO (n/cap)`; benches, manual clears, cap-reached, and all-limited are logged too. Motivated by a screenshot of the same key "rotating" three times in one minute — which the state file showed was three *concurrent sessions* each legitimately in flight on that key when it limited (`lastUsedAt` strictly before `lastLimitAt` proved the benched key was never re-selected). The log makes that distinction readable directly: concurrent sessions show distinct `session=` values; a real re-selection bug would show one session resolving to a benched key.
+
+### Changed
+- **Rotation toasts name the agent** — title is now `OAuth key rotated · {slug}`, so several sessions rotating off the same key at once are distinguishable instead of reading as one session flapping.
+
 ## [0.5.69] - 2026-09-01
 
 ### Added

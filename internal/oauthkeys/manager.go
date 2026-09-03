@@ -92,6 +92,8 @@ type Manager struct {
 	config Config
 	state  map[string]*KeyState    // keyID → state
 	sticky map[string]stickyEntry // sessionID → riding key (in-memory; cache-greedy stickiness)
+
+	logMu sync.Mutex // serializes appends to the rotation log (see log.go)
 }
 
 // Send modes returned by ResolveForSend.
@@ -315,6 +317,9 @@ func (m *Manager) RecordLimit(id, limitType string, until time.Time) {
 	st.LastLimitType = limitType
 	st.LastLimitAt = &now
 	_ = m.saveStateLocked()
+	if k := m.findByIDLocked(id); k != nil {
+		m.Log("limit key=%s type=%s until=%s (in %s)", k.Label, limitType, until.Format("Mon 15:04:05 MST"), until.Sub(now).Round(time.Second))
+	}
 }
 
 func (m *Manager) ClearLimits(id string) {
@@ -325,6 +330,9 @@ func (m *Manager) ClearLimits(id string) {
 		st.WeeklyLimitedUntil = nil
 		st.LastLimitType = ""
 		_ = m.saveStateLocked()
+		if k := m.findByIDLocked(id); k != nil {
+			m.Log("limits cleared manually key=%s", k.Label)
+		}
 	}
 }
 
@@ -493,10 +501,12 @@ func (m *Manager) ResolveForSend(sessionID, spec string) (keyID, token, mode str
 	if spec != "" {
 		k := m.findByIDLocked(spec)
 		if k == nil {
+			m.Log("resolve session=%s spec=%s → NONE (unknown pinned key id)", short(sessionID), short(spec))
 			return "", "", ModeNone
 		}
 		m.sticky[sessionID] = stickyEntry{keyID: k.ID, pinned: true}
 		m.markUsedLocked(k.ID)
+		m.Log("resolve session=%s → %s PINNED", short(sessionID), m.describeLocked(k, now))
 		return k.ID, k.Token, ModePinned
 	}
 
@@ -505,28 +515,77 @@ func (m *Manager) ResolveForSend(sessionID, spec string) (keyID, token, mode str
 	// (queued sends pass "" but must not silently switch accounts); an
 	// auto-picked key is dropped once it leaves rotation.
 	if entry, ok := m.sticky[sessionID]; ok {
-		if k := m.findByIDLocked(entry.keyID); k != nil &&
-			(entry.pinned || k.InRotation) && m.availableLocked(k.ID, now) {
+		k := m.findByIDLocked(entry.keyID)
+		switch {
+		case k == nil:
+			m.Log("resolve session=%s sticky key %s no longer exists → re-select", short(sessionID), short(entry.keyID))
+		case !(entry.pinned || k.InRotation):
+			m.Log("resolve session=%s sticky %s left rotation → re-select", short(sessionID), k.Label)
+		case !m.availableLocked(k.ID, now):
+			m.Log("resolve session=%s sticky %s is LIMITED → re-select", short(sessionID), m.describeLocked(k, now))
+		default:
 			m.markUsedLocked(k.ID)
 			mode := ModeAuto
 			if entry.pinned {
 				mode = ModePinned
 			}
+			m.Log("resolve session=%s → %s STICKY(%s)", short(sessionID), m.describeLocked(k, now), mode)
 			return k.ID, k.Token, mode
 		}
 	}
 
 	if !m.hasRotationLocked() {
+		m.Log("resolve session=%s → NONE (no keys in rotation; legacy env)", short(sessionID))
 		return "", "", ModeNone
 	}
 
 	k := m.selectAutoLocked(now)
 	if k == nil {
+		m.Log("resolve session=%s → NONE (auto select found nothing)", short(sessionID))
 		return "", "", ModeNone
 	}
 	m.sticky[sessionID] = stickyEntry{keyID: k.ID, pinned: false}
 	m.markUsedLocked(k.ID)
+	m.Log("resolve session=%s → %s AUTO-PICK order=%s", short(sessionID), m.describeLocked(k, now), m.candidateOrderLocked(now))
 	return k.ID, k.Token, ModeAuto
+}
+
+// candidateOrderLocked renders the available rotation keys in canonical sort
+// order — the evidence trail for why a particular key was picked.
+func (m *Manager) candidateOrderLocked(now time.Time) string {
+	var cands []*OAuthKey
+	var benched []string
+	for i := range m.config.Keys {
+		k := &m.config.Keys[i]
+		if !k.InRotation {
+			continue
+		}
+		if m.availableLocked(k.ID, now) {
+			cands = append(cands, k)
+		} else {
+			benched = append(benched, m.describeLocked(k, now))
+		}
+	}
+	m.sortCandidatesLocked(cands, now)
+	out := "["
+	for i, k := range cands {
+		if i > 0 {
+			out += ", "
+		}
+		out += m.describeLocked(k, now)
+	}
+	out += "]"
+	if len(benched) > 0 {
+		out += " benched=["
+		for i, b := range benched {
+			if i > 0 {
+				out += ", "
+			}
+			out += b
+		}
+		out += "]"
+	}
+	return out
 }
 
 // DefaultKey returns the pool's current best rotation key (label + token) by
@@ -564,12 +623,14 @@ func (m *Manager) SelectNextAfterLimit(sessionID string) (keyID, token string, o
 		}
 	}
 	if len(cands) == 0 {
+		m.Log("next-after-limit session=%s → NONE available %s", short(sessionID), m.candidateOrderLocked(now))
 		return "", "", false
 	}
 	m.sortCandidatesLocked(cands, now)
 	best := cands[0]
 	m.sticky[sessionID] = stickyEntry{keyID: best.ID, pinned: false}
 	m.markUsedLocked(best.ID)
+	m.Log("next-after-limit session=%s → %s order=%s", short(sessionID), best.Label, m.candidateOrderLocked(now))
 	return best.ID, best.Token, true
 }
 

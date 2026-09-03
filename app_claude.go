@@ -132,6 +132,15 @@ func (a *App) resolveOAuthEnv(sessionID, spec string) (keyID string, extraEnv ma
 	return keyID, map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": token}, mode
 }
 
+// truncateForLog bounds a raw CLI result for the rotation log.
+func truncateForLog(s string, n int) string {
+	s = strings.ReplaceAll(s, "\n", " ")
+	if len(s) > n {
+		return s[:n] + "…"
+	}
+	return s
+}
+
 // oauthKeyLabel returns a key's display label (falls back to the ID).
 func (a *App) oauthKeyLabel(id string) string {
 	if a.oauthKeys != nil {
@@ -369,9 +378,15 @@ rotationLoop:
 				break rotationLoop
 			}
 
+			limitedLabel := a.oauthKeyLabel(keyID)
+			resetStr := "unparseable"
+			if resetAt != nil {
+				resetStr = resetAt.Format(time.RFC3339)
+			}
+			a.oauthKeys.Log("429 agent=%s session=%s key=%s mode=%s type=%s parsedReset=%s result=%q",
+				agent.GetSlug(), sessionID[:min(8, len(sessionID))], limitedLabel, mode, limitType, resetStr, truncateForLog(result, 240))
 			until := a.oauthKeys.ComputeLimitedUntil(keyID, limitType, resetAt)
 			a.oauthKeys.RecordLimit(keyID, limitType, until)
-			limitedLabel := a.oauthKeyLabel(keyID)
 			fmt.Printf("[OAUTH] key %q hit %s limit, benched until %s\n", limitedLabel, limitType, until.Format(time.RFC3339))
 			if a.rt != nil {
 				a.rt.Emit("oauth:keys-changed", agentID, sessionID, map[string]any{
@@ -382,24 +397,29 @@ rotationLoop:
 			}
 
 			if mode == oauthkeys.ModePinned {
+				a.oauthKeys.Log("pinned key %s limited — no rotation (agent=%s)", limitedLabel, agent.GetSlug())
 				break rotationLoop
 			}
 			if rotations >= maxRotations {
+				a.oauthKeys.Log("rotation cap %d reached (agent=%s) — giving up", maxRotations, agent.GetSlug())
 				break rotationLoop
 			}
 
 			nextID, _, ok := a.oauthKeys.SelectNextAfterLimit(sessionID)
 			if !ok {
+				a.oauthKeys.Log("ALL LIMITED (agent=%s) — surfacing dialog", agent.GetSlug())
 				extraResult = a.oauthKeys.AllLimitedSummary()
 				break rotationLoop
 			}
 			rotations++
 			nextLabel := a.oauthKeyLabel(nextID)
 			fmt.Printf("[OAUTH] rotating %q -> %q, resuming with continue prompt\n", limitedLabel, nextLabel)
+			a.oauthKeys.Log("ROTATE agent=%s session=%s %s → %s (rotation %d/%d)",
+				agent.GetSlug(), sessionID[:min(8, len(sessionID))], limitedLabel, nextLabel, rotations, maxRotations)
 			if a.rt != nil {
 				a.rt.Emit("mcp:notification", agentID, sessionID, map[string]any{
 					"type":    "warning",
-					"title":   "OAuth key rotated",
+					"title":   "OAuth key rotated · " + agent.GetSlug(),
 					"message": fmt.Sprintf("%s hit its %s limit (resets %s). Continuing with %s.", limitedLabel, limitType, until.Format("Mon 3:04 PM"), nextLabel),
 				})
 			}
