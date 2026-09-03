@@ -708,3 +708,80 @@ func DeleteFromMessage(folder, sessionID, messageUUID string) (int, error) {
 	fmt.Printf("[PATCH] DeleteFromMessage: removed %d lines from %s (cut at line %d, uuid=%s)\n", removed, sessionPath, cutIndex, messageUUID)
 	return removed, nil
 }
+
+// LastUserMessage describes the most recent type:"user" entry in a session JSONL.
+type LastUserMessage struct {
+	UUID      string
+	Text      string    // first text block (or the string content); "" if none
+	Timestamp time.Time // zero when missing/unparseable
+}
+
+// FindLastUserMessage scans a session JSONL backwards for the last type:"user"
+// entry. Used by the server-error retry loop to identify the message that
+// needs pruning before a retry — Claude CLI writes the user message to JSONL
+// before the API call, so on a 529/5xx the message is already on disk even
+// though the API call failed. The caller MUST verify the entry is the one it
+// just sent (timestamp after send start, or exact text match) before pruning —
+// otherwise a failure that never wrote the message would truncate real history.
+// Returns nil when no user message is found.
+func FindLastUserMessage(folder, sessionID string) *LastUserMessage {
+	encodedName := encodeProjectPath(folder)
+	sessionPath := filepath.Join(os.Getenv("HOME"), ".claude", "projects", encodedName, sessionID+".jsonl")
+
+	data, err := os.ReadFile(sessionPath)
+	if err != nil {
+		return nil
+	}
+
+	lines := strings.Split(string(data), "\n")
+
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line == "" || !strings.HasPrefix(line, "{") {
+			continue
+		}
+
+		var probe struct {
+			Type      string `json:"type"`
+			UUID      string `json:"uuid"`
+			Timestamp string `json:"timestamp"`
+			Message   struct {
+				Content json.RawMessage `json:"content"`
+			} `json:"message"`
+		}
+		if err := json.Unmarshal([]byte(line), &probe); err != nil {
+			continue
+		}
+		if probe.Type != "user" || probe.UUID == "" {
+			continue
+		}
+
+		out := &LastUserMessage{UUID: probe.UUID}
+		if ts, err := time.Parse(time.RFC3339Nano, probe.Timestamp); err == nil {
+			out.Timestamp = ts
+		} else if ts, err := time.Parse(time.RFC3339, probe.Timestamp); err == nil {
+			out.Timestamp = ts
+		}
+
+		// content is either a plain string or an array of content blocks
+		var asString string
+		if err := json.Unmarshal(probe.Message.Content, &asString); err == nil {
+			out.Text = asString
+		} else {
+			var blocks []struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			}
+			if err := json.Unmarshal(probe.Message.Content, &blocks); err == nil {
+				for _, b := range blocks {
+					if b.Type == "text" {
+						out.Text = b.Text
+						break
+					}
+				}
+			}
+		}
+		return out
+	}
+	return nil
+}

@@ -142,6 +142,124 @@ func (a *App) oauthKeyLabel(id string) string {
 	return id
 }
 
+// isServerRetryable returns true for transient server errors that warrant
+// backoff + retry (the API is overloaded or briefly unhealthy). Rate limits
+// (429) are handled by the OAuth rotation, not by retries. The text fallback
+// catches an overloaded_error whose status field didn't make it into the
+// result line.
+func isServerRetryable(status int, result string) bool {
+	switch status {
+	case 408, 500, 502, 503, 504, 529:
+		return true
+	}
+	if status == 0 {
+		lower := strings.ToLower(result)
+		return strings.Contains(lower, "overloaded") || strings.Contains(lower, "529")
+	}
+	return false
+}
+
+// retryBackoffDelay returns the delay for a server-error retry attempt.
+// Exponential: 2, 4, 8, 16, 32, 64, 128, 256, 256, 256, ... (capped at 256s).
+func retryBackoffDelay(attempt int) time.Duration {
+	secs := 1 << attempt // attempt 1 → 2, 2 → 4, ..., 8 → 256
+	if secs > 256 {
+		secs = 256
+	}
+	return time.Duration(secs) * time.Second
+}
+
+// emitRetryStatus sends the retry:status event for the inline indicator.
+func (a *App) emitRetryStatus(agentID, sessionID, status string, attempt int, delaySec int) {
+	if a.rt == nil {
+		return
+	}
+	a.rt.Emit("retry:status", agentID, sessionID, map[string]any{
+		"status":   status, // "waiting" | "retrying" | "cleared"
+		"attempt":  attempt,
+		"delaySec": delaySec,
+	})
+}
+
+// registerRetryCancel creates a per-session cancel channel for the
+// server-error retry backoff. CancelSession closes it to abort the sleep.
+func (a *App) registerRetryCancel(sessionID string) chan struct{} {
+	a.retryCancelMu.Lock()
+	defer a.retryCancelMu.Unlock()
+	ch := make(chan struct{})
+	a.retryCancels[sessionID] = ch
+	return ch
+}
+
+// unregisterRetryCancel removes the channel — only if it is still ours, so a
+// newer concurrent send for the same session keeps its own registration.
+func (a *App) unregisterRetryCancel(sessionID string, ch chan struct{}) {
+	a.retryCancelMu.Lock()
+	defer a.retryCancelMu.Unlock()
+	if a.retryCancels[sessionID] == ch {
+		delete(a.retryCancels, sessionID)
+	}
+}
+
+func (a *App) signalRetryCancel(sessionID string) {
+	a.retryCancelMu.RLock()
+	ch, ok := a.retryCancels[sessionID]
+	a.retryCancelMu.RUnlock()
+	if ok {
+		select {
+		case <-ch: // already closed
+		default:
+			close(ch)
+		}
+	}
+}
+
+// pruneFailedUserMessage removes the user message Claude CLI wrote for the
+// send that just failed, so the retry doesn't append a duplicate. It ONLY
+// prunes an entry it can prove is ours: written after sentAt (a historical
+// entry can never carry a fresh timestamp — the CLI rewrites resume context
+// with OLD timestamps), or, when the timestamp is unusable, an exact text
+// match with what we sent. Anything else is left alone — a failure that
+// never reached the JSONL write means there is nothing to prune, and the
+// retry is safe as-is. Returns true if pruned.
+func (a *App) pruneFailedUserMessage(agentID, folder, sessionID, sentText string, sentAt time.Time) bool {
+	last := workspace.FindLastUserMessage(folder, sessionID)
+	if last == nil {
+		return false
+	}
+
+	textMatches := strings.TrimSpace(last.Text) == strings.TrimSpace(sentText)
+	isOurs := false
+	switch {
+	case !last.Timestamp.IsZero():
+		// Fresh timestamp → written by this send. 2s slack covers clock granularity.
+		isOurs = last.Timestamp.After(sentAt.Add(-2 * time.Second))
+	default:
+		isOurs = textMatches && sentText != ""
+	}
+	if !isOurs {
+		fmt.Printf("[RETRY] last user entry %s is NOT the failed send (ts=%s textMatch=%v) — nothing to prune\n",
+			last.UUID, last.Timestamp.Format(time.RFC3339), textMatches)
+		return false
+	}
+	if !textMatches {
+		fmt.Printf("[RETRY] note: pruning by timestamp; text differs from sent (attachments-only or CLI reformatting)\n")
+	}
+
+	removed, err := workspace.DeleteFromMessage(folder, sessionID, last.UUID)
+	if err != nil {
+		fmt.Printf("[RETRY] prune failed: %v\n", err)
+		return false
+	}
+	fmt.Printf("[RETRY] pruned %d lines (uuid=%s)\n", removed, last.UUID)
+	if a.watcher != nil {
+		if err := a.watcher.ReloadSession(agentID, folder, sessionID); err != nil {
+			fmt.Printf("[RETRY] session reload after prune: %v\n", err)
+		}
+	}
+	return true
+}
+
 // SendMessage sends a message to Claude Code, optionally with image attachments.
 // If attachments are provided, uses stdin with stream-json format.
 // If planMode is true, forces Claude into planning mode.
@@ -153,12 +271,15 @@ func (a *App) oauthKeyLabel(id string) string {
 // pinned (that key always, no auto-rotation on limit).
 // Emits "response_complete" event when the Claude CLI process exits.
 //
-// OAuth rotation flow (Auto mode only): a 429/limit error benches the current
-// key (session and weekly limits tracked separately, reset clock parsed from
-// the error's own message +2min buffer), picks the next key by nearest weekly
-// reset then nearest session reset, and resumes the turn by sending the
-// auto-continue prompt — the original message is already in the JSONL, so
-// "continue" picks it up (same as the long-standing manual practice).
+// Two nested retry mechanisms:
+//
+// 1. Server-error retry (inner loop): 529/5xx/408 — prune the user message
+//    Claude CLI already wrote to the JSONL, backoff 2→256s cap (unlimited
+//    attempts until cancel), then retry with the original message+attachments.
+//
+// 2. OAuth rotation (outer loop): 429 usage limit — bench the key, pick the
+//    next by nearest weekly reset, send auto-continue prompt (the original
+//    message is already in the JSONL).
 func (a *App) SendMessage(agentID, sessionID, message string, attachments []types.Attachment, planMode bool, model, effort, oauthKey string) error {
 	if a.claude == nil {
 		return fmt.Errorf("claude service not initialized")
@@ -172,80 +293,127 @@ func (a *App) SendMessage(agentID, sessionID, message string, attachments []type
 		return fmt.Errorf("agent not found: %s", agentID)
 	}
 
+	retryCh := a.registerRetryCancel(sessionID)
+	defer a.unregisterRetryCancel(sessionID, retryCh)
+
 	curMsg, curAtt := message, attachments
 	rotations := 0
 	maxRotations := 0
 	if a.oauthKeys != nil {
-		maxRotations = a.oauthKeys.RotationSize() // hard cap: a misparse can never loop forever
+		maxRotations = a.oauthKeys.RotationSize()
 	}
 	var finalErr error
 	extraResult := ""
+	cancelled := false
 
+rotationLoop:
 	for {
-		// Record send time BEFORE calling Claude - used to filter out historical context
-		// that Claude Code writes when resuming a session (those have old timestamps)
-		if a.rt != nil {
-			a.rt.SetLastSendTime(agentID, sessionID, time.Now())
-		}
+		retryAttempt := 0
 
-		keyID, extraEnv, mode := a.resolveOAuthEnv(sessionID, oauthKey)
+	retryLoop:
+		for {
+			sentAt := time.Now()
+			if a.rt != nil {
+				a.rt.SetLastSendTime(agentID, sessionID, sentAt)
+			}
 
-		// Call Claude - BLOCKS until CLI process exits
-		finalErr = a.claude.SendMessage(agent.Folder, sessionID, curMsg, curAtt, planMode, model, effort, extraEnv)
-		if finalErr == nil || keyID == "" {
-			break
-		}
+			keyID, extraEnv, mode := a.resolveOAuthEnv(sessionID, oauthKey)
 
-		status, result, _ := parseClaudeCLIError(finalErr.Error())
-		limitType, resetAt, isLimit := oauthkeys.ParseLimitInfo(status, result)
-		if !isLimit {
-			break
-		}
+			if retryAttempt > 0 {
+				a.emitRetryStatus(agentID, sessionID, "retrying", retryAttempt, 0)
+			}
 
-		// Bench the key that just hit the limit.
-		until := a.oauthKeys.ComputeLimitedUntil(keyID, limitType, resetAt)
-		a.oauthKeys.RecordLimit(keyID, limitType, until)
-		limitedLabel := a.oauthKeyLabel(keyID)
-		fmt.Printf("[OAUTH] key %q hit %s limit, benched until %s\n", limitedLabel, limitType, until.Format(time.RFC3339))
-		if a.rt != nil {
-			a.rt.Emit("oauth:keys-changed", agentID, sessionID, map[string]any{
-				"keyId":        keyID,
-				"limitType":    limitType,
-				"limitedUntil": until.UTC().Format(time.RFC3339),
-			})
-		}
+			finalErr = a.claude.SendMessage(agent.Folder, sessionID, curMsg, curAtt, planMode, model, effort, extraEnv)
 
-		if mode == oauthkeys.ModePinned {
-			break // pinned key hit its limit — no silent rotation, dialog shows, user swaps
-		}
-		if rotations >= maxRotations {
-			break
-		}
+			if finalErr == nil {
+				if retryAttempt > 0 {
+					a.emitRetryStatus(agentID, sessionID, "cleared", 0, 0)
+				}
+				break rotationLoop
+			}
 
-		nextID, _, ok := a.oauthKeys.SelectNextAfterLimit(sessionID)
-		if !ok {
-			extraResult = a.oauthKeys.AllLimitedSummary()
-			break
-		}
-		rotations++
-		nextLabel := a.oauthKeyLabel(nextID)
-		fmt.Printf("[OAUTH] rotating %q -> %q, resuming with continue prompt\n", limitedLabel, nextLabel)
-		if a.rt != nil {
-			a.rt.Emit("mcp:notification", agentID, sessionID, map[string]any{
-				"type":    "warning",
-				"title":   "OAuth key rotated",
-				"message": fmt.Sprintf("%s hit its %s limit (resets %s). Continuing with %s.", limitedLabel, limitType, until.Format("Mon 3:04 PM"), nextLabel),
-			})
-		}
+			status, result, _ := parseClaudeCLIError(finalErr.Error())
 
-		// Resume the turn on the fresh key. The original message is already in
-		// the session JSONL; the continue prompt picks it up.
-		curMsg = a.oauthKeys.GetAutoContinuePrompt()
-		curAtt = nil
+			// --- Server-error retry (529/5xx/408): prune JSONL + backoff ---
+			if isServerRetryable(status, result) {
+				retryAttempt++
+				delay := retryBackoffDelay(retryAttempt)
+				fmt.Printf("[RETRY] attempt %d: status %d, backoff %v\n", retryAttempt, status, delay)
+
+				a.pruneFailedUserMessage(agentID, agent.Folder, sessionID, curMsg, sentAt)
+				a.emitRetryStatus(agentID, sessionID, "waiting", retryAttempt, int(delay.Seconds()))
+
+				timer := time.NewTimer(delay)
+				select {
+				case <-timer.C:
+					continue retryLoop
+				case <-retryCh:
+					timer.Stop()
+					fmt.Printf("[RETRY] cancelled during backoff (attempt %d)\n", retryAttempt)
+					a.emitRetryStatus(agentID, sessionID, "cleared", 0, 0)
+					cancelled = true
+					break rotationLoop
+				}
+			}
+
+			if retryAttempt > 0 {
+				a.emitRetryStatus(agentID, sessionID, "cleared", 0, 0)
+			}
+
+			// --- OAuth rotation (429 rate/usage limit) ---
+			limitType, resetAt, isLimit := oauthkeys.ParseLimitInfo(status, result)
+			if !isLimit {
+				break rotationLoop
+			}
+			if keyID == "" {
+				break rotationLoop
+			}
+
+			until := a.oauthKeys.ComputeLimitedUntil(keyID, limitType, resetAt)
+			a.oauthKeys.RecordLimit(keyID, limitType, until)
+			limitedLabel := a.oauthKeyLabel(keyID)
+			fmt.Printf("[OAUTH] key %q hit %s limit, benched until %s\n", limitedLabel, limitType, until.Format(time.RFC3339))
+			if a.rt != nil {
+				a.rt.Emit("oauth:keys-changed", agentID, sessionID, map[string]any{
+					"keyId":        keyID,
+					"limitType":    limitType,
+					"limitedUntil": until.UTC().Format(time.RFC3339),
+				})
+			}
+
+			if mode == oauthkeys.ModePinned {
+				break rotationLoop
+			}
+			if rotations >= maxRotations {
+				break rotationLoop
+			}
+
+			nextID, _, ok := a.oauthKeys.SelectNextAfterLimit(sessionID)
+			if !ok {
+				extraResult = a.oauthKeys.AllLimitedSummary()
+				break rotationLoop
+			}
+			rotations++
+			nextLabel := a.oauthKeyLabel(nextID)
+			fmt.Printf("[OAUTH] rotating %q -> %q, resuming with continue prompt\n", limitedLabel, nextLabel)
+			if a.rt != nil {
+				a.rt.Emit("mcp:notification", agentID, sessionID, map[string]any{
+					"type":    "warning",
+					"title":   "OAuth key rotated",
+					"message": fmt.Sprintf("%s hit its %s limit (resets %s). Continuing with %s.", limitedLabel, limitType, until.Format("Mon 3:04 PM"), nextLabel),
+				})
+			}
+
+			curMsg = a.oauthKeys.GetAutoContinuePrompt()
+			curAtt = nil
+			break retryLoop // back to rotationLoop with fresh key + continue prompt
+		}
 	}
 
-	// Emit response_complete event AFTER the final attempt
-	// This is the authoritative signal that the response is complete
+	if cancelled {
+		a.claude.MarkCancelled(sessionID)
+	}
+
 	a.emitResponseCompleteWithInfo(agentID, sessionID, model, finalErr, extraResult)
 
 	return finalErr
@@ -432,6 +600,12 @@ func (a *App) CancelSession(agentID, sessionID string) error {
 	}
 
 	fmt.Printf("[DEBUG] CancelSession: agentID=%s sessionID=%s\n", agentID, sessionID)
+
+	// If the session is in a retry backoff sleep (no active process), signal
+	// the cancel channel to abort the wait. This is harmless if no retry is
+	// active (the channel doesn't exist or is already closed).
+	a.signalRetryCancel(sessionID)
+
 	return a.claude.CancelSession(sessionID)
 }
 

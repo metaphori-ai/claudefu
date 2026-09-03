@@ -472,6 +472,14 @@ func (s *ClaudeCodeService) CancelSession(sessionID string) error {
 	return nil
 }
 
+// MarkCancelled records that a session was cancelled without sending a signal
+// (e.g. the retry backoff was interrupted before a process was spawned).
+func (s *ClaudeCodeService) MarkCancelled(sessionID string) {
+	s.cancelledSessionsMu.Lock()
+	defer s.cancelledSessionsMu.Unlock()
+	s.cancelledSessions[sessionID] = true
+}
+
 // WasCancelled checks if a session was cancelled via CancelSession.
 // This is used to distinguish user-initiated cancellation from errors.
 // Calling this method clears the cancelled flag (single-use check).

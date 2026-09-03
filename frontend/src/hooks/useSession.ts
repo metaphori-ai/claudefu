@@ -87,6 +87,10 @@ export function useSession() {
     return state.respondingAgents.get(agentId) ?? false;
   }, [state.respondingAgents]);
 
+  const setRetryState = useCallback((agentId: string, status: string, attempt: number, delaySec: number) => {
+    dispatch({ type: 'SET_RETRY_STATE', payload: { agentId, status, attempt, delaySec } });
+  }, [dispatch]);
+
   // Message Queue action creators
   const addToQueue = useCallback((agentId: string, message: QueuedMessage) => {
     dispatch({ type: 'ADD_TO_QUEUE', payload: { agentId, message } });
@@ -150,6 +154,7 @@ export function useSession() {
     messageQueues: state.messageQueues,
     lastSessionIds: state.lastSessionIds,
     backlogCounts: state.backlogCounts,
+    retryState: state.retryState,
 
     // Actions
     selectSession,
@@ -172,6 +177,7 @@ export function useSession() {
     isAgentResponding,
     // Backlog count actions
     setBacklogCount,
+    setRetryState,
     getBacklogCount,
     // Message Queue actions
     addToQueue,

@@ -17,7 +17,7 @@ type Session = types.Session;
  */
 export function useWailsEvents() {
   const { workspaceId, addDiscoveredSession } = useWorkspace();
-  const { setUnreadTotal, setInboxCounts, setMCPPendingQuestion, setMCPPendingPermission, setMCPPendingPlanReview, setAgentResponding, setBacklogCount } = useSession();
+  const { setUnreadTotal, setInboxCounts, setMCPPendingQuestion, setMCPPendingPermission, setMCPPendingPlanReview, setAgentResponding, setBacklogCount, setRetryState } = useSession();
   const {
     appendMessages,
     isMessageProcessed,
@@ -242,6 +242,21 @@ export function useWailsEvents() {
       EventsOff('backlog:changed');
     };
   }, [setBacklogCount]);
+
+  // Subscribe to retry:status events (server-error retry backoff indicator)
+  useEffect(() => {
+    const handleRetryStatus = (envelope: {
+      agentId?: string;
+      payload?: { status?: string; attempt?: number; delaySec?: number };
+    }) => {
+      if (envelope?.agentId && envelope.payload?.status) {
+        setRetryState(envelope.agentId, envelope.payload.status, envelope.payload.attempt ?? 0, envelope.payload.delaySec ?? 0);
+      }
+    };
+
+    EventsOn('retry:status', handleRetryStatus);
+    return () => { EventsOff('retry:status'); };
+  }, [setRetryState]);
 
   // Subscribe to response_complete events (backend signals when Claude CLI process exits)
   // This is the AUTHORITATIVE signal that a response is complete - much more reliable than stop_reason

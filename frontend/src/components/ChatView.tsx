@@ -152,7 +152,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
   const isLoading = localLoading || isContextLoading;
 
   // Per-agent "responding" state from context (survives agent switching)
-  const { setAgentResponding, isAgentResponding, addToQueue, removeFromQueue, shiftQueue, getQueue, setLastSessionId, mcpPendingPlanReview, setMCPPendingPlanReview } = useSession();
+  const { setAgentResponding, isAgentResponding, addToQueue, removeFromQueue, shiftQueue, getQueue, setLastSessionId, mcpPendingPlanReview, setMCPPendingPlanReview, retryState } = useSession();
   const isSending = isAgentResponding(agentId);
   const queue = getQueue(agentId);
 
@@ -967,6 +967,9 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
           agentDefaultEffort={agentDefaultEffort}
           selectedOauthKey={selectedOauthKey}
           onOauthKeyChange={setSelectedOauthKey}
+          retryStatus={retryState.get(agentId)?.status}
+          retryAttempt={retryState.get(agentId)?.attempt}
+          retryDelaySec={retryState.get(agentId)?.delaySec}
           onSaveModelAsAgentDefault={handleSaveModelAsAgentDefault}
           onSaveEffortAsAgentDefault={handleSaveEffortAsAgentDefault}
           attachments={attachments}

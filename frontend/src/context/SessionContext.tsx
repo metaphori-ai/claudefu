@@ -67,6 +67,8 @@ export interface SessionState {
   lastSessionIds: Map<string, string>;
   // Per-agent backlog non-done count (for badge)
   backlogCounts: Map<string, number>;
+  // Per-agent server-error retry state (inline indicator in ControlButtonsRow)
+  retryState: Map<string, { status: string; attempt: number; delaySec: number }>;
 }
 
 export type SessionAction =
@@ -97,6 +99,8 @@ export type SessionAction =
   | { type: 'SET_LAST_SESSION_ID'; payload: { agentId: string; sessionId: string } }
   // Backlog counts per agent
   | { type: 'SET_BACKLOG_COUNT'; payload: { agentId: string; count: number } }
+  // Server-error retry state (inline indicator)
+  | { type: 'SET_RETRY_STATE'; payload: { agentId: string; status: string; attempt: number; delaySec: number } }
   | { type: 'RESET' };
 
 const initialState: SessionState = {
@@ -114,6 +118,7 @@ const initialState: SessionState = {
   messageQueues: new Map(),
   lastSessionIds: new Map(),
   backlogCounts: new Map(),
+  retryState: new Map(),
 };
 
 function sessionReducer(state: SessionState, action: SessionAction): SessionState {
@@ -297,6 +302,20 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
       const newBacklogCounts = new Map(state.backlogCounts);
       newBacklogCounts.set(action.payload.agentId, action.payload.count);
       return { ...state, backlogCounts: newBacklogCounts };
+    }
+
+    case 'SET_RETRY_STATE': {
+      const newRetryState = new Map(state.retryState);
+      if (action.payload.status === 'cleared') {
+        newRetryState.delete(action.payload.agentId);
+      } else {
+        newRetryState.set(action.payload.agentId, {
+          status: action.payload.status,
+          attempt: action.payload.attempt,
+          delaySec: action.payload.delaySec,
+        });
+      }
+      return { ...state, retryState: newRetryState };
     }
 
     case 'RESET':

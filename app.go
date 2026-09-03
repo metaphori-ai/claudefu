@@ -46,6 +46,11 @@ type App struct {
 	cliArgs          *CLIArgs         // CLI arguments (e.g., `claudefu .`)
 	reconciledIDs    map[string]string // oldAgentID → newAgentID from registry reconciliation
 
+	// Server-error retry backoff: CancelSession closes the channel to abort
+	// the backoff sleep when no active claude process exists for the session.
+	retryCancels   map[string]chan struct{}
+	retryCancelMu  sync.RWMutex
+
 	// Self-update state
 	updateReady   bool   // True when update is downloaded and staged
 	updateVersion string // Version that's staged (e.g., "0.5.10")
@@ -54,7 +59,9 @@ type App struct {
 
 // NewApp creates a new App application struct
 func NewApp() *App {
-	return &App{}
+	return &App{
+		retryCancels: make(map[string]chan struct{}),
+	}
 }
 
 // =============================================================================

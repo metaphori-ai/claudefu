@@ -4,6 +4,7 @@ import { AttachmentPreviewRow } from './AttachmentPreviewRow';
 import { ModelSelector } from './ModelSelector';
 import { EffortSelector } from './EffortSelector';
 import { KeySelector } from './KeySelector';
+import { RetryIndicator } from './RetryIndicator';
 import { getSupportedEffortLevels, getModelEntry } from './modelCatalog';
 import type { Attachment } from './types';
 
@@ -76,6 +77,10 @@ interface ControlButtonsRowProps {
   // OAuth key selection (per-agent): "" = Auto rotation, key ID = pinned
   selectedOauthKey: string;
   onOauthKeyChange: (keyId: string) => void;
+  // Server-error retry indicator state
+  retryStatus?: string;
+  retryAttempt?: number;
+  retryDelaySec?: number;
   // Attachments to show in the spacer area
   attachments?: Attachment[];
   onAttachmentRemove?: (id: string) => void;
@@ -103,6 +108,9 @@ export function ControlButtonsRow({
   onSaveEffortAsAgentDefault,
   selectedOauthKey,
   onOauthKeyChange,
+  retryStatus,
+  retryAttempt = 0,
+  retryDelaySec = 0,
   attachments = [],
   onAttachmentRemove,
   isSending = false
@@ -212,13 +220,19 @@ export function ControlButtonsRow({
         onKeyChange={onOauthKeyChange}
       />
 
-      {/* Spacer area - also shows attachments if any */}
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', marginLeft: '8px' }}>
+      {/* Spacer area - attachments + retry indicator */}
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '8px' }}>
         {attachments.length > 0 && onAttachmentRemove && (
           <AttachmentPreviewRow
             attachments={attachments}
             onRemove={onAttachmentRemove}
           />
+        )}
+        {/* Retry indicator — right-aligned in the spacer, just before the right-side icons */}
+        {retryStatus && retryStatus !== 'cleared' && (
+          <div style={{ marginLeft: 'auto' }}>
+            <RetryIndicator status={retryStatus} attempt={retryAttempt} delaySec={retryDelaySec} />
+          </div>
         )}
       </div>
 
