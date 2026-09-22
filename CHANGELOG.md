@@ -5,6 +5,11 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.71] - 2026-09-22
+
+### Added
+- **Claude Opus 5.5 in the model picker** (`frontend/src/components/chat/modelCatalog.ts`) — added `claude-opus-5-5` (released 2026-09-22) and `claude-opus-5-5[1m]` at the top of the Opus block: `family: 'opus'`, full five-level effort incl. `xhigh`, adaptive thinking always on, 1M context. Kept the 200K/`[1m]` split (unlike Fable) because Claude Code still gates 1M behind the suffix, matching Opus 5/4.8/4.7. Priced $4/$20 — below Opus 5's $5/$25 — and the first Opus to default effort to **`medium`** rather than `high`, so an `auto`-effort session runs shallower than the same session on Opus 5 (pick `high`/`xhigh` explicitly for prior depth). Also added both IDs to the hardcoded `ENV_OPUS_MODEL_OPTIONS` (`ANTHROPIC_DEFAULT_OPUS_MODEL` dropdown — the one list that isn't auto-derived); `ENV_ANY_MODEL_OPTIONS`, the ModelSelector "Specific Versions" list, EffortSelector levels, and the ctx-window chip all pick it up from the catalog automatically. `best` alias tooltip now names Opus 5.5; Opus 5 description relabeled as previous generation. No backend change — model strings pass to `--model` verbatim.
+
 ## [0.5.70] - 2026-09-03
 
 ### Added

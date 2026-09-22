@@ -43,7 +43,7 @@ export const MODEL_CATALOG: ModelEntry[] = [
   // Zero-value (empty id) = no --model flag; Claude Code resolves via its own priority chain
   // (settings.json → ANTHROPIC_MODEL env → account tier default). This is the "no opinion" state.
   { id: '',          label: 'Empty/Default',    group: 'alias', effortLevels: EFFORT_FULL, description: 'No --model flag — Claude Code decides based on settings.json, ANTHROPIC_MODEL env, or account tier default (Max → Opus 4.8; Pro/API → Sonnet 4.6).' },
-  { id: 'best',      label: 'best (opus)',      group: 'alias', effortLevels: EFFORT_FULL, description: 'Most capable model available, currently Opus 5.' },
+  { id: 'best',      label: 'best (opus)',      group: 'alias', effortLevels: EFFORT_FULL, description: 'Most capable model available, currently Opus 5.5.' },
   { id: 'opus',      label: 'opus',             group: 'alias', family: 'opus',   effortLevels: EFFORT_FULL },
   { id: 'opus[1m]',  label: 'opus [1M]',        group: 'alias', family: 'opus',   effortLevels: EFFORT_FULL, contextOneMillion: true },
   { id: 'opusplan',  label: 'opusplan',         group: 'alias', family: 'mixed',  effortLevels: EFFORT_46,      description: 'Opus for plan mode, Sonnet for execution.' },
@@ -62,10 +62,15 @@ export const MODEL_CATALOG: ModelEntry[] = [
   { id: 'claude-fable-5',         label: 'Fable 5',          group: 'explicit', family: 'fable',  effortLevels: EFFORT_FULL, contextOneMillion: true, description: 'Previous Fable generation. 1M context, always-on adaptive thinking, effort default high.' },
 
   // ---------- Explicit — Opus ----------
-  // Opus 5 (GA): 1M-native context, drop-in at Opus 4.8 pricing. Claude Code still
-  // gates 1M behind the [1m] suffix, so the 200K/[1m] split matches the rest of the
-  // family. Full five-level effort (incl. xhigh); adaptive thinking on by default.
-  { id: 'claude-opus-5',          label: 'Opus 5',           group: 'explicit', family: 'opus',   effortLevels: EFFORT_FULL, description: 'Successor to Opus 4.8 — strongest on agentic coding and long-horizon work, at Opus 4.8 pricing. 1M context, effort default high.' },
+  // Opus 5.5 (GA 2026-09-22): 1M-native context, $4/$20 (below Opus 5's $5/$25),
+  // always-on adaptive thinking, effort default MEDIUM (first Opus to default below
+  // high). Claude Code still gates 1M behind the [1m] suffix, so the 200K/[1m]
+  // split matches the rest of the family. Full five-level effort (incl. xhigh).
+  { id: 'claude-opus-5-5',        label: 'Opus 5.5',         group: 'explicit', family: 'opus',   effortLevels: EFFORT_FULL, description: 'Successor to Opus 5 — built for long-running agentic coding, at $4/$20 (cheaper than Opus 5). 1M context, always-on adaptive thinking, effort default medium.' },
+  { id: 'claude-opus-5-5[1m]',    label: 'Opus 5.5 [1M]',    group: 'explicit', family: 'opus',   effortLevels: EFFORT_FULL, contextOneMillion: true },
+  // Opus 5 (GA): 1M-native context, drop-in at Opus 4.8 pricing. Full five-level
+  // effort (incl. xhigh); adaptive thinking on by default.
+  { id: 'claude-opus-5',          label: 'Opus 5',           group: 'explicit', family: 'opus',   effortLevels: EFFORT_FULL, description: 'Previous Opus generation — strongest on agentic coding and long-horizon work, at Opus 4.8 pricing. 1M context, effort default high.' },
   { id: 'claude-opus-5[1m]',      label: 'Opus 5 [1M]',      group: 'explicit', family: 'opus',   effortLevels: EFFORT_FULL, contextOneMillion: true },
   { id: 'claude-opus-4-8',        label: 'Opus 4.8',         group: 'explicit', family: 'opus',   effortLevels: EFFORT_FULL },
   { id: 'claude-opus-4-8[1m]',    label: 'Opus 4.8 [1M]',    group: 'explicit', family: 'opus',   effortLevels: EFFORT_FULL, contextOneMillion: true },
@@ -127,6 +132,8 @@ export function getContextWindow(id: string): number {
 // to ClaudeEnvVars. A value of "" means "None (omit)".
 
 export const ENV_OPUS_MODEL_OPTIONS: string[] = [
+  'claude-opus-5-5',
+  'claude-opus-5-5[1m]',
   'claude-opus-5',
   'claude-opus-5[1m]',
   'claude-opus-4-8',
