@@ -2,6 +2,8 @@
 // These types correspond to the schema documented in claude-code-jsonl-schema.tda.svml
 package types
 
+import "encoding/json"
+
 // =============================================================================
 // EVENT TYPE CONSTANTS
 // =============================================================================
@@ -52,7 +54,12 @@ type UserEvent struct {
 	Message                    UserMessage    `json:"message"`
 	Todos                      []Todo         `json:"todos,omitempty"`
 	ThinkingMetadata           *ThinkingMeta  `json:"thinkingMetadata,omitempty"`
-	ImagePasteIDs              []string       `json:"imagePasteIds,omitempty"`
+	// ImagePasteIDs changed element type in Claude Code 2.1.280+: it was
+	// []string, it is now []number (e.g. [1] or [3,4]). json.RawMessage
+	// accepts either shape so a schema drift here can never fail the whole
+	// user-event unmarshal (which silently dropped every image prompt).
+	// ClaudeFu never reads the values; it only needs the record to parse.
+	ImagePasteIDs              []json.RawMessage `json:"imagePasteIds,omitempty"`
 	IsCompactSummary           bool           `json:"isCompactSummary,omitempty"`
 	IsVisibleInTranscriptOnly  bool           `json:"isVisibleInTranscriptOnly,omitempty"`
 	IsMeta                     bool           `json:"isMeta,omitempty"`

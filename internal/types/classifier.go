@@ -87,6 +87,7 @@ func ClassifyJSONLEvent(line string) (*ClassifiedJSONLEvent, error) {
 		result.EventType = JSONLEventUser
 		var event UserEvent
 		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			logParseFailure("user", line, err)
 			return nil, fmt.Errorf("failed to parse user event: %w", err)
 		}
 		result.User = &event
@@ -95,6 +96,7 @@ func ClassifyJSONLEvent(line string) (*ClassifiedJSONLEvent, error) {
 		result.EventType = JSONLEventAssistant
 		var event AssistantEvent
 		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			logParseFailure("assistant", line, err)
 			return nil, fmt.Errorf("failed to parse assistant event: %w", err)
 		}
 		result.Assistant = &event
@@ -136,6 +138,21 @@ func ClassifyJSONLEvent(line string) (*ClassifiedJSONLEvent, error) {
 	}
 
 	return result, nil
+}
+
+// logParseFailure surfaces a user/assistant record that the typed unmarshal
+// rejected. Every caller of ClassifyJSONLEvent skips on error, so without this
+// breadcrumb a Claude Code schema drift (a field changing type) silently
+// drops messages from the conversation — exactly what happened when
+// imagePasteIds went from strings to numbers. Only conversation-bearing types
+// are logged; unknown record types are expected and stay quiet.
+func logParseFailure(kind, line string, err error) {
+	var ident struct {
+		UUID    string `json:"uuid"`
+		Version string `json:"version"`
+	}
+	_ = json.Unmarshal([]byte(line), &ident)
+	fmt.Printf("[JSONL:DROP] %s event uuid=%s cli=%s len=%d: %v\n", kind, ident.UUID, ident.Version, len(line), err)
 }
 
 // =============================================================================

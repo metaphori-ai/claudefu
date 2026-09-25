@@ -5,6 +5,15 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.72] - 2026-09-25
+
+### Fixed
+- **Image prompts silently dropped on Claude Code 2.1.280+** (`internal/types/jsonl.go`, `classifier.go`) — newer CLIs write `imagePasteIds` as an array of **numbers** (`[1]`, `[3,4]`); ClaudeFu's `UserEvent.ImagePasteIDs` was `[]string`, so `json.Unmarshal` rejected the *entire* user record and every call site (`watcher` delta reads, initial load, turn counting, session preview) skipped it without a log line. Symptoms: the optimistic pending row spun forever (its confirmed twin never arrived from the watcher) while Claude's reply still streamed in; the attached image never rendered; Cmd-R "lost" the whole prompt because the on-disk record failed to parse again. Nothing was ever deleted from the JSONL. The field is now `[]json.RawMessage`, which accepts both the legacy string and the new numeric shape (ClaudeFu never reads the values). Verified against a real 2.1.281 session: 2,801 lines, 0 classify failures, 13 image blocks surfaced.
+- **Schema drift is no longer silent** — `logParseFailure` prints `[JSONL:DROP] {user|assistant} event uuid=… cli=… : {err}` whenever a conversation-bearing record fails the typed unmarshal. Unknown record types (`attachment`, `last-prompt`, `mode`, `cost-state`, `atis-latch` — all metadata the newer CLI writes) stay quiet and convert to nil as before.
+
+### Added
+- **Tests** (`internal/types/classifier_test.go`, `realsession_test.go`) — real-shaped 2.1.281 image prompt (numeric IDs), legacy string-ID prompt, the 2.1.274+ `isMeta`/`turnCompanion` "[Image: source: …]" echo (must stay hidden), the new metadata record types, a regression pin for the exact `[]string` failure, and an env-gated `CLAUDEFU_JSONL=<session.jsonl> go test ./internal/types -run RealSession` that feeds any real session through the parser after a Claude Code upgrade.
+
 ## [0.5.71] - 2026-09-22
 
 ### Added
