@@ -109,7 +109,8 @@ export function QueueWatcher() {
         // (which picks up AGENT_MODEL via settings.json, ANTHROPIC_MODEL, or account default).
         // OAuth key is "" (Auto): the backend's sticky map keeps the session on
         // whatever key the last ChatView send used (pinned or auto-picked).
-        await SendMessage(agentId, sessionId, queuedMessage.content, backendAttachments, false, "", "", "");
+        // Chrome spec is "" (inherit) for the same reason.
+        await SendMessage(agentId, sessionId, queuedMessage.content, backendAttachments, false, "", "", "", "");
 
         // Note: Don't clear responding state here - wait for response_complete event
         logDebug('QueueWatcher', 'SEND_SUCCESS', { agentId: agentId.substring(0, 8) });

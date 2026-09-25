@@ -493,6 +493,15 @@ func (s *ClaudeCodeService) WasCancelled(sessionID string) bool {
 
 // getMCPArgs returns ONLY the --mcp-config arg if MCP is configured.
 // MCP tool allow/disallow is handled by buildPermissionArgs to avoid duplicate flags.
+// Claude in Chrome integration. The CLI flag enables the browser extension's
+// MCP server for the spawn; the allow pattern auto-approves every tool that
+// server exposes (they arrive on the wire as mcp__claude-in-chrome__<tool>).
+// Distinct from ClaudeFu's legacy BrowserAgent MCP tool (localhost:9320 bridge).
+const (
+	chromeFlag            = "--chrome"
+	chromeMCPAllowPattern = "mcp__claude-in-chrome"
+)
+
 func (s *ClaudeCodeService) getMCPArgs() []string {
 	if s.mcpConfig == "" {
 		return nil
@@ -513,7 +522,12 @@ func (s *ClaudeCodeService) getMCPArgs() []string {
 //
 // Note: We intentionally omit --setting-sources to allow Claude's global settings
 // to still apply. Our explicit flags take precedence.
-func (s *ClaudeCodeService) buildPermissionArgs(folder string) []string {
+//
+// chrome=true additionally auto-allows the Claude in Chrome MCP server. This is
+// REQUIRED alongside --chrome: in --print mode there is no interactive prompt,
+// so an un-allowed mcp__claude-in-chrome__* call is denied and the turn stalls
+// ("The Chrome extension tools keep requiring permission").
+func (s *ClaudeCodeService) buildPermissionArgs(folder string, chrome bool) []string {
 	if folder == "" {
 		return nil
 	}
@@ -571,6 +585,12 @@ func (s *ClaudeCodeService) buildPermissionArgs(folder string) []string {
 		allowedPatterns = append(allowedPatterns, mcpTools...)
 	}
 
+	// Claude in Chrome: server-wide allow (covers navigate, read_page,
+	// javascript_tool, read_console_messages, tabs_*, … and any tools added later).
+	if chrome {
+		allowedPatterns = append(allowedPatterns, chromeMCPAllowPattern)
+	}
+
 	if len(allowedPatterns) > 0 {
 		args = append(args, "--allowedTools", strings.Join(allowedPatterns, ","))
 	}
@@ -616,7 +636,10 @@ func (s *ClaudeCodeService) buildPermissionArgs(folder string) []string {
 // The effort parameter (low|medium|high|xhigh|max|auto) is passed to --effort; empty = omit.
 // extraEnv carries per-spawn env overrides (e.g. the rotation-selected
 // CLAUDE_CODE_OAUTH_TOKEN); nil/empty = service-level env unchanged.
-func (s *ClaudeCodeService) SendMessage(folder, sessionId, message string, attachments []types.Attachment, planMode bool, model, effort string, extraEnv map[string]string) error {
+// chrome=true enables Claude in Chrome for this spawn (--chrome + auto-allow
+// of the mcp__claude-in-chrome tools); false passes nothing so the user's
+// global Claude setting applies.
+func (s *ClaudeCodeService) SendMessage(folder, sessionId, message string, attachments []types.Attachment, planMode bool, model, effort string, extraEnv map[string]string, chrome bool) error {
 	if folder == "" {
 		return fmt.Errorf("folder is required")
 	}
@@ -641,15 +664,15 @@ func (s *ClaudeCodeService) SendMessage(folder, sessionId, message string, attac
 
 	// Always use stream-json stdin approach for robust message handling.
 	// This avoids CLI argument parsing issues with special characters (e.g., --- interpreted as option terminator).
-	return s.sendViaStdin(path, folder, sessionId, message, attachments, permissionMode, model, effort, extraEnv)
+	return s.sendViaStdin(path, folder, sessionId, message, attachments, permissionMode, model, effort, extraEnv, chrome)
 }
 
 // sendViaStdin sends a message (with optional attachments) via stdin using stream-json format.
 // This is the primary send method — all messages go through stdin to avoid CLI argument parsing
 // issues with special characters like --- (option terminator), quotes, backticks, etc.
 // Required flags: --input-format stream-json, --output-format stream-json, --verbose
-func (s *ClaudeCodeService) sendViaStdin(claudePath, folder, sessionId, message string, attachments []types.Attachment, permissionMode string, model, effort string, extraEnv map[string]string) error {
-	fmt.Printf("[DEBUG] sendViaStdin: folder=%s sessionId=%s message=%q attachments=%d\n", folder, sessionId, message, len(attachments))
+func (s *ClaudeCodeService) sendViaStdin(claudePath, folder, sessionId, message string, attachments []types.Attachment, permissionMode string, model, effort string, extraEnv map[string]string, chrome bool) error {
+	fmt.Printf("[DEBUG] sendViaStdin: folder=%s sessionId=%s message=%q attachments=%d chrome=%v\n", folder, sessionId, message, len(attachments), chrome)
 
 	// Build content blocks array
 	contentBlocks := make([]map[string]any, 0, len(attachments)+1)
@@ -732,6 +755,9 @@ func (s *ClaudeCodeService) sendViaStdin(claudePath, folder, sessionId, message 
 	if effort != "" {
 		args = append(args, "--effort", effort)
 	}
+	if chrome {
+		args = append(args, chromeFlag)
+	}
 	args = append(args,
 		"--input-format", "stream-json",
 		"--output-format", "stream-json",
@@ -740,7 +766,7 @@ func (s *ClaudeCodeService) sendViaStdin(claudePath, folder, sessionId, message 
 	)
 
 	// Add permission args (tools, allowedTools, disallowedTools, add-dir)
-	args = append(args, s.buildPermissionArgs(folder)...)
+	args = append(args, s.buildPermissionArgs(folder, chrome)...)
 
 	args = append(args, s.getMCPArgs()...)
 
@@ -838,7 +864,7 @@ func (s *ClaudeCodeService) NewSession(folder, model, effort string) (string, er
 	)
 
 	// Add permission args (tools, allowedTools, disallowedTools, add-dir)
-	args = append(args, s.buildPermissionArgs(folder)...)
+	args = append(args, s.buildPermissionArgs(folder, false)...)
 
 	// Add MCP config if configured (enables inter-agent communication)
 	args = append(args, s.getMCPArgs()...)
@@ -937,7 +963,9 @@ func (s *ClaudeCodeService) NewSession(folder, model, effort string) (string, er
 // extraEnv carries the session's sticky OAuth pool key so e.g. /compact
 // (which re-reads the whole conversation) runs on the account whose prompt
 // cache already holds it; nil = service env (incl. pool default).
-func (s *ClaudeCodeService) RunSlashCommand(folder, sessionId, command string, extraEnv map[string]string) (string, error) {
+// chrome mirrors the session's Claude in Chrome setting so a /compact re-read
+// sees the same tool surface the conversation was built with.
+func (s *ClaudeCodeService) RunSlashCommand(folder, sessionId, command string, extraEnv map[string]string, chrome bool) (string, error) {
 	if folder == "" {
 		return "", fmt.Errorf("folder is required")
 	}
@@ -950,11 +978,14 @@ func (s *ClaudeCodeService) RunSlashCommand(folder, sessionId, command string, e
 		return "", fmt.Errorf("claude CLI not found")
 	}
 
-	args := []string{
-		"-p",
+	args := []string{"-p"}
+	if chrome {
+		args = append(args, chromeFlag)
+	}
+	args = append(args,
 		"--resume", sessionId,
 		command,
-	}
+	)
 
 	fmt.Printf("[DEBUG] RunSlashCommand: %s %v in %s\n", path, args, folder)
 

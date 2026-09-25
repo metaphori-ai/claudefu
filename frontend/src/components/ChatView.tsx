@@ -57,6 +57,10 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
   const [agentDefaultEffort, setAgentDefaultEffort] = useState('');
   // OAuth pool key: "" = Auto (backend rotates on 429), key ID = pinned.
   const [selectedOauthKey, setSelectedOauthKey] = useState('');
+  // Claude in Chrome (--chrome). Session-scoped, off on mount; sent as "on"/"off"
+  // on every user send so the backend's sticky map tracks it for resume paths.
+  const [chromeEnabled, setChromeEnabled] = useState(false);
+  const chromeSpec = chromeEnabled ? 'on' : 'off';
   // Per-agent initial-load-turns override. Falls back to DEFAULT_INITIAL_LOAD_TURNS
   // (resolved via resolveInitialLoadTurns) when the meta value is absent/invalid.
   const [initialLoadTurns, setInitialLoadTurns] = useState<number>(() => resolveInitialLoadTurns(null));
@@ -558,7 +562,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
         scroll.scrollToBottomRAF();
 
         try {
-          await SendMessage(agentId, sessionId, initialMessage, [], planningMode, selectedModel, selectedEffort, selectedOauthKey || 'auto');
+          await SendMessage(agentId, sessionId, initialMessage, [], planningMode, selectedModel, selectedEffort, selectedOauthKey || 'auto', chromeSpec);
         } catch (err) {
           // On failure, the message stays in pending state
           // Context will handle cleanup when confirmed message arrives
@@ -602,7 +606,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
   // Handle skipping a pending question
   const handleQuestionSkip = async (toolUseId: string) => {
     try {
-      await SendMessage(agentId, sessionId, "I'm skipping this question. Please continue.", [], planningMode, selectedModel, selectedEffort, selectedOauthKey || 'auto');
+      await SendMessage(agentId, sessionId, "I'm skipping this question. Please continue.", [], planningMode, selectedModel, selectedEffort, selectedOauthKey || 'auto', chromeSpec);
       // Clear and reload from context
       clearContextSession(agentId, sessionId);
       await loadConversation(true); // Force reload
@@ -773,7 +777,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
       // '' from the selector means explicit Auto — send the 'auto' spec so a
       // previously pinned key is demoted back to a rotation candidate. Queued
       // sends (QueueWatcher) pass '' = inherit the session's riding key.
-      await SendMessage(agentId, sessionId, message, backendAttachments, planningMode, selectedModel, selectedEffort, selectedOauthKey || 'auto');
+      await SendMessage(agentId, sessionId, message, backendAttachments, planningMode, selectedModel, selectedEffort, selectedOauthKey || 'auto', chromeSpec);
       logDebug('ChatView', 'SEND_COMPLETE', { success: true });
       // Clear attachments, planning mode, and persisted draft on successful send
       setAttachments([]);
@@ -967,6 +971,8 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
           agentDefaultEffort={agentDefaultEffort}
           selectedOauthKey={selectedOauthKey}
           onOauthKeyChange={setSelectedOauthKey}
+          chromeEnabled={chromeEnabled}
+          onChromeToggle={() => setChromeEnabled(v => !v)}
           retryStatus={retryState.get(agentId)?.status}
           retryAttempt={retryState.get(agentId)?.attempt}
           retryDelaySec={retryState.get(agentId)?.delaySec}
@@ -988,6 +994,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
           hasPendingQuestion={hasPendingQuestion}
           newSessionMode={newSessionMode}
           planningMode={planningMode}
+          chromeEnabled={chromeEnabled}
           tokenMetrics={tokenMetrics}
           currentModel={selectedModel}
           agentDefaultModel={agentDefaultModel}

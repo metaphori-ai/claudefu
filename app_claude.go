@@ -132,6 +132,23 @@ func (a *App) resolveOAuthEnv(sessionID, spec string) (keyID string, extraEnv ma
 	return keyID, map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": token}, mode
 }
 
+// resolveChrome resolves the Claude in Chrome (--chrome) setting for a spawn.
+// spec: "on" | "off" record the ChatView toggle for the session; "" inherits
+// whatever the session last used (resume paths). Unknown sessions default to
+// off, so the user's global Claude setting (Chrome disabled) stays in charge.
+func (a *App) resolveChrome(sessionID, spec string) bool {
+	switch spec {
+	case "on", "off":
+		a.chromeMu.Lock()
+		a.chromeSessions[sessionID] = spec == "on"
+		a.chromeMu.Unlock()
+		return spec == "on"
+	}
+	a.chromeMu.RLock()
+	defer a.chromeMu.RUnlock()
+	return a.chromeSessions[sessionID]
+}
+
 // truncateForLog bounds a raw CLI result for the rotation log.
 func truncateForLog(s string, n int) string {
 	s = strings.ReplaceAll(s, "\n", " ")
@@ -278,6 +295,9 @@ func (a *App) pruneFailedUserMessage(agentID, folder, sessionID, sentText string
 // The oauthKey parameter selects an OAuth pool key: "" = Auto (rotation on 429
 // when the pool has rotation keys, legacy env behavior otherwise); a key ID =
 // pinned (that key always, no auto-rotation on limit).
+// The chromeSpec parameter controls Claude in Chrome: "on" passes --chrome and
+// auto-allows the mcp__claude-in-chrome tools; "off" passes nothing (the
+// user's global setting applies); "" inherits the session's last value.
 // Emits "response_complete" event when the Claude CLI process exits.
 //
 // Two nested retry mechanisms:
@@ -289,7 +309,7 @@ func (a *App) pruneFailedUserMessage(agentID, folder, sessionID, sentText string
 // 2. OAuth rotation (outer loop): 429 usage limit — bench the key, pick the
 //    next by nearest weekly reset, send auto-continue prompt (the original
 //    message is already in the JSONL).
-func (a *App) SendMessage(agentID, sessionID, message string, attachments []types.Attachment, planMode bool, model, effort, oauthKey string) error {
+func (a *App) SendMessage(agentID, sessionID, message string, attachments []types.Attachment, planMode bool, model, effort, oauthKey, chromeSpec string) error {
 	if a.claude == nil {
 		return fmt.Errorf("claude service not initialized")
 	}
@@ -304,6 +324,8 @@ func (a *App) SendMessage(agentID, sessionID, message string, attachments []type
 
 	retryCh := a.registerRetryCancel(sessionID)
 	defer a.unregisterRetryCancel(sessionID, retryCh)
+
+	chrome := a.resolveChrome(sessionID, chromeSpec)
 
 	curMsg, curAtt := message, attachments
 	rotations := 0
@@ -332,7 +354,7 @@ rotationLoop:
 				a.emitRetryStatus(agentID, sessionID, "retrying", retryAttempt, 0)
 			}
 
-			finalErr = a.claude.SendMessage(agent.Folder, sessionID, curMsg, curAtt, planMode, model, effort, extraEnv)
+			finalErr = a.claude.SendMessage(agent.Folder, sessionID, curMsg, curAtt, planMode, model, effort, extraEnv, chrome)
 
 			if finalErr == nil {
 				if retryAttempt > 0 {
@@ -555,7 +577,7 @@ func (a *App) AnswerQuestion(agentID, sessionID, toolUseID string, questions []m
 	// The session's sticky OAuth pool key (if any) rides along so the resume
 	// authenticates as the same account (cache continuity).
 	_, extraEnv, _ := a.resolveOAuthEnv(sessionID, "")
-	err := a.claude.SendMessage(agent.Folder, sessionID, "question answered", nil, false, "", "", extraEnv)
+	err := a.claude.SendMessage(agent.Folder, sessionID, "question answered", nil, false, "", "", extraEnv, a.resolveChrome(sessionID, ""))
 
 	// Emit response_complete event AFTER Claude finishes (no user-selected model in this path)
 	a.emitResponseComplete(agentID, sessionID, "", err)
@@ -590,7 +612,7 @@ func (a *App) RunSlashCommand(agentID, sessionID, command string) (string, error
 	// conversation, so running it on the account already holding the prompt
 	// cache matters. Falls back to the pool default / legacy env when none.
 	_, extraEnv, _ := a.resolveOAuthEnv(sessionID, "")
-	output, err := a.claude.RunSlashCommand(agent.Folder, sessionID, command, extraEnv)
+	output, err := a.claude.RunSlashCommand(agent.Folder, sessionID, command, extraEnv, a.resolveChrome(sessionID, ""))
 	if err != nil {
 		return "", fmt.Errorf("slash command failed: %w", err)
 	}

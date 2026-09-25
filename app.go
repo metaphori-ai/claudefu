@@ -51,6 +51,13 @@ type App struct {
 	retryCancels   map[string]chan struct{}
 	retryCancelMu  sync.RWMutex
 
+	// Claude in Chrome (--chrome) per session. Set by the ChatView toggle on
+	// each user send; resume paths (AnswerQuestion, inbox inject, queue
+	// autosubmit, slash commands) inherit it so the browser tools don't vanish
+	// mid-turn. In-memory only — off on every app launch.
+	chromeSessions map[string]bool
+	chromeMu       sync.RWMutex
+
 	// Self-update state
 	updateReady   bool   // True when update is downloaded and staged
 	updateVersion string // Version that's staged (e.g., "0.5.10")
@@ -60,7 +67,8 @@ type App struct {
 // NewApp creates a new App application struct
 func NewApp() *App {
 	return &App{
-		retryCancels: make(map[string]chan struct{}),
+		retryCancels:   make(map[string]chan struct{}),
+		chromeSessions: make(map[string]bool),
 	}
 }
 

@@ -5,6 +5,12 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.73] - 2026-09-25
+
+### Added
+- **Claude in Chrome toggle in the control row** (`frontend/src/components/chat/ControlButtonsRow.tsx`, `ChatView.tsx`, `InputArea.tsx`) — a ring-glyph toggle right of the OAuth key selector, styled like the New Session / Planning Mode toggles (orange when ON, `aria-pressed`), plus a "Chrome" segment in the input status chip. Session-scoped and off on every ChatView mount, so your global Claude setting (Chrome disabled) stays the default; flip it on for the sends where you want the browser. Not to be confused with the legacy MCP `BrowserAgent` tool (the old localhost:9320 bridge) — this is Anthropic's Claude in Chrome extension.
+- **`--chrome` + auto-allow on every spawn for the session** (`internal/providers/claudecode.go`, `app_claude.go`, `app.go`, `app_inbox.go`) — `App.SendMessage` gains a `chromeSpec` param (`"on"` | `"off"` | `""` inherit) mirroring the OAuth key spec; `App.resolveChrome` records it in an in-memory per-session map so the resume paths (AnswerQuestion, inbox inject, queue auto-submit, `/context` and `/compact`) keep the browser tools mid-turn instead of silently dropping them. The crux is permissions: `--print` has no interactive prompt, so `--chrome` alone loads the tools and then stalls on "The Chrome extension tools keep requiring permission" (observed in a real session). When on, ClaudeFu also appends the server-wide `mcp__claude-in-chrome` pattern to `--allowedTools`, covering `navigate`, `read_page`, `javascript_tool`, `read_console_messages`, `tabs_*`, and anything the extension adds later. Verified with a print-mode smoke test: tool called, zero permission denials. When off, nothing is passed (never `--no-chrome`), so the CLI's own default rules.
+
 ## [0.5.72] - 2026-09-25
 
 ### Fixed

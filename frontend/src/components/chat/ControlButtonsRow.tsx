@@ -77,6 +77,9 @@ interface ControlButtonsRowProps {
   // OAuth key selection (per-agent): "" = Auto rotation, key ID = pinned
   selectedOauthKey: string;
   onOauthKeyChange: (keyId: string) => void;
+  // Claude in Chrome (--chrome) toggle, session-scoped
+  chromeEnabled: boolean;
+  onChromeToggle: () => void;
   // Server-error retry indicator state
   retryStatus?: string;
   retryAttempt?: number;
@@ -108,6 +111,8 @@ export function ControlButtonsRow({
   onSaveEffortAsAgentDefault,
   selectedOauthKey,
   onOauthKeyChange,
+  chromeEnabled,
+  onChromeToggle,
   retryStatus,
   retryAttempt = 0,
   retryDelaySec = 0,
@@ -219,6 +224,32 @@ export function ControlButtonsRow({
         selectedKey={selectedOauthKey}
         onKeyChange={onOauthKeyChange}
       />
+
+      {/* Claude in Chrome — passes --chrome (+ auto-allows mcp__claude-in-chrome) on this session's sends.
+          Session-scoped; off on mount. Same toggle style as New Session / Planning Mode. */}
+      <Tooltip content={
+        <>Claude in Chrome {chromeEnabled
+          ? <span style={{ color: '#d97757' }}>(ON)</span>
+          : <span style={{ color: '#888' }}>— passes --chrome, enables the browser tools</span>}
+        </>
+      }>
+        <button
+          onClick={onChromeToggle}
+          className={`control-toggle-btn ${chromeEnabled ? 'active' : ''}`}
+          style={{ color: chromeEnabled ? '#d97757' : '#666' }}
+          aria-label="Toggle Claude in Chrome"
+          aria-pressed={chromeEnabled}
+        >
+          {/* Chrome-style ring glyph */}
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10" />
+            <circle cx="12" cy="12" r="4" />
+            <line x1="21.17" y1="8" x2="12" y2="8" />
+            <line x1="3.95" y1="6.06" x2="8.54" y2="14" />
+            <line x1="10.88" y1="21.94" x2="15.46" y2="14" />
+          </svg>
+        </button>
+      </Tooltip>
 
       {/* Spacer area - attachments + retry indicator */}
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '8px' }}>

@@ -100,7 +100,7 @@ func (a *App) InjectInboxMessage(agentID, sessionID, messageID string) error {
 	// Send to Claude session — no model/effort override, use the agent's configured default.
 	// The session's sticky OAuth pool key (if any) rides along for cache continuity.
 	_, extraEnv, _ := a.resolveOAuthEnv(sessionID, "")
-	if err := a.claude.SendMessage(agent.Folder, sessionID, formattedMsg, nil, false, "", "", extraEnv); err != nil {
+	if err := a.claude.SendMessage(agent.Folder, sessionID, formattedMsg, nil, false, "", "", extraEnv, a.resolveChrome(sessionID, "")); err != nil {
 		return err
 	}
 

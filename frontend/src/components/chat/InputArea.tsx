@@ -51,6 +51,7 @@ interface InputAreaProps {
   hasPendingQuestion: boolean;
   newSessionMode?: boolean;   // For status indicator chip
   planningMode?: boolean;     // For status indicator chip
+  chromeEnabled?: boolean;    // For status indicator chip (Claude in Chrome)
   tokenMetrics?: SessionTokenMetrics;  // Token metrics for status chip (v0.3.21)
   currentModel?: string;               // Current per-message model selection — drives context-window sizing
   agentDefaultModel?: string;          // Agent default model — used to detect "model just changed" state
@@ -109,6 +110,7 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
   hasPendingQuestion,
   newSessionMode = false,
   planningMode = false,
+  chromeEnabled = false,
   tokenMetrics,
   currentModel = '',
   agentDefaultModel = '',
@@ -731,8 +733,8 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
             </div>
           )}
           {/* Floating status chip - bottom right of textarea */}
-          {/* Shows: new session mode, planning mode (token metrics moved below) */}
-          {(newSessionMode || planningMode) && (
+          {/* Shows: new session mode, planning mode, Claude in Chrome (token metrics moved below) */}
+          {(newSessionMode || planningMode || chromeEnabled) && (
             <div style={{
               position: 'absolute',
               bottom: '6px',
@@ -765,6 +767,21 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
                     <line x1="9" y1="16" x2="15" y2="16" />
                   </svg>
                   Planning Mode
+                </span>
+              )}
+              {(newSessionMode || planningMode) && chromeEnabled && (
+                <span style={{ color: '#333' }}>•</span>
+              )}
+              {chromeEnabled && (
+                <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <circle cx="12" cy="12" r="4" />
+                    <line x1="21.17" y1="8" x2="12" y2="8" />
+                    <line x1="3.95" y1="6.06" x2="8.54" y2="14" />
+                    <line x1="10.88" y1="21.94" x2="15.46" y2="14" />
+                  </svg>
+                  Chrome
                 </span>
               )}
             </div>
