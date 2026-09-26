@@ -7,6 +7,13 @@ import { QueuedMessage } from '../../context/SessionContext';
 import { ReadFileContent } from '../../../wailsjs/go/main/App';
 import { formatTokenCount, SessionTokenMetrics } from '../../utils/messageUtils';
 import { getContextWindow } from './modelCatalog';
+import { workspace } from '../../../wailsjs/go/models';
+
+// Shorten an absolute include path to "dir/file" for tooltips.
+function includeDisplayName(p: string): string {
+  const parts = p.split('/');
+  return parts.length >= 2 ? `${parts[parts.length - 2]}/${parts[parts.length - 1]}` : p;
+}
 
 // Fun verbs for the "Claude is thinking" placeholder
 const CLAUDE_VERBS = [
@@ -53,6 +60,7 @@ interface InputAreaProps {
   planningMode?: boolean;     // For status indicator chip
   chromeEnabled?: boolean;    // For status indicator chip (Claude in Chrome)
   tokenMetrics?: SessionTokenMetrics;  // Token metrics for status chip (v0.3.21)
+  includeInfo?: workspace.IncludeInjectionInfo | null;  // CLAUDE.md @-include floor + pending re-injection (v0.5.74)
   currentModel?: string;               // Current per-message model selection — drives context-window sizing
   agentDefaultModel?: string;          // Agent default model — used to detect "model just changed" state
   // Lifted attachment state (managed by parent, displayed in ControlButtonsRow)
@@ -112,6 +120,7 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
   planningMode = false,
   chromeEnabled = false,
   tokenMetrics,
+  includeInfo = null,
   currentModel = '',
   agentDefaultModel = '',
   attachments,
@@ -875,6 +884,11 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
             const exceedsWindow = tokenMetrics.contextSize > contextWindow;
             const windowLabelK = contextWindow >= 1_000_000 ? '1M' : `${contextWindow / 1000}K`;
             const modelChanged = currentModel !== agentDefaultModel;
+            // Pending @-include re-injection (v0.5.74): lands on the NEXT send,
+            // before any assistant usage can report it. Subtract it from "left".
+            const pendingTokens = includeInfo?.changedTokensEst ?? 0;
+            const leftAfterPending = tokensUntilCompact - pendingTokens;
+            const pendingWillCompact = pendingTokens > 0 && leftAfterPending <= 0;
             return (
               <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }} title={`Context window: ${windowLabelK} (per selected model)`}>
                 <span style={{ color: '#555' }}>ctx</span>
@@ -890,12 +904,55 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
                     >
                       &nbsp;!! exceeds {windowLabelK}{modelChanged ? ' (model changed)' : ''} — will auto-compact
                     </span>
+                  ) : pendingWillCompact ? (
+                    <span
+                      style={{ color: '#f87171', fontWeight: 600, marginLeft: '4px' }}
+                      title={`${formatTokenCount(tokensUntilCompact)} left, but ${formatTokenCount(pendingTokens)} of changed @-includes will be appended on send — Claude Code will auto-compact`}
+                    >
+                      &nbsp;!! {formatTokenCount(tokensUntilCompact)} left − {formatTokenCount(pendingTokens)} pending — will auto-compact on send
+                    </span>
                   ) : (
-                    <span style={{ color: '#d97757', marginLeft: '4px' }} title={`Tokens remaining until auto-compact (${windowLabelK} window)`}>
-                      ({Math.round((tokensUntilCompact / contextWindow) * 100)}% / {formatTokenCount(tokensUntilCompact)} left)
+                    <span style={{ color: '#d97757', marginLeft: '4px' }} title={`Tokens remaining until auto-compact (${windowLabelK} window)${pendingTokens > 0 ? ` after the ${formatTokenCount(pendingTokens)} pending @-include re-injection` : ''}`}>
+                      ({Math.round((leftAfterPending / contextWindow) * 100)}% / {formatTokenCount(leftAfterPending)} left{pendingTokens > 0 ? ' after pending' : ''})
                     </span>
                   )}
                 </span>
+              </span>
+            );
+          })()}
+          {/* CLAUDE.md @-include accounting (v0.5.74). The CLI freezes the include
+              set in the JSONL and re-sends it after every compaction (the "floor"),
+              and APPENDS any file whose content changed on disk — in full, old copy
+              retained — on the next spawn. Estimates use the measured 2.35 bytes/token
+              density of SVML/TDA includes (see internal/workspace/jsonl_includes.go). */}
+          {includeInfo && includeInfo.available && includeInfo.includedTokensEst > 0 && (() => {
+            const changed = includeInfo.changedFiles || [];
+            const pending = includeInfo.changedTokensEst;
+            const dup = includeInfo.duplicateTokensEst;
+            const floorTitle = `CLAUDE.md @-includes: ${includeInfo.includedFiles} files, ~${formatTokenCount(includeInfo.includedTokensEst)} tokens (est. 2.35 B/tok). ` +
+              `This is the context floor — re-sent in full after every compaction.` +
+              (dup > 0 ? ` Currently ${includeInfo.copies} copies in context: ~${formatTokenCount(dup)} tokens of superseded include copies until next compaction.` : '');
+            const pendingTitle = changed.length > 0
+              ? `Changed on disk since the CLI's frozen copy — will be appended IN FULL on the next send (old copy stays):\n` +
+                changed.map(f => `• ${includeDisplayName(f.path)} — ~${formatTokenCount(f.tokensEst)} tok`).join('\n')
+              : '';
+            return (
+              <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }} title={floorTitle}>
+                <span style={{ color: '#555' }}>incl</span>
+                <span style={{ color: '#888' }}>{formatTokenCount(includeInfo.includedTokensEst)}</span>
+                {dup > 0 && (
+                  <span style={{ color: '#7a6a6a' }} title={`${includeInfo.copies} include copies in context (~${formatTokenCount(dup)} tokens superseded)`}>
+                    ×{includeInfo.copies}
+                  </span>
+                )}
+                {pending > 0 && (
+                  <span
+                    style={{ color: '#d97757', fontWeight: 600, marginLeft: '2px', whiteSpace: 'pre-line' }}
+                    title={pendingTitle}
+                  >
+                    +{formatTokenCount(pending)} pending ({changed.length} file{changed.length === 1 ? '' : 's'})
+                  </span>
+                )}
               </span>
             );
           })()}

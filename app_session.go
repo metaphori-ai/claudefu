@@ -211,6 +211,21 @@ func (a *App) GetConversationByTurns(agentID, sessionID string, turnLimit int) (
 	}, nil
 }
 
+// GetPendingIncludeInjection diffs the CLAUDE.md @-include set the CLI has
+// frozen in the session JSONL against the files on disk. Any file whose
+// content changed will be re-injected IN FULL (appended, old copy retained)
+// on the next spawn — the frontend shows this as a pending context cost next
+// to the ctx chip, since the last assistant usage cannot see it coming.
+// Read-only; returns Available=false for sessions without an instructions
+// attachment (pre-CLI-2.1.258 sessions).
+func (a *App) GetPendingIncludeInjection(agentID, sessionID string) (*workspace.IncludeInjectionInfo, error) {
+	agent := a.getAgentByID(agentID)
+	if agent == nil {
+		return nil, fmt.Errorf("agent not found: %s", agentID)
+	}
+	return workspace.PendingIncludeInjection(agent.Folder, sessionID)
+}
+
 // GetSubagentConversation returns messages from a subagent JSONL file
 func (a *App) GetSubagentConversation(agentID, sessionID, subagentID string) ([]types.Message, error) {
 	if a.workspace == nil {

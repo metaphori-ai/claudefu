@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { GetConversationPaged, GetConversationByTurns, SetActiveSession, ClearActiveSession, SendMessage, MarkSessionViewed, NewSession, ReadPlanFile, TouchPlanFile, AnswerQuestion, CancelSession, AcceptPlanReview, RejectPlanReview, RunSlashCommand, DeleteFromMessage, GetAgentMeta, UpdateAgentMeta } from '../../wailsjs/go/main/App';
+import { GetConversationPaged, GetConversationByTurns, SetActiveSession, ClearActiveSession, SendMessage, MarkSessionViewed, NewSession, ReadPlanFile, TouchPlanFile, AnswerQuestion, CancelSession, AcceptPlanReview, RejectPlanReview, RunSlashCommand, DeleteFromMessage, GetAgentMeta, UpdateAgentMeta, GetPendingIncludeInjection } from '../../wailsjs/go/main/App';
 import { resolveInitialLoadTurns, AGENT_META_DEFAULT_LOAD_TURNS } from './chat/constants';
-import { types } from '../../wailsjs/go/models';
+import { types, workspace } from '../../wailsjs/go/models';
 
 // Extracted components
 import { MessageList } from './chat/MessageList';
@@ -493,6 +493,30 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
       });
     };
   }, [agentId, sessionId]);
+
+  // CLAUDE.md @-include accounting (v0.5.74). The CLI freezes the include set
+  // in the session JSONL and APPENDS any changed file in full on the next spawn
+  // (old copy retained). The ctx chip is derived from the last assistant usage
+  // and cannot see that coming, so we diff disk vs the frozen copy ourselves.
+  // Refreshed when a response completes (isSending true→false), on session
+  // switch, and when the window regains focus (files edited elsewhere).
+  const [includeInfo, setIncludeInfo] = useState<workspace.IncludeInjectionInfo | null>(null);
+  const refreshIncludeInfo = React.useCallback(async () => {
+    try {
+      const info = await GetPendingIncludeInjection(agentId, sessionId);
+      setIncludeInfo(info && info.available ? info : null);
+    } catch {
+      setIncludeInfo(null);
+    }
+  }, [agentId, sessionId]);
+  useEffect(() => {
+    if (!isSending) refreshIncludeInfo();
+  }, [isSending, refreshIncludeInfo]);
+  useEffect(() => {
+    const onFocus = () => { if (!isSending) refreshIncludeInfo(); };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [isSending, refreshIncludeInfo]);
 
   // Clear chat when creating new session externally (from SessionsDialog + button)
   // This matches the behavior of the InputArea + button (newSessionMode)
@@ -996,6 +1020,7 @@ export function ChatView({ agentId, agentName, folder, sessionId, onSessionCreat
           planningMode={planningMode}
           chromeEnabled={chromeEnabled}
           tokenMetrics={tokenMetrics}
+          includeInfo={includeInfo}
           currentModel={selectedModel}
           agentDefaultModel={agentDefaultModel}
           attachments={attachments}
