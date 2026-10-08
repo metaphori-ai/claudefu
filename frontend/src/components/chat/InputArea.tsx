@@ -871,7 +871,8 @@ export const InputArea = forwardRef<InputAreaHandle, InputAreaProps>(function In
             </span>
           )}
           {/* Context size with percentage and "left until compact".
-              Context window is model-aware: 1M for [1m] variants and Empty/Default,
+              Context window is model-aware (getContextWindow): 1M for 1M-native models
+              (Fable, Opus 4.7+, Sonnet 5+, Haiku 5.5), [1m] variants, and Empty/Default;
               200K for everything else. Exceeds-window state shifts the orange segment to
               red with "!!" — this signals that picking a smaller-context model will force
               Claude Code to auto-compact before the next turn can land. */}

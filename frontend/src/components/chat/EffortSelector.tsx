@@ -11,8 +11,8 @@ interface EffortSelectorProps {
 /**
  * EffortSelector — compact dropdown for adaptive-reasoning effort level.
  *
- * Renders nothing when the current model doesn't support effort (e.g. Haiku,
- * older 4.5 models).
+ * Renders nothing when the current model doesn't support effort (e.g. Haiku 4.5
+ * and older 4.x models; Haiku 5.5 and the `haiku` alias DO support it).
  *
  * The empty string ("") represents "auto / model default" and causes --effort
  * to be omitted from the CLI invocation.

@@ -42,15 +42,20 @@ export const MODEL_CATALOG: ModelEntry[] = [
   // ---------- Aliases ----------
   // Zero-value (empty id) = no --model flag; Claude Code resolves via its own priority chain
   // (settings.json → ANTHROPIC_MODEL env → account tier default). This is the "no opinion" state.
-  { id: '',          label: 'Empty/Default',    group: 'alias', effortLevels: EFFORT_FULL, description: 'No --model flag — Claude Code decides based on settings.json, ANTHROPIC_MODEL env, or account tier default (Max → Opus 4.8; Pro/API → Sonnet 4.6).' },
-  { id: 'best',      label: 'best (opus)',      group: 'alias', effortLevels: EFFORT_FULL, description: 'Most capable model available, currently Opus 5.5.' },
-  { id: 'opus',      label: 'opus',             group: 'alias', family: 'opus',   effortLevels: EFFORT_FULL },
-  { id: 'opus[1m]',  label: 'opus [1M]',        group: 'alias', family: 'opus',   effortLevels: EFFORT_FULL, contextOneMillion: true },
+  // v0.5.75 — per Claude Code model-config docs (2026-10): on the Anthropic API,
+  // Fable 5/5.1, Opus 4.7+, Sonnet 5+, and Haiku 5.5 run the 1M window on EVERY
+  // plan with NO [1m] suffix and no usage credits. Only Opus 4.6 / Sonnet 4.6
+  // still need the [1m] variant (plan-gated). The `opus`/`sonnet`/`haiku` aliases
+  // resolve to Opus 5.5 / Sonnet 5.5 / Haiku 5.5 — all 1M-native.
+  { id: '',          label: 'Empty/Default',    group: 'alias', effortLevels: EFFORT_FULL, description: 'No --model flag — Claude Code decides based on settings.json, ANTHROPIC_MODEL env, or account tier default (currently Opus 5.5 on the Anthropic API).' },
+  { id: 'best',      label: 'best (opus)',      group: 'alias', effortLevels: EFFORT_FULL, contextOneMillion: true, description: 'Most capable model available, currently Opus 5.5.' },
+  { id: 'opus',      label: 'opus',             group: 'alias', family: 'opus',   effortLevels: EFFORT_FULL, contextOneMillion: true, description: 'Latest Opus (currently Opus 5.5). 1M context natively.' },
+  { id: 'opus[1m]',  label: 'opus [1M]',        group: 'alias', family: 'opus',   effortLevels: EFFORT_FULL, contextOneMillion: true, description: 'Legacy explicit-1M alias — redundant now that opus (Opus 5.5) is 1M natively; still accepted by Claude Code.' },
   { id: 'opusplan',  label: 'opusplan',         group: 'alias', family: 'mixed',  effortLevels: EFFORT_46,      description: 'Opus for plan mode, Sonnet for execution.' },
   { id: 'opusplan[1m]', label: 'opusplan [1M]', group: 'alias', family: 'mixed',  effortLevels: EFFORT_46,      contextOneMillion: true },
-  { id: 'sonnet',    label: 'sonnet',           group: 'alias', family: 'sonnet', effortLevels: EFFORT_FULL,    description: 'Latest Sonnet (currently Sonnet 5). Full five-level effort incl. xhigh.' },
-  { id: 'sonnet[1m]',label: 'sonnet [1M]',      group: 'alias', family: 'sonnet', effortLevels: EFFORT_FULL,    contextOneMillion: true, extraUsage: true, description: '1M context Sonnet (currently Sonnet 5) — requires extra usage on Max plans.' },
-  { id: 'haiku',     label: 'haiku',            group: 'alias', family: 'haiku',  effortLevels: EFFORT_NONE },
+  { id: 'sonnet',    label: 'sonnet',           group: 'alias', family: 'sonnet', effortLevels: EFFORT_FULL,    contextOneMillion: true, description: 'Latest Sonnet (currently Sonnet 5.5). 1M context natively, full five-level effort incl. xhigh.' },
+  { id: 'sonnet[1m]',label: 'sonnet [1M]',      group: 'alias', family: 'sonnet', effortLevels: EFFORT_FULL,    contextOneMillion: true, description: 'Legacy explicit-1M alias — redundant now that sonnet (Sonnet 5.5) is 1M natively with no usage credits; still accepted by Claude Code.' },
+  { id: 'haiku',     label: 'haiku',            group: 'alias', family: 'haiku',  effortLevels: EFFORT_FULL,    contextOneMillion: true, description: 'Latest Haiku (currently Haiku 5.5 on the Anthropic API). 1M context natively, full five-level effort, default medium.' },
 
   // ---------- Explicit — Fable ----------
   // Anthropic's most capable widely released models. 1M context by default (no
@@ -62,20 +67,26 @@ export const MODEL_CATALOG: ModelEntry[] = [
   { id: 'claude-fable-5',         label: 'Fable 5',          group: 'explicit', family: 'fable',  effortLevels: EFFORT_FULL, contextOneMillion: true, description: 'Previous Fable generation. 1M context, always-on adaptive thinking, effort default high.' },
 
   // ---------- Explicit — Opus ----------
-  // Opus 5.5 (GA 2026-09-22): 1M-native context, $4/$20 (below Opus 5's $5/$25),
-  // always-on adaptive thinking, effort default MEDIUM (first Opus to default below
-  // high). Claude Code still gates 1M behind the [1m] suffix, so the 200K/[1m]
-  // split matches the rest of the family. Full five-level effort (incl. xhigh).
-  { id: 'claude-opus-5-5',        label: 'Opus 5.5',         group: 'explicit', family: 'opus',   effortLevels: EFFORT_FULL, description: 'Successor to Opus 5 — built for long-running agentic coding, at $4/$20 (cheaper than Opus 5). 1M context, always-on adaptive thinking, effort default medium.' },
-  { id: 'claude-opus-5-5[1m]',    label: 'Opus 5.5 [1M]',    group: 'explicit', family: 'opus',   effortLevels: EFFORT_FULL, contextOneMillion: true },
-  // Opus 5 (GA): 1M-native context, drop-in at Opus 4.8 pricing. Full five-level
-  // effort (incl. xhigh); adaptive thinking on by default.
-  { id: 'claude-opus-5',          label: 'Opus 5',           group: 'explicit', family: 'opus',   effortLevels: EFFORT_FULL, description: 'Previous Opus generation — strongest on agentic coding and long-horizon work, at Opus 4.8 pricing. 1M context, effort default high.' },
-  { id: 'claude-opus-5[1m]',      label: 'Opus 5 [1M]',      group: 'explicit', family: 'opus',   effortLevels: EFFORT_FULL, contextOneMillion: true },
-  { id: 'claude-opus-4-8',        label: 'Opus 4.8',         group: 'explicit', family: 'opus',   effortLevels: EFFORT_FULL },
-  { id: 'claude-opus-4-8[1m]',    label: 'Opus 4.8 [1M]',    group: 'explicit', family: 'opus',   effortLevels: EFFORT_FULL, contextOneMillion: true },
-  { id: 'claude-opus-4-7',        label: 'Opus 4.7',         group: 'explicit', family: 'opus',   effortLevels: EFFORT_FULL },
-  { id: 'claude-opus-4-7[1m]',    label: 'Opus 4.7 [1M]',    group: 'explicit', family: 'opus',   effortLevels: EFFORT_FULL, contextOneMillion: true },
+  // v0.5.75: Opus 4.7 and later run 1M natively in Claude Code on every plan
+  // (no [1m] needed). The earlier "Claude Code still gates 1M behind the suffix"
+  // comment was wrong for these — bare IDs now carry contextOneMillion: true so
+  // the ctx chip stops reporting 200K. The [1m] rows are kept ONLY so agent
+  // defaults saved with the suffix still resolve to a labeled entry; Claude Code
+  // still accepts the suffix on any full model name.
+  // Opus 5.5 (GA 2026-09-22): $4/$20 (below Opus 5's $5/$25), always-on adaptive
+  // thinking, effort default MEDIUM (first Opus to default below high). Full
+  // five-level effort (incl. xhigh).
+  { id: 'claude-opus-5-5',        label: 'Opus 5.5',         group: 'explicit', family: 'opus',   effortLevels: EFFORT_FULL, contextOneMillion: true, description: 'Successor to Opus 5 — built for long-running agentic coding, at $4/$20 (cheaper than Opus 5). 1M context natively, always-on adaptive thinking, effort default medium.' },
+  { id: 'claude-opus-5-5[1m]',    label: 'Opus 5.5 [1M]',    group: 'explicit', family: 'opus',   effortLevels: EFFORT_FULL, contextOneMillion: true, description: 'Legacy — identical to Opus 5.5 (1M native).' },
+  // Opus 5 (GA): drop-in at Opus 4.8 pricing. Full five-level effort (incl. xhigh);
+  // adaptive thinking on by default.
+  { id: 'claude-opus-5',          label: 'Opus 5',           group: 'explicit', family: 'opus',   effortLevels: EFFORT_FULL, contextOneMillion: true, description: 'Previous Opus generation — strongest on agentic coding and long-horizon work, at Opus 4.8 pricing. 1M context natively, effort default high.' },
+  { id: 'claude-opus-5[1m]',      label: 'Opus 5 [1M]',      group: 'explicit', family: 'opus',   effortLevels: EFFORT_FULL, contextOneMillion: true, description: 'Legacy — identical to Opus 5 (1M native).' },
+  { id: 'claude-opus-4-8',        label: 'Opus 4.8',         group: 'explicit', family: 'opus',   effortLevels: EFFORT_FULL, contextOneMillion: true },
+  { id: 'claude-opus-4-8[1m]',    label: 'Opus 4.8 [1M]',    group: 'explicit', family: 'opus',   effortLevels: EFFORT_FULL, contextOneMillion: true, description: 'Legacy — identical to Opus 4.8 (1M native).' },
+  { id: 'claude-opus-4-7',        label: 'Opus 4.7',         group: 'explicit', family: 'opus',   effortLevels: EFFORT_FULL, contextOneMillion: true },
+  { id: 'claude-opus-4-7[1m]',    label: 'Opus 4.7 [1M]',    group: 'explicit', family: 'opus',   effortLevels: EFFORT_FULL, contextOneMillion: true, description: 'Legacy — identical to Opus 4.7 (1M native).' },
+  // Opus 4.6 / Sonnet 4.6: the ONLY current models still plan-gated behind [1m].
   { id: 'claude-opus-4-6',        label: 'Opus 4.6',         group: 'explicit', family: 'opus',   effortLevels: EFFORT_46 },
   { id: 'claude-opus-4-6[1m]',    label: 'Opus 4.6 [1M]',    group: 'explicit', family: 'opus',   effortLevels: EFFORT_46, contextOneMillion: true },
   { id: 'claude-opus-4-5-20251101', label: 'Opus 4.5',       group: 'explicit', family: 'opus',   effortLevels: EFFORT_NONE },
@@ -83,17 +94,28 @@ export const MODEL_CATALOG: ModelEntry[] = [
   { id: 'claude-opus-4-20250514',   label: 'Opus 4',         group: 'explicit', family: 'opus',   effortLevels: EFFORT_NONE },
 
   // ---------- Explicit — Sonnet ----------
-  // Sonnet 5 (GA): 1M-native context, but Claude Code still gates 1M behind the
-  // [1m] suffix — hence the 200K/[1m] split, mirroring the Opus family. First
-  // Sonnet with the full five-level effort set (xhigh); adaptive thinking on by default.
-  { id: 'claude-sonnet-5',         label: 'Sonnet 5',         group: 'explicit', family: 'sonnet', effortLevels: EFFORT_FULL },
-  { id: 'claude-sonnet-5[1m]',     label: 'Sonnet 5 [1M]',    group: 'explicit', family: 'sonnet', effortLevels: EFFORT_FULL, contextOneMillion: true, extraUsage: true },
+  // Sonnet 5.5 (GA): successor to Sonnet 5 at the same $2/$10, 1M native, 128K
+  // output, full five-level effort (default high, levels recalibrated). Claude Code
+  // docs: "Sonnet 5.5 and Sonnet 5 always run with the 1M context window. There is
+  // no 200K variant, no [1m] suffix to select, and no usage credits required on any
+  // plan." Single entry, no [1m] row (Fable/Haiku 5.5 shape).
+  { id: 'claude-sonnet-5-5',       label: 'Sonnet 5.5',       group: 'explicit', family: 'sonnet', effortLevels: EFFORT_FULL, contextOneMillion: true, description: 'Current Sonnet — speed and capability for everyday coding and agent work, $2/$10. 1M context natively, adaptive thinking, effort default high.' },
+  // Sonnet 5: 1M native (see Sonnet 5.5 note). The [1m] row is kept for saved
+  // agent defaults; extraUsage dropped — no usage credits on Sonnet 5+.
+  { id: 'claude-sonnet-5',         label: 'Sonnet 5',         group: 'explicit', family: 'sonnet', effortLevels: EFFORT_FULL, contextOneMillion: true, description: 'Previous Sonnet generation. 1M context natively.' },
+  { id: 'claude-sonnet-5[1m]',     label: 'Sonnet 5 [1M]',    group: 'explicit', family: 'sonnet', effortLevels: EFFORT_FULL, contextOneMillion: true, description: 'Legacy — identical to Sonnet 5 (1M native).' },
   { id: 'claude-sonnet-4-6',       label: 'Sonnet 4.6',       group: 'explicit', family: 'sonnet', effortLevels: EFFORT_46 },
   { id: 'claude-sonnet-4-6[1m]',   label: 'Sonnet 4.6 [1M]',  group: 'explicit', family: 'sonnet', effortLevels: EFFORT_46, contextOneMillion: true, extraUsage: true },
   { id: 'claude-sonnet-4-5-20250929', label: 'Sonnet 4.5',    group: 'explicit', family: 'sonnet', effortLevels: EFFORT_NONE },
   { id: 'claude-sonnet-4-20250514',   label: 'Sonnet 4',      group: 'explicit', family: 'sonnet', effortLevels: EFFORT_NONE },
 
   // ---------- Explicit — Haiku ----------
+  // Haiku 5.5 (GA 2026-10-07): $0.10/$0.50 (prompts ≤100K; higher rate beyond),
+  // 1M context + 128K output, adaptive thinking on by default, full five-level
+  // effort (default medium). Per Claude Code model-config docs, Haiku 5.5 runs
+  // 1M on every plan with NO [1m] suffix — so, like Fable, a single entry with
+  // contextOneMillion: true and no [1m] variant. No dated snapshot ID exists.
+  { id: 'claude-haiku-5-5',          label: 'Haiku 5.5',      group: 'explicit', family: 'haiku',  effortLevels: EFFORT_FULL, contextOneMillion: true, description: 'Cheapest current model ($0.10/$0.50 up to 100K prompt tokens) — classification, routing, extraction, subagents. 1M context, adaptive thinking, effort default medium. Tokenizer counts ~30% more tokens than Haiku 4.5.' },
   { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5',      group: 'explicit', family: 'haiku',  effortLevels: EFFORT_NONE },
   { id: 'claude-3-haiku-20240307',   label: 'Haiku 3',        group: 'explicit', family: 'haiku',  effortLevels: EFFORT_NONE },
 ];
@@ -113,17 +135,18 @@ export function requiresExtraUsage(id: string): boolean {
 }
 
 // Returns the nominal context window in tokens for a given model id.
-//   - Explicit `[1m]` variants (or contextOneMillion: true) → 1,000,000
-//   - Everything else → 200,000
-//   - Empty string (Empty/Default) → 1,000,000 assumption (Max plan is the common ClaudeFu tier;
-//     Opus 4.8 ships 1M context generally available there; on Pro/API the assumption is
-//     pessimistic — user can explicitly pick a 200K model or alias to see accurate numbers).
-// Unknown IDs fall through to 200K — a safer default for warning purposes (false positive
-// warnings on model change are less harmful than false negatives).
+//   - contextOneMillion: true (1M-native models and explicit `[1m]` variants) → 1,000,000
+//   - Everything else in the catalog → 200,000
+//   - Empty string (Empty/Default) → 1,000,000 (Claude Code's default resolves to Opus 5.5,
+//     which is 1M on every plan).
+//   - Unknown IDs: a trailing `[1m]` is honored as 1M (Claude Code accepts the suffix on any
+//     full model name, and a saved agent default may carry one); otherwise 200K — a safer
+//     default for warning purposes (false positive warnings on model change are less harmful
+//     than false negatives).
 export function getContextWindow(id: string): number {
   if (id === '') return 1_000_000;
   const entry = getModelEntry(id);
-  if (!entry) return 200_000;
+  if (!entry) return id.endsWith('[1m]') ? 1_000_000 : 200_000;
   return entry.contextOneMillion ? 1_000_000 : 200_000;
 }
 
@@ -146,6 +169,7 @@ export const ENV_OPUS_MODEL_OPTIONS: string[] = [
 ];
 
 export const ENV_SONNET_MODEL_OPTIONS: string[] = [
+  'claude-sonnet-5-5',
   'claude-sonnet-5',
   'claude-sonnet-5[1m]',
   'claude-sonnet-4-6',
@@ -154,6 +178,7 @@ export const ENV_SONNET_MODEL_OPTIONS: string[] = [
 ];
 
 export const ENV_HAIKU_MODEL_OPTIONS: string[] = [
+  'claude-haiku-5-5',
   'claude-haiku-4-5-20251001',
   'claude-3-haiku-20240307',
 ];

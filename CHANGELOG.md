@@ -5,6 +5,18 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.75] - 2026-10-08
+
+### Added
+- **Claude Haiku 5.5 in the model picker** (`frontend/src/components/chat/modelCatalog.ts`) — added `claude-haiku-5-5` (released 2026-10-07) at the top of the Haiku block: `family: 'haiku'`, full five-level effort incl. `xhigh` (default `medium`), adaptive thinking on by default, 1M context + 128K output, $0.10/$0.50 up to 100K prompt tokens. Per the Claude Code model-config docs, Haiku 5.5 runs the 1M window on every plan with no `[1m]` suffix, so it is a single `contextOneMillion: true` entry with no `[1m]` row (the Fable shape). No dated snapshot ID exists. Added first in `ENV_HAIKU_MODEL_OPTIONS`.
+- **Claude Sonnet 5.5 in the model picker** — added `claude-sonnet-5-5` (successor to Sonnet 5 at the same $2/$10; 1M native, 128K output, full five-level effort, default `high`). Same single-entry shape as Haiku 5.5: Claude Code docs state Sonnet 5.5 and Sonnet 5 "always run with the 1M context window. There is no 200K variant, no `[1m]` suffix to select, and no usage credits required on any plan." Added first in `ENV_SONNET_MODEL_OPTIONS`.
+
+### Changed
+- **`haiku` alias now has effort + 1M** — Claude Code resolves `haiku` to Haiku 5.5 on the Anthropic API, so the alias row moved from `EFFORT_NONE`/200K to `EFFORT_FULL`/1M; the EffortSelector now renders for it. `sonnet` alias tooltip names Sonnet 5.5; `opus`, `best`, and Empty/Default are marked 1M (all resolve to Opus 5.5).
+- **Context-window truth for 1M-native models** — the Opus 5.5/5/4.8/4.7 and Sonnet 5 bare IDs were flagged 200K on the (now incorrect) assumption that Claude Code gated 1M behind `[1m]`; the current docs say Opus 4.7+ and Sonnet 5+ run 1M on every plan without the suffix. Bare IDs now carry `contextOneMillion: true`, which stops the `ctx` chip from reporting a 200K window and firing false `!! exceeds` warnings on these models. The existing `[1m]` rows are **kept** (labeled "Legacy — identical to …") so agent defaults saved with the suffix still resolve to a labeled entry in ModelSelector; Claude Code still accepts the suffix on any full model name. `extraUsage` dropped from `sonnet[1m]` and Sonnet 5 `[1m]` (no usage credits on Sonnet 5+; Sonnet 4.6 `[1m]` keeps its `$` badge). Only Opus 4.6 / Sonnet 4.6 remain plan-gated behind `[1m]`.
+- **`getContextWindow` unknown-ID rule** — an unknown ID ending in `[1m]` now resolves to 1M instead of falling through to 200K.
+- `EffortSelector.tsx` doc comment no longer claims Haiku has no effort selector. No backend change — model strings pass to `--model` verbatim.
+
 ## [0.5.74] - 2026-09-26
 
 ### Added
