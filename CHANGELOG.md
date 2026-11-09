@@ -5,6 +5,12 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.76] - 2026-11-09
+
+### Added
+- **Claude Fable 5.2 in the model picker** (`frontend/src/components/chat/modelCatalog.ts`) — added `claude-fable-5-2` (released 2026-11-09) at the top of the Fable block: `family: 'fable'`, full five-level effort incl. `xhigh`, always-on adaptive thinking, 1M context on every plan with no `[1m]` suffix (single `contextOneMillion: true` entry, the Fable shape). Successor to Fable 5.1 at a **lower** price — $8/$40 vs $10/$50, cache reads $0.20 — with fast mode available at $16/$80. Claude Code runs it at effort default **`medium`** (Fable 5.1 defaulted to `high`), so an `auto`-effort session runs shallower than the same session on 5.1; Anthropic's guidance is to start at `high` and raise to `xhigh` only where a gain is measured. Fable 5.1 relabeled as previous generation. Picked up automatically by ModelSelector, EffortSelector, the ctx-window chip, and `ENV_ANY_MODEL_OPTIONS`.
+- **`fable` alias row** — Claude Code 2.1.321+ ships a native `fable` alias that resolves to Fable 5.2 (Fable 5 on Claude apps gateway sessions). Added to the Aliases group with 1M context and full effort; the catalog comment that said "no `fable` alias" is gone. `best` still tracks `opus` (Opus 5.5), not Fable. No backend change — model strings pass to `--model` verbatim; the 429 limit parser already matches "Fable limit".
+
 ## [0.5.75] - 2026-10-08
 
 ### Added

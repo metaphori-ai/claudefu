@@ -28,7 +28,7 @@ export const EFFORT_LEVELS: EffortLevel[] = ['low', 'medium', 'high', 'xhigh', '
 // Effort profiles referenced by multiple entries. Named by the level SET they
 // expose, not by the first model that used them, so new models inherit the
 // right profile without a misleading version label.
-//   EFFORT_FULL = the complete five-level set (includes xhigh). Fable 5 + Opus 4.7 + 4.8.
+//   EFFORT_FULL = the complete five-level set (includes xhigh). Fable 5/5.1/5.2 + Opus 4.7+ + Sonnet 5+ + Haiku 5.5.
 //   EFFORT_46   = four levels, no xhigh. Opus 4.6 + Sonnet 4.6 + opusplan.
 //   EFFORT_NONE = effort selector hidden (model doesn't take --effort).
 // NOTE: a profile lists which levels are SELECTABLE, not the model's default.
@@ -43,7 +43,7 @@ export const MODEL_CATALOG: ModelEntry[] = [
   // Zero-value (empty id) = no --model flag; Claude Code resolves via its own priority chain
   // (settings.json → ANTHROPIC_MODEL env → account tier default). This is the "no opinion" state.
   // v0.5.75 — per Claude Code model-config docs (2026-10): on the Anthropic API,
-  // Fable 5/5.1, Opus 4.7+, Sonnet 5+, and Haiku 5.5 run the 1M window on EVERY
+  // Fable 5/5.1/5.2, Opus 4.7+, Sonnet 5+, and Haiku 5.5 run the 1M window on EVERY
   // plan with NO [1m] suffix and no usage credits. Only Opus 4.6 / Sonnet 4.6
   // still need the [1m] variant (plan-gated). The `opus`/`sonnet`/`haiku` aliases
   // resolve to Opus 5.5 / Sonnet 5.5 / Haiku 5.5 — all 1M-native.
@@ -56,14 +56,22 @@ export const MODEL_CATALOG: ModelEntry[] = [
   { id: 'sonnet',    label: 'sonnet',           group: 'alias', family: 'sonnet', effortLevels: EFFORT_FULL,    contextOneMillion: true, description: 'Latest Sonnet (currently Sonnet 5.5). 1M context natively, full five-level effort incl. xhigh.' },
   { id: 'sonnet[1m]',label: 'sonnet [1M]',      group: 'alias', family: 'sonnet', effortLevels: EFFORT_FULL,    contextOneMillion: true, description: 'Legacy explicit-1M alias — redundant now that sonnet (Sonnet 5.5) is 1M natively with no usage credits; still accepted by Claude Code.' },
   { id: 'haiku',     label: 'haiku',            group: 'alias', family: 'haiku',  effortLevels: EFFORT_FULL,    contextOneMillion: true, description: 'Latest Haiku (currently Haiku 5.5 on the Anthropic API). 1M context natively, full five-level effort, default medium.' },
+  // v0.5.76 — Claude Code 2.1.321+ added a native `fable` alias (resolves to
+  // Fable 5.2 everywhere except Claude apps gateway sessions, which get Fable 5).
+  // `best` still tracks `opus`, NOT fable.
+  { id: 'fable',     label: 'fable',            group: 'alias', family: 'fable',  effortLevels: EFFORT_FULL,    contextOneMillion: true, description: 'Latest Fable (currently Fable 5.2; requires Claude Code 2.1.321+). 1M context natively, full five-level effort, default medium. May bill to usage credits depending on plan.' },
 
   // ---------- Explicit — Fable ----------
   // Anthropic's most capable widely released models. 1M context by default (no
-  // 200K/[1m] split), always-on adaptive thinking, full five-level effort
-  // (default high). Explicit IDs only — no `fable` alias.
+  // 200K/[1m] split), always-on adaptive thinking, full five-level effort.
+  // Fable 5.2 (GA 2026-11-09): successor to Fable 5.1 at a LOWER price ($8/$40
+  // vs $10/$50; cache reads $0.20). Claude Code runs it at effort default MEDIUM
+  // (5.1 defaulted to high) — Anthropic's guidance is to start at high and only
+  // raise to xhigh where a gain is measured. Fast mode available ($16/$80).
+  { id: 'claude-fable-5-2',       label: 'Fable 5.2',        group: 'explicit', family: 'fable',  effortLevels: EFFORT_FULL, contextOneMillion: true, description: "Anthropic's most capable widely released model (successor to Fable 5.1) at $8/$40 — cheaper than 5.1. 1M context, always-on adaptive thinking, effort default medium (pick high/xhigh explicitly for prior depth)." },
   // Fable 5.1 (GA 2026-09-01): same $10/$50 pricing as Fable 5 with cache reads
   // at a quarter of the cost; stronger long-running agentic coding.
-  { id: 'claude-fable-5-1',       label: 'Fable 5.1',        group: 'explicit', family: 'fable',  effortLevels: EFFORT_FULL, contextOneMillion: true, description: "Anthropic's most capable widely released model (successor to Fable 5). 1M context, always-on adaptive thinking, effort default high; cache reads at a quarter of Fable 5's price." },
+  { id: 'claude-fable-5-1',       label: 'Fable 5.1',        group: 'explicit', family: 'fable',  effortLevels: EFFORT_FULL, contextOneMillion: true, description: 'Previous Fable generation ($10/$50). 1M context, always-on adaptive thinking, effort default high.' },
   { id: 'claude-fable-5',         label: 'Fable 5',          group: 'explicit', family: 'fable',  effortLevels: EFFORT_FULL, contextOneMillion: true, description: 'Previous Fable generation. 1M context, always-on adaptive thinking, effort default high.' },
 
   // ---------- Explicit — Opus ----------
