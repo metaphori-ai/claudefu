@@ -84,6 +84,8 @@ func TestParseLimitInfo(t *testing.T) {
 		{"You've hit your weekly limit · resets Tue 2:00am (America/Los_Angeles)", 429, LimitWeekly, true},
 		{"You've reached your Fable limit · resets 6:00pm (America/Los_Angeles)", 429, LimitModel, true},
 		{"Claude AI usage limit reached", 0, LimitSession, true},
+		{"Your organization has disabled Claude subscription access for Claude Code · Use an Anthropic API key instead, or ask your admin to enable access", 403, LimitAccess, true},
+		{"permission denied for this resource", 403, "", false}, // bare 403 must NOT bench a key
 		{"1M context is not enabled for this account", 400, "", false},
 		{"invalid model name", 404, "", false},
 	}
@@ -145,6 +147,54 @@ func TestNextWeeklyOccurrence(t *testing.T) {
 	got = nextWeeklyOccurrence(1, "12:03", now)
 	if s := got.Format("2006-01-02 15:04"); s != "2026-08-24 12:03" {
 		t.Errorf("Mon 12:03 = %s, want 2026-08-24 12:03", s)
+	}
+}
+
+// An org-blocked key (403 access) is benched in the WEEKLY slot until its next
+// weekly reset, rotation moves to the next candidate, and NEW sessions skip it.
+func TestAccessBlockBenchesAndRotates(t *testing.T) {
+	m := NewManager(t.TempDir())
+	now := time.Now()
+	hm := now.Add(-1 * time.Hour).Format("15:04")
+	dayIn := func(offset int) int { return (int(now.Weekday()) + offset) % 7 }
+
+	blocked, err := m.AddKey("blocked", "sk-ant-oat01-bbb", dayIn(1), hm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.AddKey("good", "sk-ant-oat01-ggg", dayIn(3), hm); err != nil {
+		t.Fatal(err)
+	}
+
+	// Nearest weekly reset → the blocked key is picked first.
+	keyID, _, _ := m.ResolveForSend("s1", "")
+	if keyID != blocked.ID {
+		t.Fatalf("first pick = %s, want blocked key", m.GetKey(keyID).Label)
+	}
+
+	limitType, resetAt, isLimit := ParseLimitInfo(403, "Your organization has disabled Claude subscription access for Claude Code · Use an Anthropic API key instead")
+	if !isLimit || limitType != LimitAccess || resetAt != nil {
+		t.Fatalf("ParseLimitInfo = (%q, %v, %v), want (access, nil, true)", limitType, resetAt, isLimit)
+	}
+
+	until := m.ComputeLimitedUntil(blocked.ID, limitType, resetAt)
+	if d := until.Sub(now); d < 20*time.Hour || d > 25*time.Hour {
+		t.Errorf("access bench = %s from now, want ~next weekly reset (~23h)", d.Round(time.Minute))
+	}
+	m.RecordLimit(blocked.ID, limitType, until)
+
+	st := m.GetState(blocked.ID)
+	if st.WeeklyLimitedUntil == nil || st.SessionLimitedUntil != nil {
+		t.Errorf("access bench must use the weekly slot only: %+v", st)
+	}
+
+	nextID, _, ok := m.SelectNextAfterLimit("s1")
+	if !ok || m.GetKey(nextID).Label != "good" {
+		t.Fatalf("next after access block = %v, want good", nextID)
+	}
+	// A brand-new session must not land on the blocked key either.
+	if id, _, _ := m.ResolveForSend("s2", ""); m.GetKey(id).Label != "good" {
+		t.Errorf("new session picked %s, want good", m.GetKey(id).Label)
 	}
 }
 

@@ -47,6 +47,11 @@ const (
 	LimitSession = "session"
 	LimitWeekly  = "weekly"
 	LimitModel   = "model" // model-tier limit (e.g. "Fable limit") — session-scoped block
+	// LimitAccess: the ACCOUNT is blocked from Claude Code (403 "Your
+	// organization has disabled Claude subscription access for Claude Code").
+	// Not a quota — no reset clock — so it is benched in the weekly slot until
+	// the key's next weekly reset (survives session windows; re-probed weekly).
+	LimitAccess = "access"
 )
 
 // OAuthKey is one subscription account's long-lived OAuth token.
@@ -309,7 +314,7 @@ func (m *Manager) RecordLimit(id, limitType string, until time.Time) {
 		m.state[id] = st
 	}
 	now := time.Now()
-	if limitType == LimitWeekly {
+	if limitType == LimitWeekly || limitType == LimitAccess {
 		st.WeeklyLimitedUntil = &until
 	} else {
 		st.SessionLimitedUntil = &until
@@ -344,7 +349,7 @@ func (m *Manager) ComputeLimitedUntil(id, limitType string, resetAt *time.Time) 
 	if resetAt != nil {
 		return resetAt.Add(resetBuffer)
 	}
-	if limitType == LimitWeekly {
+	if limitType == LimitWeekly || limitType == LimitAccess {
 		if k := m.GetKey(id); k != nil {
 			return nextWeeklyOccurrence(k.WeeklyResetDay, k.WeeklyResetTime, now).Add(resetBuffer)
 		}
@@ -655,7 +660,11 @@ func (m *Manager) AllLimitedSummary() string {
 			parts = append(parts, "session until "+st.SessionLimitedUntil.Format("Mon 3:04 PM"))
 		}
 		if st != nil && st.WeeklyLimitedUntil != nil && st.WeeklyLimitedUntil.After(now) {
-			parts = append(parts, "weekly until "+st.WeeklyLimitedUntil.Format("Mon 3:04 PM"))
+			label := "weekly until "
+			if st.LastLimitType == LimitAccess {
+				label = "org-blocked (403), benched until "
+			}
+			parts = append(parts, label+st.WeeklyLimitedUntil.Format("Mon 3:04 PM"))
 		}
 		if len(parts) == 0 {
 			parts = append(parts, "available")
@@ -684,6 +693,12 @@ var resetClockRe = regexp.MustCompile(`(?i)resets\s+(?:(sun|mon|tue|wed|thu|fri|
 
 var limitPhraseRe = regexp.MustCompile(`(?i)(hit your [^.\n]{0,40}limit|usage limit reached|limit reached|reached your [^.\n]{0,40}limit)`)
 
+// accessDeniedRe matches the CLI's account-blocked result, e.g.:
+//
+//	"Your organization has disabled Claude subscription access for Claude Code ·
+//	 Use an Anthropic API key instead, or ask your admin to enable access"
+var accessDeniedRe = regexp.MustCompile(`(?i)disabled Claude subscription access|organization has disabled`)
+
 var weekdayIndex = map[string]int{
 	"sun": 0, "mon": 1, "tue": 2, "wed": 3, "thu": 4, "fri": 5, "sat": 6,
 }
@@ -692,6 +707,13 @@ var weekdayIndex = map[string]int{
 // returns whether it's a rate/usage limit, its type, and the reset clock if
 // one was present in the message. resetAt is nil when unparseable.
 func ParseLimitInfo(status int, result string) (limitType string, resetAt *time.Time, isLimit bool) {
+	// Account-level block (403): the key can't run Claude Code at all. Matched
+	// on the message, NOT on bare status 403 — other 403s (permission errors,
+	// proxy blocks) say nothing about the account and must not bench a key.
+	if accessDeniedRe.MatchString(result) {
+		return LimitAccess, nil, true
+	}
+
 	lower := strings.ToLower(result)
 	isLimit = status == 429 || limitPhraseRe.MatchString(result)
 	if !isLimit {

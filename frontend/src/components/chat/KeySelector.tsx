@@ -78,8 +78,13 @@ export function KeySelector({ selectedKey, onKeyChange }: KeySelectorProps) {
     };
   }, [isOpen]);
 
-  // No pool configured — nothing to select.
-  if (keys.length === 0) return null;
+  // Only ENABLED keys (Rotate ✓ in Global Settings → OAuth Keys) are offered.
+  // A key that is currently pinned stays listed even if it was unchecked
+  // afterwards, so the trigger label resolves and the pin is visible/undoable.
+  const visibleKeys = keys.filter(k => k.inRotation || k.id === selectedKey);
+
+  // No enabled keys — nothing to select.
+  if (visibleKeys.length === 0) return null;
 
   const isPinned = selectedKey !== '';
   const currentLabel = isPinned
@@ -90,7 +95,7 @@ export function KeySelector({ selectedKey, onKeyChange }: KeySelectorProps) {
     const parts: string[] = [];
     if (k.sessionLimitedUntil) parts.push(`session limited until ${fmtReset(k.sessionLimitedUntil)}`);
     if (k.weeklyLimitedUntil) parts.push(`weekly limited until ${fmtReset(k.weeklyLimitedUntil)}`);
-    if (!k.inRotation) parts.push('out of rotation (manual only)');
+    if (!k.inRotation) parts.push('disabled in Settings — shown only because it is pinned');
     return parts.length > 0 ? parts.join(' · ') : 'available';
   };
 
@@ -175,7 +180,7 @@ export function KeySelector({ selectedKey, onKeyChange }: KeySelectorProps) {
 
           <div style={{ borderTop: '1px solid #2a2a2a' }} />
 
-          {keys.map(k => {
+          {visibleKeys.map(k => {
             const isSelected = k.id === selectedKey;
             const limited = !k.available;
             return (
@@ -204,7 +209,7 @@ export function KeySelector({ selectedKey, onKeyChange }: KeySelectorProps) {
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{k.label}</span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '5px', marginLeft: '8px', flexShrink: 0 }}>
                   {!k.inRotation && (
-                    <span style={{ color: '#555', fontSize: '0.58rem' }}>manual</span>
+                    <span style={{ color: '#555', fontSize: '0.58rem' }}>disabled</span>
                   )}
                   <span style={{
                     width: 6, height: 6, borderRadius: '50%',

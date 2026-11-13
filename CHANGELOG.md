@@ -5,6 +5,18 @@ All notable changes to ClaudeFu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.77] - 2026-11-13
+
+### Fixed
+- **An org-blocked OAuth key no longer fails every new session** (`internal/oauthkeys/manager.go`, `app_claude.go`) — a key whose organization has disabled Claude Code returns `403 "Your organization has disabled Claude subscription access for Claude Code"`. That is neither a 429 nor a 5xx, so the send loop broke out without benching the key or rotating; because the pool sorts by nearest weekly reset, the blocked key was picked first for every new session until it was unchecked by hand. Diagnosed from the rotation log: the 403 came from a key that was *in* rotation (the picker never selected a disabled key) — the subscription is live, the org admin setting blocks Claude Code specifically, so the key still read "available". `ParseLimitInfo` now recognises this as a new `access` limit type, matched on the message text and **not** on bare status 403, so an unrelated 403 (permission error, proxy block) can never bench a key. The key is benched in the weekly slot until its next configured weekly reset (survives session windows, re-probed weekly) and rotation moves to the next candidate. Unlike a 429, the prompt was never accepted, so the failed JSONL entry is pruned and the **original message and attachments** are re-sent on the next key rather than the auto-continue prompt. A pinned key is still benched and logged but never auto-rotated. The app-layer limit log line now leads with the real status (was hardcoded `429`).
+- **Toast and Settings badge for the access block** (`frontend/src/components/GlobalSettingsDialog.tsx`) — the rotation toast says the key is blocked by its organization and points to Settings → OAuth Keys; the OAuth Keys tab shows a red `403 {until}` badge in place of the weekly `W` badge, clearable with ✕. The all-limited summary labels it `org-blocked (403)`.
+
+### Changed
+- **Key picker lists only enabled keys** (`frontend/src/components/chat/KeySelector.tsx`) — keys with Rotate unchecked in Settings are no longer offered in the dropdown (previously shown with a `manual` tag and selectable, which made it easy to pin a cancelled account). The selector hides entirely when no key is enabled. One exception: the currently pinned key stays listed, tagged `disabled`, even if it was unchecked afterwards, so the trigger label resolves and the pin stays visible and undoable.
+
+### Added
+- **Tests** (`internal/oauthkeys/manager_test.go`) — the org-disabled message parses as `access` with no reset clock; a bare 403 is not a limit; an access bench lands in the weekly slot only, at roughly the next weekly reset; `SelectNextAfterLimit` and a brand-new session both skip the blocked key.
+
 ## [0.5.76] - 2026-11-09
 
 ### Added

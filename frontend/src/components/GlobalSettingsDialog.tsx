@@ -1084,8 +1084,10 @@ export function GlobalSettingsDialog({ isOpen, onClose }: GlobalSettingsDialogPr
                   )}
                   {k.weeklyLimitedUntil && (
                     <span style={{ fontSize: '0.7rem', color: '#f87171', background: '#f8717112', border: '1px solid #f8717133', borderRadius: '4px', padding: '0.1rem 0.35rem', whiteSpace: 'nowrap' }}
-                      title="Weekly limit — benched until the weekly reset passes">
-                      W {formatLimitedUntil(k.weeklyLimitedUntil)}
+                      title={k.lastLimitType === 'access'
+                        ? 'Blocked from Claude Code by its organization (403) — benched until the weekly reset, then re-probed. Uncheck Rotate to remove it for good.'
+                        : 'Weekly limit — benched until the weekly reset passes'}>
+                      {k.lastLimitType === 'access' ? '403' : 'W'} {formatLimitedUntil(k.weeklyLimitedUntil)}
                     </span>
                   )}
                   <button

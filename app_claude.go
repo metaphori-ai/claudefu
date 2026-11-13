@@ -405,8 +405,9 @@ rotationLoop:
 			if resetAt != nil {
 				resetStr = resetAt.Format(time.RFC3339)
 			}
-			a.oauthKeys.Log("429 agent=%s session=%s key=%s mode=%s type=%s parsedReset=%s result=%q",
-				agent.GetSlug(), sessionID[:min(8, len(sessionID))], limitedLabel, mode, limitType, resetStr, truncateForLog(result, 240))
+			isAccess := limitType == oauthkeys.LimitAccess
+			a.oauthKeys.Log("%d agent=%s session=%s key=%s mode=%s type=%s parsedReset=%s result=%q",
+				status, agent.GetSlug(), sessionID[:min(8, len(sessionID))], limitedLabel, mode, limitType, resetStr, truncateForLog(result, 240))
 			until := a.oauthKeys.ComputeLimitedUntil(keyID, limitType, resetAt)
 			a.oauthKeys.RecordLimit(keyID, limitType, until)
 			fmt.Printf("[OAUTH] key %q hit %s limit, benched until %s\n", limitedLabel, limitType, until.Format(time.RFC3339))
@@ -438,12 +439,25 @@ rotationLoop:
 			fmt.Printf("[OAUTH] rotating %q -> %q, resuming with continue prompt\n", limitedLabel, nextLabel)
 			a.oauthKeys.Log("ROTATE agent=%s session=%s %s → %s (rotation %d/%d)",
 				agent.GetSlug(), sessionID[:min(8, len(sessionID))], limitedLabel, nextLabel, rotations, maxRotations)
+			toast := fmt.Sprintf("%s hit its %s limit (resets %s). Continuing with %s.", limitedLabel, limitType, until.Format("Mon 3:04 PM"), nextLabel)
+			if isAccess {
+				toast = fmt.Sprintf("%s is blocked from Claude Code by its organization (403). Benched until %s; continuing with %s. Uncheck it in Settings > OAuth Keys to remove it from rotation.", limitedLabel, until.Format("Mon 3:04 PM"), nextLabel)
+			}
 			if a.rt != nil {
 				a.rt.Emit("mcp:notification", agentID, sessionID, map[string]any{
 					"type":    "warning",
 					"title":   "OAuth key rotated · " + agent.GetSlug(),
-					"message": fmt.Sprintf("%s hit its %s limit (resets %s). Continuing with %s.", limitedLabel, limitType, until.Format("Mon 3:04 PM"), nextLabel),
+					"message": toast,
 				})
+			}
+
+			if isAccess {
+				// The account was rejected before any work happened — unlike a 429,
+				// the prompt was never accepted. Prune the entry the failed attempt
+				// wrote (if any) and re-send the ORIGINAL message + attachments on
+				// the next key, so the turn is indistinguishable from a fresh send.
+				a.pruneFailedUserMessage(agentID, agent.Folder, sessionID, curMsg, sentAt)
+				break retryLoop
 			}
 
 			curMsg = a.oauthKeys.GetAutoContinuePrompt()
